@@ -1,6 +1,6 @@
 local addonName, DF = ...
-DF.ADDON_VERSION = "v4.0.8-alpha.3"
-DF.BUILD_DATE = "2026-03-01T11:33:38Z"
+DF.ADDON_VERSION = "v4.0.8-alpha.1"
+DF.BUILD_DATE = "2026-03-01T18:41:39Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
