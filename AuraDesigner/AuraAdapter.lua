@@ -20,10 +20,8 @@ local addonName, DF = ...
 -- ============================================================
 
 local pairs, ipairs, type = pairs, ipairs, type
-local wipe = table.wipe or wipe
 local GetTime = GetTime
 local issecretvalue = issecretvalue or function() return false end
-local GetAuraDataByAuraInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
 local GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
 
 DF.AuraDesigner = DF.AuraDesigner or {}
@@ -36,8 +34,11 @@ DF.AuraDesigner.Adapter = AuraAdapter
 -- Scans all auras on a unit directly via C_UnitAuras.GetUnitAuras.
 -- This sees every buff/debuff on the unit, not just what
 -- Blizzard's compact frames choose to display.
--- Secret values are handled via issecretvalue() with a persistent
--- instanceId→auraName cache for combat use.
+--
+-- The auras we track (healing HoTs, class buffs, defensives) are
+-- on Blizzard's whitelist — their spellId is readable even in
+-- combat. Auras with secret spellIds are not ours, so we skip
+-- them entirely. No caching or fallback needed.
 -- ============================================================
 
 local Provider = {}
@@ -73,20 +74,6 @@ local function GetSpellIdLookup(spec)
     return lookup
 end
 
--- Persistent cache: auraInstanceID → auraName
--- Populated when spellId is non-secret, used in combat when spellId is secret.
--- Wiped on combat end (PLAYER_REGEN_ENABLED) so stale entries don't persist;
--- the cache rebuilds naturally on the next out-of-combat scan.
-local instanceIdToAuraName = {}  -- { [auraInstanceID] = auraName }
-
--- Wipe the instance cache when leaving combat — spell IDs become
--- non-secret again so the cache will rebuild from fresh data.
-local cacheFrame = CreateFrame("Frame")
-cacheFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-cacheFrame:SetScript("OnEvent", function()
-    wipe(instanceIdToAuraName)
-end)
-
 -- Debug throttle for adapter (shares interval with engine)
 local adapterDebugLast = 0
 local ADAPTER_DEBUG_INTERVAL = 3
@@ -103,12 +90,15 @@ function Provider:GetUnitAuras(unit, spec)
     local result = {}
     local scannedCount = 0
     local matchedCount = 0
-    local cacheHits = 0
 
     -- Scan ALL auras directly via C_UnitAuras.GetUnitAuras.
     -- This sees every buff/debuff on the unit regardless of what
     -- Blizzard's compact frames choose to display (e.g., Symbiotic
     -- Relationship appears on the player but Blizzard's frame hides it).
+    --
+    -- Tracked auras (healing HoTs, class buffs) are on Blizzard's
+    -- whitelist so their spellId is always readable, even in combat.
+    -- Secret spellIds belong to non-whitelisted auras — skip them.
     if GetUnitAuras then
         local filters = { "HELPFUL", "HARMFUL" }
         for _, filter in ipairs(filters) do
@@ -116,34 +106,26 @@ function Provider:GetUnitAuras(unit, spec)
             if auras then
                 for _, auraData in ipairs(auras) do
                     scannedCount = scannedCount + 1
-                    local auraName = nil
-                    local auraInstanceID = auraData.auraInstanceID
-
-                    -- Try spellId lookup (works when not secret, i.e. out of combat)
                     local sid = auraData.spellId
-                    if sid and not issecretvalue(sid) then
-                        auraName = lookup[sid]
-                        -- Update persistent cache for combat use
-                        if auraName and auraInstanceID then
-                            instanceIdToAuraName[auraInstanceID] = auraName
-                        end
-                    elseif auraInstanceID then
-                        -- In combat (secret): use cached mapping
-                        auraName = instanceIdToAuraName[auraInstanceID]
-                        if auraName then cacheHits = cacheHits + 1 end
-                    end
 
-                    if auraName then
-                        matchedCount = matchedCount + 1
-                        result[auraName] = {
-                            spellId = forwardLookup and forwardLookup[auraName] or 0,
-                            icon = auraData.icon,
-                            duration = auraData.duration,
-                            expirationTime = auraData.expirationTime,
-                            stacks = auraData.applications,
-                            caster = auraData.sourceUnit,
-                            auraInstanceID = auraInstanceID,
-                        }
+                    -- Skip auras with secret spellIds — they are not
+                    -- on Blizzard's whitelist so they are not ours.
+                    if not sid or issecretvalue(sid) then
+                        -- not a trackable aura, skip
+                    else
+                        local auraName = lookup[sid]
+                        if auraName then
+                            matchedCount = matchedCount + 1
+                            result[auraName] = {
+                                spellId = forwardLookup and forwardLookup[auraName] or sid,
+                                icon = auraData.icon,
+                                duration = auraData.duration,
+                                expirationTime = auraData.expirationTime,
+                                stacks = auraData.applications,
+                                caster = auraData.sourceUnit,
+                                auraInstanceID = auraData.auraInstanceID,
+                            }
+                        end
                     end
                 end
             end
@@ -152,9 +134,9 @@ function Provider:GetUnitAuras(unit, spec)
 
     if shouldLog then
         adapterDebugLast = now
-        DF:Debug("AD", "unit=%s spec=%s scanned=%d matched=%d cacheHits=%d",
-            unit, spec, scannedCount, matchedCount, cacheHits)
-        -- Log all unmatched spell IDs on this unit (helps identify missing alternates)
+        DF:Debug("AD", "unit=%s spec=%s scanned=%d matched=%d",
+            unit, spec, scannedCount, matchedCount)
+        -- Log all unmatched non-secret spell IDs (helps identify missing alternates)
         if GetUnitAuras then
             local unmatched = {}
             for _, filter in ipairs({ "HELPFUL", "HARMFUL" }) do
