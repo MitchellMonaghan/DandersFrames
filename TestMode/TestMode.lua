@@ -3829,8 +3829,13 @@ function DF:RefreshTestFramesWithLayout()
         
         -- Re-position raid frames (LightweightPositionRaidTestFrames handles both group and flat layout)
         DF:LightweightPositionRaidTestFrames(testFrameCount)
+
+        -- Re-anchor group labels to the (potentially re-sorted) first frame of each group
+        if raidDb.raidUseGroups and raidDb.groupLabelEnabled and DF.UpdateRaidGroupLabels then
+            DF:UpdateRaidGroupLabels()
+        end
     end
-    
+
     -- Update highlights
     if DF.testMode or DF.raidTestMode then
         DF:UpdateAllTestHighlights()
@@ -4321,25 +4326,35 @@ function DF:LightweightPositionRaidTestFrames(testFrameCount)
     -- Calculate and set container size
     local totalWidth, totalHeight = SecureSort:CalculateRaidGroupContainerSize(#activeGroupList, lp)
     DF.testRaidContainer:SetSize(totalWidth, totalHeight)
-    
+    DF:SyncRaidMoverToContainer()
+
+    -- Track which frame lands in the first slot of each group (for group label anchoring)
+    DF.testGroupFirstFrame = DF.testGroupFirstFrame or {}
+    wipe(DF.testGroupFirstFrame)
+
     -- Position each frame in sorted order (this applies sorting within groups)
     for _, entry in ipairs(frameList) do
         local frame = entry.frame
         local groupNum = entry.groupNum
         local playersInGroup = groupPlayerCounts[groupNum]
-        
+
         -- Get position within group (increments for each frame in the group)
         local posInGroup = groupCurrentPos[groupNum] or 0
         groupCurrentPos[groupNum] = posInGroup + 1
-        
+
+        -- Store the first frame of each group for label anchoring
+        if posInGroup == 0 then
+            DF.testGroupFirstFrame[groupNum] = frame
+        end
+
         -- Position using shared function
         SecureSort:PositionRaidFrameToGroupSlot(
-            frame, 
-            groupNum, 
-            posInGroup, 
-            playersInGroup, 
-            activeGroupList, 
-            lp, 
+            frame,
+            groupNum,
+            posInGroup,
+            playersInGroup,
+            activeGroupList,
+            lp,
             DF.testRaidContainer
         )
     end
@@ -4372,7 +4387,8 @@ function DF:LightweightPositionRaidTestFramesFlat(testFrameCount)
         
         -- Size the container
         DF.testRaidContainer:SetSize(maxWidth, maxHeight)
-        
+        DF:SyncRaidMoverToContainer()
+
         -- Build frame list with test data for sorting
         local frameList = {}
         for i = 1, testFrameCount do

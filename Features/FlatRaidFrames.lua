@@ -799,11 +799,8 @@ function FlatRaidFrames:ResizeInnerContainer()
     -- Also update raidContainer and mover to max possible size
     self:UpdateContainerSize()
     
-    -- Update mover frame size if it exists
-    if DF.raidMoverFrame and DF.raidContainer then
-        local cWidth, cHeight = DF.raidContainer:GetSize()
-        DF.raidMoverFrame:SetSize(math.max(cWidth, 100), math.max(cHeight, 100))
-    end
+    -- Sync mover frame to match the active container size
+    DF:SyncRaidMoverToContainer()
 end
 
 -- Update container size based on layout settings

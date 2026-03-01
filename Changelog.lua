@@ -1,6 +1,6 @@
 local addonName, DF = ...
-DF.ADDON_VERSION = "v4.0.8-alpha.8"
-DF.BUILD_DATE = "2026-02-28T13:37:30Z"
+DF.ADDON_VERSION = "v4.0.8-alpha.3"
+DF.BUILD_DATE = "2026-03-01T11:33:38Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -52,6 +52,13 @@ DF.CHANGELOG_TEXT = [===[
 * Fix Aura Designer not detecting auras hidden by Blizzard's frames (e.g., Symbiotic Relationship) — now scans units directly via C_UnitAuras API instead of reading from Blizzard's aura cache
 * Fix non-defensive buffs appearing in the Defensive Bar when units are out of range — added post-validation to filter out misclassified auras
 * Fix aura filter settings persisting when switching profiles — filter strings are now rebuilt on profile change
+* Fix Aura Designer indicators showing wrong spells during boss fights — removed stale instanceId cache fallback, tracked auras are on Blizzard's whitelist so secret fallback is unnecessary
+* Fix Aura Designer icons and squares getting stuck after auras expire — stale aura data and cooldowns are now cleared on hide, matching existing bar cleanup
+* Fix Aura Designer tooltip crash when hovering indicator icons — removed legacy index-based tooltip fallback that passed invalid index=0
+* Fix Aura Designer buff bar dedup not working for frame-level indicators (border, health bar color, name text) — dedup set now includes all indicator types
+* Fix raid mover frame (orange anchor) not resizing when frame settings change — mover now syncs to the correct 40-player max size in both test and live modes
+* Fix group labels anchoring to the wrong player when sorting is enabled — labels now track the first frame of each group after sort order is applied
+* Fix auto profile global value text showing internal code names for dropdowns (e.g., "HORIZONTAL" instead of "Rows") — dropdown options are now resolved to their display labels
 
 ## [4.0.6] - 2026-02-15
 

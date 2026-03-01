@@ -27,6 +27,20 @@ local reusableVisibleFrames = {}
 local reusableVisibleSet = {}
 
 -- ============================================================
+-- MOVER SYNC HELPER
+-- Keeps raidMoverFrame sized to match the active container
+-- (test container when in test mode, live container otherwise)
+-- ============================================================
+
+function DF:SyncRaidMoverToContainer()
+    if not DF.raidMoverFrame or not DF.raidMoverFrame:IsShown() then return end
+    local source = DF.raidTestMode and DF.testRaidContainer or DF.raidContainer
+    if not source then return end
+    local w, h = source:GetSize()
+    DF.raidMoverFrame:SetSize(max(w, 100), max(h, 100))
+end
+
+-- ============================================================
 -- INITIALIZATION & LAYOUT
 -- ============================================================
 
@@ -222,7 +236,8 @@ function DF:UpdateRaidGroupedLayout()
         -- Set container size
         local totalWidth, totalHeight = SecureSort:CalculateRaidGroupContainerSize(#activeGroupList, lp)
         DF.raidContainer:SetSize(totalWidth, totalHeight)
-        
+        DF:SyncRaidMoverToContainer()
+
         -- Set frame sizes only (secure code handles positions)
         for i = 1, 40 do
             local frame = DF.raidFrames[i]
@@ -324,7 +339,8 @@ function DF:UpdateRaidGroupedLayout()
     -- Calculate and set container size
     local totalWidth, totalHeight = SecureSort:CalculateRaidGroupContainerSize(#activeGroupList, lp)
     DF.raidContainer:SetSize(totalWidth, totalHeight)
-    
+    DF:SyncRaidMoverToContainer()
+
     -- Position each visible frame
     for i = 1, 40 do
         local frame = DF.raidFrames[i]
@@ -472,16 +488,23 @@ function DF:UpdateRaidGroupLabels(activeGroupsTable, db, horizontal)
     local groupFirstFrame = {}   -- groupNum -> first frame of that group (for test mode anchoring)
     
     if isTestMode then
-        -- Test mode: scan test frames to find active groups
-        local testFrameCount = db.raidTestFrameCount or 10
-        for i = 1, testFrameCount do
-            local frame = DF.testRaidFrames and DF.testRaidFrames[i]
-            if frame then
-                -- In test mode with groups: frames 1-5 = group 1, 6-10 = group 2, etc.
-                local groupNum = math.ceil(i / 5)
-                if not activeGroups[groupNum] then
-                    activeGroups[groupNum] = true
-                    groupFirstFrame[groupNum] = frame
+        if DF.testGroupFirstFrame then
+            -- Use sorted first-frame mapping (populated by LightweightPositionRaidTestFrames)
+            for groupNum, frame in pairs(DF.testGroupFirstFrame) do
+                activeGroups[groupNum] = true
+                groupFirstFrame[groupNum] = frame
+            end
+        else
+            -- Fallback: unsorted index-based (before first positioning pass)
+            local testFrameCount = db.raidTestFrameCount or 10
+            for i = 1, testFrameCount do
+                local frame = DF.testRaidFrames and DF.testRaidFrames[i]
+                if frame then
+                    local groupNum = math.ceil(i / 5)
+                    if not activeGroups[groupNum] then
+                        activeGroups[groupNum] = true
+                        groupFirstFrame[groupNum] = frame
+                    end
                 end
             end
         end
@@ -824,21 +847,36 @@ function DF:UnlockRaidFrames()
         DF.FlatRaidFrames:UpdateContainerSize()
     end
     
-    -- Position mover to match container (mover is parented to UIParent)
-    local cWidth, cHeight = DF.raidContainer:GetWidth(), DF.raidContainer:GetHeight()
-    DF.raidMoverFrame:SetSize(math.max(cWidth, 100), math.max(cHeight, 100))
+    -- When in test mode, reposition test frames first so the test container
+    -- has the correct calculated 40-player max size, then size the mover from it.
+    -- When NOT in test mode, size from the live raidContainer (existing behavior).
+    if DF.raidTestMode and DF.testRaidContainer then
+        local testFrameCount = db.raidTestFrameCount or 10
+        if DF.LightweightPositionRaidTestFrames then
+            DF:LightweightPositionRaidTestFrames(testFrameCount)
+        end
+        local tw, th = DF.testRaidContainer:GetSize()
+        DF.raidMoverFrame:SetSize(max(tw, 100), max(th, 100))
+    else
+        local cWidth, cHeight = DF.raidContainer:GetWidth(), DF.raidContainer:GetHeight()
+        DF.raidMoverFrame:SetSize(max(cWidth, 100), max(cHeight, 100))
+    end
+
     DF.raidMoverFrame:ClearAllPoints()
     DF.raidMoverFrame:SetPoint("CENTER", UIParent, "CENTER", db.raidAnchorX or 0, db.raidAnchorY or 0)
     DF.raidMoverFrame:SetFrameStrata("TOOLTIP")  -- Very high strata
     DF.raidMoverFrame:SetFrameLevel(100)
     DF.raidMoverFrame:Show()
     DF.raidMoverFrame:Raise()
-    
-    -- Sync testRaidContainer to current position and size
+
+    -- Sync testRaidContainer position (and size only when not in test mode,
+    -- since test mode already has the correct calculated size)
     if DF.testRaidContainer then
         DF.testRaidContainer:ClearAllPoints()
         DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", db.raidAnchorX or 0, db.raidAnchorY or 0)
-        DF.testRaidContainer:SetSize(DF.raidContainer:GetSize())
+        if not DF.raidTestMode then
+            DF.testRaidContainer:SetSize(DF.raidContainer:GetSize())
+        end
     end
     
     -- Debug info

@@ -51,6 +51,9 @@
 * Fix Aura Designer icons and squares getting stuck after auras expire — stale aura data and cooldowns are now cleared on hide, matching existing bar cleanup
 * Fix Aura Designer tooltip crash when hovering indicator icons — removed legacy index-based tooltip fallback that passed invalid index=0
 * Fix Aura Designer buff bar dedup not working for frame-level indicators (border, health bar color, name text) — dedup set now includes all indicator types
+* Fix raid mover frame (orange anchor) not resizing when frame settings change — mover now syncs to the correct 40-player max size in both test and live modes
+* Fix group labels anchoring to the wrong player when sorting is enabled — labels now track the first frame of each group after sort order is applied
+* Fix auto profile global value text showing internal code names for dropdowns (e.g., "HORIZONTAL" instead of "Rows") — dropdown options are now resolved to their display labels
 
 ## [4.0.6] - 2026-02-15
 

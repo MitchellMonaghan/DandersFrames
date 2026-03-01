@@ -600,8 +600,9 @@ SlashCmdList["DFOVERRIDEDEBUG"] = function()
     end
 end
 
-local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOffset)
+local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOffset, optionsMap)
     verticalOffset = verticalOffset or 0
+    container.overrideOptionsMap = optionsMap
     
     -- Reset button (shown when overridden) - positioned at top right
     local resetBtn = CreateFrame("Button", nil, container, "BackdropTemplate")
@@ -751,6 +752,13 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
                 else
                     globalDisplay = "..."
                 end
+            elseif type(globalValue) == "string" and self.overrideOptionsMap and self.overrideOptionsMap[globalValue] then
+                local mapped = self.overrideOptionsMap[globalValue]
+                if type(mapped) == "table" then
+                    globalDisplay = mapped.text or mapped.label or globalValue
+                else
+                    globalDisplay = tostring(mapped)
+                end
             else
                 globalDisplay = tostring(globalValue or "None")
             end
@@ -795,6 +803,13 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
                 globalDisplay = "Color"
             else
                 globalDisplay = "..."
+            end
+        elseif type(globalValue) == "string" and self.overrideOptionsMap and self.overrideOptionsMap[globalValue] then
+            local mapped = self.overrideOptionsMap[globalValue]
+            if type(mapped) == "table" then
+                globalDisplay = mapped.text or mapped.label or globalValue
+            else
+                globalDisplay = tostring(mapped)
             end
         else
             globalDisplay = tostring(globalValue or "None")
@@ -1693,9 +1708,9 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
                 DF:UpdateAll()
             end
         end
-        AddOverrideIndicators(container, lbl, dbKey, onReset, 6)
+        AddOverrideIndicators(container, lbl, dbKey, onReset, 6, options)
     end
-    
+
     -- Button - use relative anchoring so it resizes with container
     local btn = CreateFrame("Button", nil, container, "BackdropTemplate")
     btn:SetPoint("TOPLEFT", 0, -16)
