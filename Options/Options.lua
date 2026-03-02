@@ -3690,12 +3690,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         bfAll.hideOn = HideDirectOptions
         bfAll.tooltip = "Show every buff with no filtering."
 
+        local bfOnlyMine = buffGroup:AddWidget(GUI:CreateCheckbox(self.child, "Only My Buffs", db, "directBuffOnlyMine", function()
+            DirectFilterChanged()
+            self:RefreshStates()
+        end), 30)
+        bfOnlyMine.hideOn = HideDirectOptions
+        bfOnlyMine.tooltip = "Only show buffs that you cast. Applies to all buff filters."
+
         local buffSubInfo = buffGroup:AddWidget(GUI:CreateLabel(self.child, "|cff888888Enabled filters are combined \226\128\148 buffs matching any selected filter will be shown.|r", 250), 35)
         buffSubInfo.hideOn = HideBuffSubFilters
-
-        local bfPlayer = buffGroup:AddWidget(GUI:CreateCheckbox(self.child, "My Buffs", db, "directBuffFilterPlayer", DirectFilterChanged), 30)
-        bfPlayer.hideOn = HideBuffSubFilters
-        bfPlayer.tooltip = "Buffs you cast on the target."
 
         local bfRaid = buffGroup:AddWidget(GUI:CreateCheckbox(self.child, "Raid Buffs", db, "directBuffFilterRaid", DirectFilterChanged), 30)
         bfRaid.hideOn = HideBuffSubFilters

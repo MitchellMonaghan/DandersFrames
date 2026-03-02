@@ -100,7 +100,7 @@ function Provider:GetUnitAuras(unit, spec)
     -- whitelist so their spellId is always readable, even in combat.
     -- Secret spellIds belong to non-whitelisted auras — skip them.
     if GetUnitAuras then
-        local filters = { "HELPFUL", "HARMFUL" }
+        local filters = { "HELPFUL|PLAYER", "HARMFUL" }
         for _, filter in ipairs(filters) do
             local auras = GetUnitAuras(unit, filter, 100)
             if auras then
@@ -139,7 +139,7 @@ function Provider:GetUnitAuras(unit, spec)
         -- Log all unmatched non-secret spell IDs (helps identify missing alternates)
         if GetUnitAuras then
             local unmatched = {}
-            for _, filter in ipairs({ "HELPFUL", "HARMFUL" }) do
+            for _, filter in ipairs({ "HELPFUL|PLAYER", "HARMFUL" }) do
                 local auras = GetUnitAuras(unit, filter, 100)
                 if auras then
                     for _, ad in ipairs(auras) do

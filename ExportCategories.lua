@@ -414,7 +414,7 @@ DF.ExportCategories = {
         -- Aura Source Mode
         "auraSourceMode",
         "directBuffShowAll",
-        "directBuffFilterPlayer",
+        "directBuffOnlyMine",
         "directBuffFilterRaid",
         "directBuffFilterRaidInCombat",
         "directBuffFilterCancelable",

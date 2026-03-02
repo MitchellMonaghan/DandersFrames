@@ -853,7 +853,7 @@ DF.PartyDefaults = {
 
     -- Direct Mode: Buff Filters
     directBuffShowAll = false,                -- Show all buffs (ignores sub-filters)
-    directBuffFilterPlayer = false,           -- PLAYER filter
+    directBuffOnlyMine = true,               -- Restrict all buff filters to player-cast only
     directBuffFilterRaid = false,             -- RAID filter
     directBuffFilterRaidInCombat = true,      -- RAID_IN_COMBAT filter
     directBuffFilterCancelable = false,       -- CANCELABLE filter
@@ -2017,7 +2017,7 @@ DF.RaidDefaults = {
 
     -- Direct Mode: Buff Filters
     directBuffShowAll = false,                -- Show all buffs (ignores sub-filters)
-    directBuffFilterPlayer = false,           -- PLAYER filter
+    directBuffOnlyMine = true,               -- Restrict all buff filters to player-cast only
     directBuffFilterRaid = false,             -- RAID filter
     directBuffFilterRaidInCombat = true,      -- RAID_IN_COMBAT filter
     directBuffFilterCancelable = false,       -- CANCELABLE filter

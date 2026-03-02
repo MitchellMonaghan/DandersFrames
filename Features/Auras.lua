@@ -701,26 +701,33 @@ local cachedDispelFilter = nil       -- mode-independent (single string, no OR n
 -- Build individual filter strings for buffs (OR logic via post-classification)
 -- Returns nil (show all) or table of "HELPFUL|CLASSIFICATION" strings
 local function BuildDirectBuffFilters(db)
-    if db.directBuffShowAll then return nil end
-    local filters = {}
-    if db.directBuffFilterPlayer then filters[#filters + 1] = "HELPFUL|PLAYER" end
-    if db.directBuffFilterRaid then filters[#filters + 1] = "HELPFUL|RAID" end
-    if db.directBuffFilterRaidInCombat and AuraFilters.RaidInCombat then
-        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.RaidInCombat
+    local onlyMine = db.directBuffOnlyMine
+    local playerSuffix = onlyMine and "|PLAYER" or ""
+
+    if db.directBuffShowAll then
+        return onlyMine and {"HELPFUL|PLAYER"} or nil
     end
-    if db.directBuffFilterCancelable then filters[#filters + 1] = "HELPFUL|CANCELABLE" end
-    if db.directBuffFilterNotCancelable then filters[#filters + 1] = "HELPFUL|NOT_CANCELABLE" end
+
+    local filters = {}
+    if db.directBuffFilterRaid then filters[#filters + 1] = "HELPFUL|RAID" .. playerSuffix end
+    if db.directBuffFilterRaidInCombat and AuraFilters.RaidInCombat then
+        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.RaidInCombat .. playerSuffix
+    end
+    if db.directBuffFilterCancelable then filters[#filters + 1] = "HELPFUL|CANCELABLE" .. playerSuffix end
+    if db.directBuffFilterNotCancelable then filters[#filters + 1] = "HELPFUL|NOT_CANCELABLE" .. playerSuffix end
     if db.directBuffFilterImportant then
-        filters[#filters + 1] = "HELPFUL|" .. (AuraFilters.Important or "IMPORTANT")
+        filters[#filters + 1] = "HELPFUL|" .. (AuraFilters.Important or "IMPORTANT") .. playerSuffix
     end
     if db.directBuffFilterBigDefensive and AuraFilters.BigDefensive then
-        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.BigDefensive
+        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.BigDefensive .. playerSuffix
     end
     if db.directBuffFilterExternalDefensive and AuraFilters.ExternalDefensive then
-        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.ExternalDefensive
+        filters[#filters + 1] = "HELPFUL|" .. AuraFilters.ExternalDefensive .. playerSuffix
     end
-    -- No sub-filters selected = show all (backward compat)
-    if #filters == 0 then return nil end
+    -- No sub-filters selected: show all mine or show all
+    if #filters == 0 then
+        return onlyMine and {"HELPFUL|PLAYER"} or nil
+    end
     return filters
 end
 
