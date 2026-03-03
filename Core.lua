@@ -3614,7 +3614,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             "IronBark", "PainSuppression", "PowerInfusion", "GuardianSpirit",
             "LifeCocoon", "StrengthOfTheBlackOx",
             "BlessingOfProtection", "HolyBulwark", "SacredWeapon",
-            "BlessingOfSacrifice", "BeaconOfVirtue",
+            "BlessingOfSacrifice",
         }
         if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
             for _, profile in pairs(DandersFramesDB_v2.profiles) do

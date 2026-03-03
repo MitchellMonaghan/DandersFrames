@@ -76,7 +76,7 @@ DF.AuraDesigner.SpellIDs = {
     },
     HolyPaladin = {
         BeaconOfFaith = 156910, EternalFlame = 156322, BeaconOfLight = 53563,
-        BeaconOfTheSavior = 1244893,
+        BeaconOfTheSavior = 1244893, BeaconOfVirtue = 200025,
     },
 }
 
@@ -153,6 +153,7 @@ DF.AuraDesigner.TrackableAuras = {
         { name = "BeaconOfFaith",       display = "Beacon of Faith",       color = {1.00, 0.84, 0.28} },
         { name = "EternalFlame",        display = "Eternal Flame",         color = {1.00, 0.60, 0.28} },
         { name = "BeaconOfLight",       display = "Beacon of Light",       color = {1.00, 0.93, 0.47} },
+        { name = "BeaconOfVirtue",      display = "Beacon of Virtue",      color = {1.00, 0.88, 0.37} },
         { name = "BeaconOfTheSavior",   display = "Beacon of the Savior",  color = {0.93, 0.80, 0.47} },
     },
 }
