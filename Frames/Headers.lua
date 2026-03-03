@@ -7358,6 +7358,15 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         
         -- Clear phased icon cache - stale phase data from previous zone/group
         if DF.WipePhasedCache then DF:WipePhasedCache() end
+
+        -- Reset follower dungeon recheck state so retries work on each zone-in.
+        -- Without this, exhausted retries from a previous dungeon prevent
+        -- rechecks from ever running again.
+        DF.followerRecheckCount = 0
+        if followerRecheckTimer then
+            followerRecheckTimer:Cancel()
+            followerRecheckTimer = nil
+        end
         
         -- ARENA FIX: Update header visibility BEFORE applying settings.
         -- Without this, entering arena leaves the arena header hidden and party header
@@ -7407,6 +7416,24 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
             DF:RebuildUnitFrameMap()
             if DF.RefreshLiveFrames then
                 DF:RefreshLiveFrames()
+            end
+
+            -- FOLLOWER DUNGEON FIX: PEW doesn't go through ProcessRosterUpdate,
+            -- so the follower recheck in ProcessRosterUpdate may never trigger if
+            -- GROUP_ROSTER_UPDATE fires before PEW (or doesn't fire at all).
+            -- Schedule an independent recheck here so the party fills in even
+            -- without a subsequent GROUP_ROSTER_UPDATE.
+            if not IsInRaid() and IsInGroup() and GetNumGroupMembers() < 5 and not InCombatLockdown() then
+                DF:Debug("PEW: incomplete party (" .. GetNumGroupMembers() .. " members), scheduling follower recheck")
+                -- Queue a roster update after a delay to give NPCs time to register
+                C_Timer.After(FOLLOWER_RECHECK_DELAY, function()
+                    if not InCombatLockdown() and IsInGroup() and GetNumGroupMembers() < 5 then
+                        DF:Debug("PEW follower recheck — group has " .. GetNumGroupMembers() .. " members")
+                        rosterMembershipCache = {}
+                        lastRosterCount = 0
+                        QueueRosterUpdate()
+                    end
+                end)
             end
         end)
         
@@ -7631,43 +7658,35 @@ function DF:ProcessRosterUpdate()
 
     -- ============================================================
     -- FOLLOWER DUNGEON RECHECK (#402)
-    -- Follower NPCs may not all be registered with the group system
-    -- when we first zone in. If the party looks incomplete and has
-    -- NPC members, schedule a delayed recheck to pick up stragglers.
+    -- Follower NPCs register with the group system on a delay after
+    -- zoning in. If the party looks incomplete, schedule a delayed
+    -- recheck to pick up stragglers. No NPC check required — the
+    -- 3-retry cap keeps this lightweight for normal undersized groups,
+    -- and removing the gate prevents the chicken-and-egg case where
+    -- no NPCs have registered yet so the recheck never triggers.
     -- ============================================================
     if not IsInRaid() and IsInGroup() then
         local groupSize = GetNumGroupMembers()
         if groupSize < 5 then
-            -- Check if any existing party members are NPCs (follower dungeon indicator)
-            local hasNPC = false
-            for i = 1, 4 do
-                local unit = "party" .. i
-                if UnitExists(unit) and not UnitIsPlayer(unit) then
-                    hasNPC = true
-                    break
-                end
+            -- Cancel any existing recheck timer
+            if followerRecheckTimer then
+                followerRecheckTimer:Cancel()
+                followerRecheckTimer = nil
             end
-            if hasNPC then
-                -- Cancel any existing recheck timer
-                if followerRecheckTimer then
-                    followerRecheckTimer:Cancel()
+            -- Track retry count
+            local retryCount = (DF.followerRecheckCount or 0) + 1
+            DF.followerRecheckCount = retryCount
+            if retryCount <= FOLLOWER_RECHECK_MAX then
+                followerRecheckTimer = C_Timer.NewTimer(FOLLOWER_RECHECK_DELAY, function()
                     followerRecheckTimer = nil
-                end
-                -- Track retry count on the timer itself
-                local retryCount = (DF.followerRecheckCount or 0) + 1
-                DF.followerRecheckCount = retryCount
-                if retryCount <= FOLLOWER_RECHECK_MAX then
-                    followerRecheckTimer = C_Timer.NewTimer(FOLLOWER_RECHECK_DELAY, function()
-                        followerRecheckTimer = nil
-                        if not InCombatLockdown() and IsInGroup() and GetNumGroupMembers() < 5 then
-                            DF:Debug("Follower dungeon recheck " .. retryCount .. "/" .. FOLLOWER_RECHECK_MAX .. " — group has " .. GetNumGroupMembers() .. " members")
-                            -- Force roster cache to see the change
-                            rosterMembershipCache = {}
-                            lastRosterCount = 0
-                            QueueRosterUpdate()
-                        end
-                    end)
-                end
+                    if not InCombatLockdown() and IsInGroup() and GetNumGroupMembers() < 5 then
+                        DF:Debug("Follower dungeon recheck " .. retryCount .. "/" .. FOLLOWER_RECHECK_MAX .. " — group has " .. GetNumGroupMembers() .. " members")
+                        -- Force roster cache to see the change
+                        rosterMembershipCache = {}
+                        lastRosterCount = 0
+                        QueueRosterUpdate()
+                    end
+                end)
             end
         else
             -- Full party — clear retry state
