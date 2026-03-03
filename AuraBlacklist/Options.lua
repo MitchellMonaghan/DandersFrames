@@ -441,6 +441,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
     local dropdownContainer = CreateFrame("Frame", nil, parent)
     dropdownContainer:SetSize(280, 55)
     dropdownContainer:SetPoint("TOPLEFT", 10, -10)
+    dropdownContainer:SetFrameStrata("DIALOG")
 
     local classLabel = dropdownContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classLabel:SetPoint("TOPLEFT", 0, 0)
