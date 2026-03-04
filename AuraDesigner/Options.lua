@@ -971,7 +971,7 @@ local function CollectAllEffects()
 
     local spec = ResolveSpec()
     local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
-    -- Build display name lookup
+    -- Build display name lookup (only auras belonging to current spec)
     local displayNames = {}
     if trackable then
         for _, info in ipairs(trackable) do
@@ -980,31 +980,34 @@ local function CollectAllEffects()
     end
 
     for auraName, auraCfg in pairs(adDB.auras) do
-        -- Placed indicators
-        if auraCfg.indicators then
-            for _, indicator in ipairs(auraCfg.indicators) do
-                tinsert(effects, {
-                    source      = "placed",
-                    auraName    = auraName,
-                    displayName = displayNames[auraName] or auraName,
-                    indicatorID = indicator.id,
-                    typeKey     = indicator.type,
-                    config      = indicator,
-                    anchor      = indicator.anchor or "CENTER",
-                })
+        -- Only show effects for auras belonging to the current spec
+        if displayNames[auraName] then
+            -- Placed indicators
+            if auraCfg.indicators then
+                for _, indicator in ipairs(auraCfg.indicators) do
+                    tinsert(effects, {
+                        source      = "placed",
+                        auraName    = auraName,
+                        displayName = displayNames[auraName],
+                        indicatorID = indicator.id,
+                        typeKey     = indicator.type,
+                        config      = indicator,
+                        anchor      = indicator.anchor or "CENTER",
+                    })
+                end
             end
-        end
 
-        -- Frame-level effects (current per-aura model)
-        for _, typeKey in ipairs(FRAME_LEVEL_TYPE_KEYS) do
-            if auraCfg[typeKey] then
-                tinsert(effects, {
-                    source      = "frame",
-                    auraName    = auraName,
-                    displayName = displayNames[auraName] or auraName,
-                    typeKey     = typeKey,
-                    config      = auraCfg[typeKey],
-                })
+            -- Frame-level effects (current per-aura model)
+            for _, typeKey in ipairs(FRAME_LEVEL_TYPE_KEYS) do
+                if auraCfg[typeKey] then
+                    tinsert(effects, {
+                        source      = "frame",
+                        auraName    = auraName,
+                        displayName = displayNames[auraName],
+                        typeKey     = typeKey,
+                        config      = auraCfg[typeKey],
+                    })
+                end
             end
         end
     end
@@ -2188,13 +2191,32 @@ end
 -- GLOBAL VIEW (used by Global tab)
 -- ============================================================
 
+-- Hardcoded fallbacks for global defaults (used when profile is missing new keys)
+local GLOBAL_DEFAULTS_FALLBACK = {
+    iconSize = 24, iconScale = 1.0,
+    showDuration = true, showStacks = true,
+    durationFont = "Fonts\\FRIZQT__.TTF", durationScale = 1.0,
+    durationOutline = "OUTLINE", durationAnchor = "CENTER",
+    durationX = 0, durationY = 0, durationColorByTime = false,
+    stackFont = "Fonts\\FRIZQT__.TTF", stackScale = 1.0,
+    stackOutline = "OUTLINE", stackAnchor = "BOTTOMRIGHT",
+    stackX = 0, stackY = 0,
+    iconBorderEnabled = true, iconBorderThickness = 1,
+    stackMinimum = 2,
+}
+
 local function BuildGlobalView(parent)
     local adDB = GetAuraDesignerDB()
     local rawDefaults = adDB.defaults
     -- Proxy so every write triggers a full preview rebuild
     -- (global defaults affect ALL indicators, need full teardown/rebuild)
+    -- Falls back to GLOBAL_DEFAULTS_FALLBACK for keys missing from existing profiles
     local defaults = setmetatable({}, {
-        __index = rawDefaults,
+        __index = function(_, k)
+            local v = rawDefaults[k]
+            if v ~= nil then return v end
+            return GLOBAL_DEFAULTS_FALLBACK[k]
+        end,
         __newindex = function(_, k, v)
             rawDefaults[k] = v
             RefreshPlacedIndicators()
@@ -2267,6 +2289,21 @@ local function BuildGlobalView(parent)
     durOutline:SetWidth(contentWidth - 10)
     yPos = yPos - 54
 
+    local durAnchor = GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, defaults, "durationAnchor")
+    durAnchor:SetPoint("TOPLEFT", 5, yPos)
+    durAnchor:SetWidth(contentWidth - 10)
+    yPos = yPos - 54
+
+    local durOffX = GUI:CreateSlider(parent, "Offset X", -20, 20, 1, defaults, "durationX")
+    durOffX:SetPoint("TOPLEFT", 5, yPos)
+    durOffX:SetWidth(contentWidth - 10)
+    yPos = yPos - 50
+
+    local durOffY = GUI:CreateSlider(parent, "Offset Y", -20, 20, 1, defaults, "durationY")
+    durOffY:SetPoint("TOPLEFT", 5, yPos)
+    durOffY:SetWidth(contentWidth - 10)
+    yPos = yPos - 54
+
     local stackFontLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     stackFontLabel:SetPoint("TOPLEFT", 10, yPos)
     stackFontLabel:SetText("Stack Text")
@@ -2286,6 +2323,21 @@ local function BuildGlobalView(parent)
     local stkOutline = GUI:CreateDropdown(parent, "Outline", OUTLINE_OPTIONS, defaults, "stackOutline")
     stkOutline:SetPoint("TOPLEFT", 5, yPos)
     stkOutline:SetWidth(contentWidth - 10)
+    yPos = yPos - 54
+
+    local stkAnchor = GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, defaults, "stackAnchor")
+    stkAnchor:SetPoint("TOPLEFT", 5, yPos)
+    stkAnchor:SetWidth(contentWidth - 10)
+    yPos = yPos - 54
+
+    local stkOffX = GUI:CreateSlider(parent, "Offset X", -20, 20, 1, defaults, "stackX")
+    stkOffX:SetPoint("TOPLEFT", 5, yPos)
+    stkOffX:SetWidth(contentWidth - 10)
+    yPos = yPos - 50
+
+    local stkOffY = GUI:CreateSlider(parent, "Offset Y", -20, 20, 1, defaults, "stackY")
+    stkOffY:SetPoint("TOPLEFT", 5, yPos)
+    stkOffY:SetWidth(contentWidth - 10)
     yPos = yPos - 54
 
     -- ===== IMPORT FROM BUFFS TAB =====
@@ -3546,6 +3598,14 @@ CreateEffectCard = function(parent, yPos, effect)
 
             triggersH = -(tagY) + TAG_H + 8  -- total height of trigger section
             trigContainer:SetHeight(triggersH)
+
+            -- Priority slider (frame-level effects only — resolves conflicts when
+            -- multiple auras set the same frame effect, e.g. two health bar colors)
+            local auraProxy = CreateAuraProxy(effect.auraName)
+            local priSlider = GUI:CreateSlider(body, "Priority", 1, 10, 1, auraProxy, "priority")
+            priSlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(triggersH + 4))
+            priSlider:SetWidth(bodyWidth - 10)
+            triggersH = triggersH + 54
         end
 
         local _, bodyH = BuildTypeContent(body, effect.typeKey, effect.auraName, bodyWidth, proxy, triggersH, indicatorGroup, effect.indicatorID)
@@ -3696,7 +3756,15 @@ BuildEffectsTab = function()
         end
     end)
 
-    yPos = yPos - 38
+    yPos = yPos - 44
+
+    -- ── ACTIVE INDICATORS heading ──
+    local activeHeader = parent:CreateFontString(nil, "OVERLAY")
+    activeHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    activeHeader:SetPoint("TOPLEFT", 10, yPos)
+    activeHeader:SetText("ACTIVE INDICATORS")
+    activeHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    yPos = yPos - 16
 
     -- ── FILTER CHIPS (wrapping layout) ──
     local chipsFrame = CreateFrame("Frame", nil, parent)
@@ -3715,9 +3783,9 @@ BuildEffectsTab = function()
         { key = "framealpha",  label = "Alpha"  },
     }
 
-    local CHIP_H = 18
-    local CHIP_GAP = 3
-    local CHIP_ROW_GAP = 3
+    local CHIP_H = 22
+    local CHIP_GAP = 4
+    local CHIP_ROW_GAP = 4
     local chipBtns = {}
 
     for _, chip in ipairs(FILTER_CHIPS) do
@@ -3725,12 +3793,12 @@ BuildEffectsTab = function()
         chipBtn:SetHeight(CHIP_H)
 
         local chipTxt = chipBtn:CreateFontString(nil, "OVERLAY")
-        chipTxt:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+        chipTxt:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
         chipTxt:SetPoint("CENTER", 0, 0)
         chipTxt:SetText(chip.label)
 
         local tw = chipTxt:GetStringWidth()
-        chipBtn:SetWidth(max(tw + 12, 26))
+        chipBtn:SetWidth(max(tw + 16, 32))
 
         if activeFilter == chip.key then
             ApplyBackdrop(chipBtn,

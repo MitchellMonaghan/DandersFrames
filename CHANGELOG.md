@@ -13,15 +13,20 @@
 * Added spell icons to effect card headers and layout group member rows for easier identification
 * Replaced Unicode font icons with texture icons from Media/Icons (WoW fonts don't render Unicode glyphs)
 * Increased Add Indicator dropdown font size and row height for better readability
-* Improved filter chip text contrast for inactive state
+* Enlarged filter chips (bigger font and hit area) for easier interaction
 * Changed type badge text to white for better readability on colored backgrounds
 * Increased layout group member row height with larger reorder arrows
+* Added "Active Indicators" section heading above filter chips for clarity
 * Added bottom padding to preview instruction text
+* Added duration and stack text placement controls (anchor, offset X/Y) to Global Defaults
+* Added priority slider to frame-level effects for resolving conflicts when multiple auras set the same effect
 * Layout group sliders (offset X, offset Y, spacing) now update the preview live during drag
 
 ### Bug Fixes
+* Fixed Aura Designer showing indicators from other specs/classes on the current character
 * Fixed Aura Designer preview click-to-select causing error due to scoping issue with SwitchTab
 * Fixed Copy Appearance dropdown causing error due to same SwitchTab scoping issue
+* Fixed Global Defaults duration/stack placement controls not showing values on existing profiles
 
 ## [4.0.11] - 2026-03-03
 
