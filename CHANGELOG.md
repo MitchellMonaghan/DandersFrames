@@ -1,5 +1,28 @@
 # DandersFrames Changelog
 
+## [4.0.12] - 2026-03-04
+
+### New Features
+* **Multi-trigger frame effects** — a single frame effect (border, health bar color, etc.) can now trigger on any of multiple auras (e.g. show a border if Rejuvenation OR Regrowth OR Lifebloom is active)
+* **Layout groups** — group placed indicators at a shared anchor with automatic flow positioning; when an aura is inactive, grouped indicators collapse without gaps
+* **Copy appearance** — copy indicator appearance settings (size, color, border, etc.) from any other indicator of the same type via a dropdown on the effect card
+* **Preview click-to-select** — left-click any indicator on the frame preview to jump to its settings; right-click to remove it
+
+### Improvements
+* Redesigned Aura Designer UI with 50/50 split layout, tabbed effects panel, and flat effects list with filter chips
+* Added spell icons to effect card headers and layout group member rows for easier identification
+* Replaced Unicode font icons with texture icons from Media/Icons (WoW fonts don't render Unicode glyphs)
+* Increased Add Indicator dropdown font size and row height for better readability
+* Improved filter chip text contrast for inactive state
+* Changed type badge text to white for better readability on colored backgrounds
+* Increased layout group member row height with larger reorder arrows
+* Added bottom padding to preview instruction text
+* Layout group sliders (offset X, offset Y, spacing) now update the preview live during drag
+
+### Bug Fixes
+* Fixed Aura Designer preview click-to-select causing error due to scoping issue with SwitchTab
+* Fixed Copy Appearance dropdown causing error due to same SwitchTab scoping issue
+
 ## [4.0.11] - 2026-03-03
 
 ### Bug Fixes

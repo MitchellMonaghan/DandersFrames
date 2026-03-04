@@ -56,9 +56,52 @@ end
 -- ============================================================
 
 local activeIndicators = {}  -- Reused each frame: { { auraName, typeKey, config, auraData, priority } }
+local groupLookup = {}       -- Reused: "auraName#indicatorID" → { group, memberIdx }
+local groupActiveMembers = {} -- Reused: groupID → { ordered active members }
 
 local function prioritySort(a, b)
     return a.priority < b.priority  -- Lower number = higher priority (1 wins over 10)
+end
+
+-- ============================================================
+-- LAYOUT GROUP RESOLUTION
+-- Builds lookup tables for layout group membership and computes
+-- which grouped indicators are currently active.
+-- ============================================================
+
+local function ResolveLayoutGroups(adDB, activeInds)
+    wipe(groupLookup)
+    wipe(groupActiveMembers)
+
+    if not adDB.layoutGroups then return end
+
+    -- Build lookup from all group members
+    for _, group in ipairs(adDB.layoutGroups) do
+        if group.members then
+            groupActiveMembers[group.id] = {}
+            for memberIdx, member in ipairs(group.members) do
+                local key = member.auraName .. "#" .. member.indicatorID
+                groupLookup[key] = { group = group, memberIdx = memberIdx }
+            end
+        end
+    end
+
+    -- Identify which group members are active (in display order)
+    for _, ind in ipairs(activeInds) do
+        if ind.placed and ind.instanceKey then
+            local entry = groupLookup[ind.instanceKey]
+            if entry and groupActiveMembers[entry.group.id] then
+                tinsert(groupActiveMembers[entry.group.id], { indicator = ind, memberIdx = entry.memberIdx })
+            end
+        end
+    end
+
+    -- Sort each group's active members by their member order
+    for _, actives in pairs(groupActiveMembers) do
+        if #actives > 1 then
+            sort(actives, function(a, b) return a.memberIdx < b.memberIdx end)
+        end
+    end
 end
 
 -- ============================================================
@@ -146,7 +189,14 @@ function Engine:UpdateFrame(frame)
                     end
                 end
                 for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
-                    if auraCfg[typeDef.key] then types[#types+1] = typeDef.key end
+                    local typeCfg = auraCfg[typeDef.key]
+                    if typeCfg then
+                        local trigStr = typeDef.key
+                        if typeCfg.triggers and #typeCfg.triggers > 1 then
+                            trigStr = trigStr .. "(triggers:" .. table.concat(typeCfg.triggers, ",") .. ")"
+                        end
+                        types[#types+1] = trigStr
+                    end
                 end
                 DF:Debug("AD", "  config: %s -> %s", auraName, #types > 0 and table.concat(types, ", ") or "(no indicators)")
             end
@@ -166,10 +216,11 @@ function Engine:UpdateFrame(frame)
                     auraData = nil
                 end
             end
-            if auraData then
-                local priority = auraCfg.priority or 5
 
-                -- Placed indicators from instances array
+            local priority = auraCfg.priority or 5
+
+            -- Placed indicators from instances array (only when owning aura is active)
+            if auraData then
                 if auraCfg.indicators then
                     for _, indicator in ipairs(auraCfg.indicators) do
                         tinsert(activeIndicators, {
@@ -183,17 +234,49 @@ function Engine:UpdateFrame(frame)
                         })
                     end
                 end
+            end
 
-                -- Frame-level indicators (unchanged keys)
-                for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
-                    local typeCfg = auraCfg[typeDef.key]
-                    if typeCfg then
+            -- Frame-level indicators: check triggers array if present,
+            -- otherwise fall back to owning aura only (legacy behavior)
+            for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
+                local typeCfg = auraCfg[typeDef.key]
+                if typeCfg then
+                    local triggerAuraData = nil
+                    local triggers = typeCfg.triggers
+                    if triggers then
+                        -- Multi-trigger: fire if ANY trigger aura is active.
+                        -- Pick the trigger with the highest remaining duration
+                        -- so expiring color transitions use the longest-lasting aura.
+                        local bestRemaining = -1
+                        for _, trigName in ipairs(triggers) do
+                            local trigData = activeAuras[trigName]
+                            if trigData then
+                                local expTime = trigData.expirationTime
+                                if not expTime or expTime == 0 then
+                                    -- Permanent buff — always prefer, never expires
+                                    triggerAuraData = trigData
+                                    bestRemaining = math.huge
+                                else
+                                    local remaining = expTime - now
+                                    if remaining > bestRemaining then
+                                        bestRemaining = remaining
+                                        triggerAuraData = trigData
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        -- Legacy: just use owning aura
+                        triggerAuraData = auraData
+                    end
+
+                    if triggerAuraData then
                         tinsert(activeIndicators, {
                             auraName = auraName,
                             typeKey  = typeDef.key,
                             placed   = false,
                             config   = typeCfg,
-                            auraData = auraData,
+                            auraData = triggerAuraData,
                             priority = priority,
                         })
                     end
@@ -205,6 +288,7 @@ function Engine:UpdateFrame(frame)
     -- Expose active auraInstanceIDs on the frame for buff bar deduplication.
     -- Include auras with ANY indicator type (placed or frame-level) so the
     -- buff bar doesn't show duplicates of tracked auras.
+    -- Also dedup trigger auras for multi-trigger frame effects.
     if not frame.dfAD_activeInstanceIDs then
         frame.dfAD_activeInstanceIDs = {}
     end
@@ -226,6 +310,18 @@ function Engine:UpdateFrame(frame)
                     frame.dfAD_activeInstanceIDs[auraData.auraInstanceID] = true
                 end
             end
+            -- Also mark trigger auras for dedup when multi-trigger is configured
+            for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
+                local typeCfg = auraCfg[typeDef.key]
+                if typeCfg and typeCfg.triggers then
+                    for _, trigName in ipairs(typeCfg.triggers) do
+                        local trigData = activeAuras[trigName]
+                        if trigData and trigData.auraInstanceID then
+                            frame.dfAD_activeInstanceIDs[trigData.auraInstanceID] = true
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -243,14 +339,61 @@ function Engine:UpdateFrame(frame)
         end
     end
 
+    -- Resolve layout group membership and compute active members
+    ResolveLayoutGroups(adDB, activeIndicators)
+
     -- Dispatch to indicator renderers
     Indicators:BeginFrame(frame)
 
+    local setmetatable = setmetatable
     for _, ind in ipairs(activeIndicators) do
         -- Placed indicators use instanceKey (e.g., "Rejuvenation#1") for pool lookup
         -- Frame-level indicators use auraName
         local key = ind.placed and ind.instanceKey or ind.auraName
-        Indicators:Apply(frame, ind.typeKey, ind.config, ind.auraData, adDB.defaults, key, ind.priority)
+        local config = ind.config
+
+        -- Check if this indicator belongs to a layout group
+        if ind.placed and ind.instanceKey then
+            local entry = groupLookup[ind.instanceKey]
+            if entry then
+                local group = entry.group
+                local actives = groupActiveMembers[group.id]
+
+                -- Find this indicator's position among active members
+                local activeIdx = 0
+                if actives then
+                    for i, am in ipairs(actives) do
+                        if am.indicator == ind then activeIdx = i - 1; break end
+                    end
+                end
+
+                -- Compute offset based on grow direction + active index
+                local size = config.size or (adDB.defaults and adDB.defaults.iconSize) or 24
+                local scale = config.scale or (adDB.defaults and adDB.defaults.iconScale) or 1.0
+                local step = (size * scale) + (group.spacing or 2)
+
+                local oX, oY = group.offsetX or 0, group.offsetY or 0
+                local dir = group.growDirection or "RIGHT"
+                if dir == "RIGHT" then
+                    oX = oX + (activeIdx * step)
+                elseif dir == "LEFT" then
+                    oX = oX - (activeIdx * step)
+                elseif dir == "DOWN" then
+                    oY = oY - (activeIdx * step)
+                elseif dir == "UP" then
+                    oY = oY + (activeIdx * step)
+                end
+
+                -- Create a lightweight metatable wrapper so we don't mutate saved config
+                config = setmetatable({
+                    anchor = group.anchor or "TOPLEFT",
+                    offsetX = oX,
+                    offsetY = oY,
+                }, { __index = ind.config })
+            end
+        end
+
+        Indicators:Apply(frame, ind.typeKey, config, ind.auraData, adDB.defaults, key, ind.priority)
     end
 
     -- Hide/revert anything not applied this frame

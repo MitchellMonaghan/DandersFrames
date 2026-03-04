@@ -10,7 +10,9 @@ local pairs, ipairs, type = pairs, ipairs, type
 local format = string.format
 local wipe = wipe
 local tinsert = table.insert
+local tremove = table.remove
 local max, min = math.max, math.min
+local sort = table.sort
 
 -- Local references set during BuildAuraDesignerPage
 local GUI
@@ -19,9 +21,7 @@ local db
 local Adapter
 
 -- State
-local selectedAura = nil        -- nil = Global Settings view, or aura internal name
 local selectedSpec = nil         -- Current spec key being viewed
-local expandedSections = {}     -- Persist expand state: expandedSections["auraName:typeKey"] = true/false
 
 -- Reusable color constants (mirrors GUI.lua)
 local C_BACKGROUND = {r = 0.08, g = 0.08, b = 0.08, a = 0.95}
@@ -478,6 +478,50 @@ local function ChangeInstanceType(auraName, indicatorID, newType)
     inst.offsetY = savedOffY or 0
 end
 
+-- Keys to skip when copying appearance between indicators (identity + placement)
+local COPY_SKIP_KEYS = { id = true, type = true, anchor = true, offsetX = true, offsetY = true }
+
+-- Deep-copy a value (handles nested tables like color = {r,g,b,a})
+local function DeepCopyValue(val)
+    if type(val) == "table" then
+        local copy = {}
+        for k, v in pairs(val) do
+            copy[k] = DeepCopyValue(v)
+        end
+        return copy
+    end
+    return val
+end
+
+-- Copy appearance settings from one placed indicator to another of the same type.
+-- Copies all keys except identity (id, type) and placement (anchor, offsetX, offsetY).
+-- Keys present on source are deep-copied; keys absent on source are removed from
+-- destination so they fall through to defaults via the proxy chain.
+local function CopyIndicatorAppearance(srcAuraName, srcIndicatorID, dstAuraName, dstIndicatorID)
+    local src = GetIndicatorByID(srcAuraName, srcIndicatorID)
+    local dst = GetIndicatorByID(dstAuraName, dstIndicatorID)
+    if not src or not dst then return end
+    if src.type ~= dst.type then return end
+
+    -- Collect all non-skip keys from both source and destination
+    local allKeys = {}
+    for k in pairs(src) do
+        if not COPY_SKIP_KEYS[k] then allKeys[k] = true end
+    end
+    for k in pairs(dst) do
+        if not COPY_SKIP_KEYS[k] then allKeys[k] = true end
+    end
+
+    -- Sync: copy from src, clear from dst what src doesn't have
+    for k in pairs(allKeys) do
+        if src[k] ~= nil then
+            dst[k] = DeepCopyValue(src[k])
+        else
+            dst[k] = nil
+        end
+    end
+end
+
 -- Forward declaration: lightweight preview refresh (defined after RefreshPreviewEffects)
 -- Called from proxy __newindex so every setting change updates the preview in real-time
 local RefreshPreviewLightweight
@@ -638,6 +682,199 @@ local function CountActiveEffects(auraName)
     return count
 end
 
+-- ============================================================
+-- MULTI-TRIGGER HELPERS
+-- Functions for managing trigger auras on frame-level effects
+-- ============================================================
+
+-- Get triggers for a frame effect (returns owning aura name in a table if no explicit triggers)
+local function GetFrameEffectTriggers(auraName, typeKey)
+    local adDB = GetAuraDesignerDB()
+    local auraCfg = adDB and adDB.auras and adDB.auras[auraName]
+    local typeCfg = auraCfg and auraCfg[typeKey]
+    if typeCfg and typeCfg.triggers then
+        return typeCfg.triggers
+    end
+    return { auraName }  -- Default: just the owning aura
+end
+
+-- Add a trigger aura to a frame effect
+local function AddFrameEffectTrigger(auraName, typeKey, triggerName)
+    local typeCfg = EnsureTypeConfig(auraName, typeKey)
+    if not typeCfg.triggers then
+        typeCfg.triggers = { auraName }  -- Initialize with owner
+    end
+    -- Check not already present
+    for _, t in ipairs(typeCfg.triggers) do
+        if t == triggerName then return end
+    end
+    tinsert(typeCfg.triggers, triggerName)
+end
+
+-- Remove a trigger aura from a frame effect (minimum 1 trigger required)
+local function RemoveFrameEffectTrigger(auraName, typeKey, triggerName)
+    local adDB = GetAuraDesignerDB()
+    local auraCfg = adDB and adDB.auras and adDB.auras[auraName]
+    local typeCfg = auraCfg and auraCfg[typeKey]
+    if not typeCfg or not typeCfg.triggers or #typeCfg.triggers <= 1 then return end
+    for i, t in ipairs(typeCfg.triggers) do
+        if t == triggerName then
+            tremove(typeCfg.triggers, i)
+            break
+        end
+    end
+end
+
+-- ============================================================
+-- LAYOUT GROUP HELPERS
+-- Functions for managing layout groups
+-- ============================================================
+
+-- State for expanded layout group cards
+local expandedGroups = {}
+
+-- Find which layout group (if any) an indicator belongs to
+local function GetIndicatorLayoutGroup(auraName, indicatorID)
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.layoutGroups then return nil end
+    for _, group in ipairs(adDB.layoutGroups) do
+        if group.members then
+            for _, member in ipairs(group.members) do
+                if member.auraName == auraName and member.indicatorID == indicatorID then
+                    return group
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Get all placed indicators NOT in any layout group
+local function GetUngroupedIndicators()
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.auras then return {} end
+    -- Build set of grouped indicators
+    local grouped = {}
+    if adDB.layoutGroups then
+        for _, group in ipairs(adDB.layoutGroups) do
+            if group.members then
+                for _, member in ipairs(group.members) do
+                    grouped[member.auraName .. "#" .. member.indicatorID] = true
+                end
+            end
+        end
+    end
+    -- Collect ungrouped
+    local result = {}
+    local spec = ResolveSpec()
+    local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
+    local displayNames = {}
+    if trackable then
+        for _, info in ipairs(trackable) do
+            displayNames[info.name] = info.display
+        end
+    end
+    for auraName, auraCfg in pairs(adDB.auras) do
+        if auraCfg.indicators then
+            for _, ind in ipairs(auraCfg.indicators) do
+                local key = auraName .. "#" .. ind.id
+                if not grouped[key] then
+                    tinsert(result, {
+                        auraName = auraName,
+                        displayName = displayNames[auraName] or auraName,
+                        indicatorID = ind.id,
+                        typeKey = ind.type,
+                    })
+                end
+            end
+        end
+    end
+    return result
+end
+
+-- Create a new layout group
+local function CreateLayoutGroup(name)
+    local adDB = GetAuraDesignerDB()
+    if not adDB then return nil end
+    if not adDB.layoutGroups then adDB.layoutGroups = {} end
+    if not adDB.nextLayoutGroupID then adDB.nextLayoutGroupID = 1 end
+    local id = adDB.nextLayoutGroupID
+    adDB.nextLayoutGroupID = id + 1
+    local group = {
+        id = id,
+        name = name or ("Group " .. id),
+        anchor = "TOPLEFT",
+        offsetX = 0,
+        offsetY = 0,
+        growDirection = "RIGHT",
+        spacing = 2,
+        members = {},
+    }
+    tinsert(adDB.layoutGroups, group)
+    return group
+end
+
+-- Delete a layout group by ID
+local function DeleteLayoutGroup(groupID)
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.layoutGroups then return end
+    for i, group in ipairs(adDB.layoutGroups) do
+        if group.id == groupID then
+            -- Delete all member indicators when deleting the group
+            if group.members then
+                for _, member in ipairs(group.members) do
+                    RemoveIndicatorInstance(member.auraName, member.indicatorID)
+                end
+            end
+            tremove(adDB.layoutGroups, i)
+            break
+        end
+    end
+    expandedGroups[groupID] = nil
+end
+
+-- Find a layout group by ID
+local function GetLayoutGroupByID(groupID)
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.layoutGroups then return nil end
+    for _, group in ipairs(adDB.layoutGroups) do
+        if group.id == groupID then return group end
+    end
+    return nil
+end
+
+-- Add a member to a layout group
+local function AddGroupMember(groupID, auraName, indicatorID)
+    local group = GetLayoutGroupByID(groupID)
+    if not group then return end
+    if not group.members then group.members = {} end
+    -- Check not already in this group
+    for _, m in ipairs(group.members) do
+        if m.auraName == auraName and m.indicatorID == indicatorID then return end
+    end
+    tinsert(group.members, { auraName = auraName, indicatorID = indicatorID })
+end
+
+-- Remove a member from a layout group
+local function RemoveGroupMember(groupID, auraName, indicatorID)
+    local group = GetLayoutGroupByID(groupID)
+    if not group or not group.members then return end
+    for i, m in ipairs(group.members) do
+        if m.auraName == auraName and m.indicatorID == indicatorID then
+            tremove(group.members, i)
+            break
+        end
+    end
+end
+
+-- Swap two members in a layout group (for reordering)
+local function SwapGroupMembers(groupID, idx1, idx2)
+    local group = GetLayoutGroupByID(groupID)
+    if not group or not group.members then return end
+    if idx1 < 1 or idx1 > #group.members or idx2 < 1 or idx2 > #group.members then return end
+    group.members[idx1], group.members[idx2] = group.members[idx2], group.members[idx1]
+end
+
 -- Anchor dot pool (populated during CreateFramePreview, used by drag system)
 local anchorDots = {}
 
@@ -659,35 +896,147 @@ local ANCHOR_POSITIONS = {
 -- Declared early so drag/indicator/effects code can capture them
 -- ============================================================
 local mainFrame           -- The root frame for the entire page
-local leftPanel           -- Left content area (flexible width)
-local rightPanel          -- Right settings panel (280px fixed)
-local tileStripHeader     -- Header bar for tile strip (stores countLabel)
+local leftPanel           -- Left content area (frame preview)
+local rightPanel          -- Right settings panel (tabbed)
 local enableBanner        -- Enable toggle banner
 local coexistBanner       -- "Buffs are also visible" info strip
-local tileStrip           -- Horizontal scrolling aura tile palette
-local tileStripContent    -- ScrollChild for tile strip
-local tileStripScrollbar  -- Horizontal scrollbar for tile strip
 local framePreview        -- Mock unit frame preview
-local activeEffectsStrip  -- Active effects list below preview
 local dragHintText        -- Dynamic hint text below frame preview
-local rightScrollFrame    -- Scroll frame for right panel content
-local rightScrollChild    -- ScrollChild for right panel
 
 -- Layout anchors — stored during build so RefreshPage can shift content
 -- when the coexistence banner is shown/hidden
 local COEXIST_BANNER_H = 24
 local COEXIST_GAP       = 4
 local contentBaseY          -- yPos where content starts (below enable banner)
-local tileWrapRef           -- reference to tileWrap frame
-local contentRightInset     -- RIGHT_PANEL_W + RIGHT_GAP for left-side panels
-local origY_tileWrap        -- original yPos of tileWrap
+local contentRightInset     -- Right inset for left-side panels
 local origY_framePreview    -- original yPos of framePreview
-local origY_effectsStrip    -- original yPos of activeEffectsStrip
 local currentBannerShift = 0 -- tracks current coexist banner offset
 
--- Tile button pool
-local tilePool = {}
-local activeTiles = {}
+-- ============================================================
+-- UI STATE (v4 redesign — tabbed right panel)
+-- ============================================================
+local activeTab = "effects"       -- "effects" | "layout" | "global"
+local activeFilter = "all"        -- Filter chip state
+local expandedCards = {}           -- { ["placed:AuraName#1"] = true, ["frame:border:AuraName"] = true }
+local spellPickerActive = false    -- Is spell picker overlay showing
+local spellPickerType = nil        -- "icon" | "square" | "bar"
+
+-- Tab system frame references
+local tabBar                -- Tab bar frame (Effects | Layout Groups | Global)
+local tabButtons = {}       -- { effects = btn, layout = btn, global = btn }
+local tabContentFrame       -- Scrollable content area below tabs
+local tabScrollFrame        -- ScrollFrame wrapping tabContentFrame
+local spellPickerView       -- Overlay view for spell picker (replaces tabs when active)
+local effectCardPool = {}   -- Reusable card frames
+
+-- ============================================================
+-- EFFECTS LIST DATA COLLECTION
+-- Gathers all effects across all auras into a flat list for
+-- the new Effects tab. Replaces the old per-aura view.
+-- ============================================================
+
+local FRAME_LEVEL_TYPE_KEYS = { "border", "healthbar", "nametext", "healthtext", "framealpha" }
+
+local FRAME_LEVEL_LABELS = {
+    border     = "Border",
+    healthbar  = "Health Bar",
+    nametext   = "Name Text",
+    healthtext = "Health Text",
+    framealpha = "Frame Alpha",
+}
+
+local PLACED_TYPE_LABELS = {
+    icon   = "Icon",
+    square = "Square",
+    bar    = "Bar",
+}
+
+local BADGE_COLORS = {
+    icon       = { r = 0.36, g = 0.72, b = 0.94 },  -- Blue
+    square     = { r = 0.51, g = 0.86, b = 0.51 },  -- Green
+    bar        = { r = 0.94, g = 0.71, b = 0.24 },  -- Orange
+    border     = { r = 0.80, g = 0.50, b = 0.80 },  -- Purple
+    healthbar  = { r = 0.94, g = 0.31, b = 0.31 },  -- Red
+    nametext   = { r = 0.72, g = 0.72, b = 0.94 },  -- Light blue
+    healthtext = { r = 0.72, g = 0.72, b = 0.94 },  -- Light blue
+    framealpha = { r = 0.60, g = 0.60, b = 0.60 },  -- Grey
+}
+
+-- Collect all configured effects into a flat, sorted list
+-- Returns: { { source="placed"|"frame", auraName, typeKey, ... }, ... }
+local function CollectAllEffects()
+    local effects = {}
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.auras then return effects end
+
+    local spec = ResolveSpec()
+    local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
+    -- Build display name lookup
+    local displayNames = {}
+    if trackable then
+        for _, info in ipairs(trackable) do
+            displayNames[info.name] = info.display
+        end
+    end
+
+    for auraName, auraCfg in pairs(adDB.auras) do
+        -- Placed indicators
+        if auraCfg.indicators then
+            for _, indicator in ipairs(auraCfg.indicators) do
+                tinsert(effects, {
+                    source      = "placed",
+                    auraName    = auraName,
+                    displayName = displayNames[auraName] or auraName,
+                    indicatorID = indicator.id,
+                    typeKey     = indicator.type,
+                    config      = indicator,
+                    anchor      = indicator.anchor or "CENTER",
+                })
+            end
+        end
+
+        -- Frame-level effects (current per-aura model)
+        for _, typeKey in ipairs(FRAME_LEVEL_TYPE_KEYS) do
+            if auraCfg[typeKey] then
+                tinsert(effects, {
+                    source      = "frame",
+                    auraName    = auraName,
+                    displayName = displayNames[auraName] or auraName,
+                    typeKey     = typeKey,
+                    config      = auraCfg[typeKey],
+                })
+            end
+        end
+    end
+
+    -- Sort: newest first (reverse by insertion order — higher IDs first for placed)
+    sort(effects, function(a, b)
+        -- Placed before frame-level
+        if a.source ~= b.source then
+            return a.source == "placed"
+        end
+        -- Within placed: higher indicatorID first (newest)
+        if a.source == "placed" and b.source == "placed" then
+            return (a.indicatorID or 0) > (b.indicatorID or 0)
+        end
+        -- Within frame-level: alphabetical by type
+        return a.typeKey < b.typeKey
+    end)
+
+    return effects
+end
+
+-- Check if a specific aura + type combo already has a placed indicator
+local function IsAuraTypePlaced(auraName, typeKey)
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.auras then return false end
+    local auraCfg = adDB.auras[auraName]
+    if not auraCfg or not auraCfg.indicators then return false end
+    for _, indicator in ipairs(auraCfg.indicators) do
+        if indicator.type == typeKey then return true end
+    end
+    return false
+end
 
 -- ============================================================
 -- DRAG AND DROP SYSTEM
@@ -704,6 +1053,7 @@ local dragState = {
     specKey = nil,          -- Spec key for icon lookup
     dropAnchor = nil,       -- Currently hovered anchor name
     moveIndicatorID = nil,  -- Set when re-dragging an existing placed indicator
+    indicatorType = nil,    -- "icon" | "square" | "bar" — type to create on drop
 }
 
 local dragGhost = nil
@@ -745,7 +1095,7 @@ end
 
 local EndDrag  -- forward declaration (defined below StartDrag)
 
-local function StartDrag(auraName, auraInfo, specKey)
+local function StartDrag(auraName, auraInfo, specKey, indicatorType)
     if dragState.isDragging then return end
 
     dragState.isDragging = true
@@ -753,6 +1103,7 @@ local function StartDrag(auraName, auraInfo, specKey)
     dragState.auraInfo = auraInfo
     dragState.specKey = specKey
     dragState.dropAnchor = nil
+    dragState.indicatorType = indicatorType or "icon"
 
     -- Setup ghost
     local ghost = CreateDragGhost()
@@ -891,6 +1242,7 @@ EndDrag = function()
     local auraName = dragState.auraName
     local dropAnchor = dragState.dropAnchor
     local moveID = dragState.moveIndicatorID
+    local indicatorType = dragState.indicatorType or "icon"
 
     -- Clear state
     dragState.isDragging = false
@@ -899,6 +1251,7 @@ EndDrag = function()
     dragState.specKey = nil
     dragState.dropAnchor = nil
     dragState.moveIndicatorID = nil
+    dragState.indicatorType = nil
 
     -- Hide ghost
     if dragGhost then dragGhost:Hide() end
@@ -932,13 +1285,21 @@ EndDrag = function()
                 inst.offsetY = 0
             end
         else
-            -- Create a new icon indicator instance at the dropped anchor
-            local inst = CreateIndicatorInstance(auraName, "icon")
-            inst.anchor = dropAnchor
+            -- Create a new indicator instance at the dropped anchor
+            local inst = CreateIndicatorInstance(auraName, indicatorType)
+            if inst then
+                inst.anchor = dropAnchor
+            end
         end
 
-        -- Select the aura
-        selectedAura = auraName
+        -- Expand the new indicator card in the Effects tab
+        local adDB = GetAuraDesignerDB()
+        local auraCfg = adDB and adDB.auras and adDB.auras[auraName]
+        local lastInst = auraCfg and auraCfg.indicators and auraCfg.indicators[#auraCfg.indicators]
+        if lastInst then
+            local cardKey = "placed:" .. auraName .. "#" .. lastInst.id
+            expandedCards[cardKey] = true
+        end
     end
 
     -- Refresh everything
@@ -1000,6 +1361,52 @@ local function RefreshPlacedIndicators()
     local Indicators = DF.AuraDesigner and DF.AuraDesigner.Indicators
     if not Indicators then return end
 
+    -- Build layout group position lookup for preview
+    -- In preview all indicators are visible, so compute positions for all members
+    local groupPositions = {}  -- "auraName#indicatorID" → { anchor, offsetX, offsetY }
+    if adDB.layoutGroups then
+        for _, group in ipairs(adDB.layoutGroups) do
+            if group.members then
+                for memberIdx, member in ipairs(group.members) do
+                    local key = member.auraName .. "#" .. member.indicatorID
+                    -- Compute position based on group settings
+                    local activeIdx = memberIdx - 1  -- 0-based
+                    -- Need to find the indicator's size to compute step
+                    local memberCfg = adDB.auras and adDB.auras[member.auraName]
+                    local indCfg = nil
+                    if memberCfg and memberCfg.indicators then
+                        for _, ind in ipairs(memberCfg.indicators) do
+                            if ind.id == member.indicatorID then
+                                indCfg = ind
+                                break
+                            end
+                        end
+                    end
+                    local size = (indCfg and indCfg.size) or (adDB.defaults and adDB.defaults.iconSize) or 24
+                    local scale = (indCfg and indCfg.scale) or (adDB.defaults and adDB.defaults.iconScale) or 1.0
+                    local step = (size * scale) + (group.spacing or 2)
+
+                    local oX, oY = group.offsetX or 0, group.offsetY or 0
+                    local dir = group.growDirection or "RIGHT"
+                    if dir == "RIGHT" then
+                        oX = oX + (activeIdx * step)
+                    elseif dir == "LEFT" then
+                        oX = oX - (activeIdx * step)
+                    elseif dir == "DOWN" then
+                        oY = oY - (activeIdx * step)
+                    elseif dir == "UP" then
+                        oY = oY + (activeIdx * step)
+                    end
+                    groupPositions[key] = {
+                        anchor = group.anchor or "TOPLEFT",
+                        offsetX = oX,
+                        offsetY = oY,
+                    }
+                end
+            end
+        end
+    end
+
     -- Iterate all configured auras, find placed indicator instances
     for auraName, auraCfg in pairs(adDB.auras) do
         local info = infoLookup[auraName]
@@ -1008,6 +1415,17 @@ local function RefreshPlacedIndicators()
                 local instanceKey = auraName .. "#" .. indicator.id
                 local capturedAura = auraName
                 local capturedID = indicator.id
+
+                -- Apply layout group position override if applicable
+                local effectiveConfig = indicator
+                local gPos = groupPositions[instanceKey]
+                if gPos then
+                    effectiveConfig = setmetatable({
+                        anchor = gPos.anchor,
+                        offsetX = gPos.offsetX,
+                        offsetY = gPos.offsetY,
+                    }, { __index = indicator })
+                end
 
                 if indicator.type == "icon" then
                     local tex = GetAuraIcon(spec, auraName)
@@ -1018,7 +1436,7 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 3,
                     }
-                    Indicators:ApplyIcon(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ApplyIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local iconMap = mockFrame.dfAD_icons
                     local icon = iconMap and iconMap[instanceKey]
@@ -1031,10 +1449,17 @@ local function RefreshPlacedIndicators()
                         icon:SetScript("OnMouseUp", function(_, button)
                             if dragState.isDragging then return end
                             if button == "RightButton" then
-                                RemoveIndicatorInstance(capturedAura, capturedID)
-                                DF:AuraDesigner_RefreshPage()
+                                -- Don't delete grouped indicators (managed by layout group)
+                                if not GetIndicatorLayoutGroup(capturedAura, capturedID) then
+                                    RemoveIndicatorInstance(capturedAura, capturedID)
+                                    DF:AuraDesigner_RefreshPage()
+                                end
                             elseif button == "LeftButton" then
-                                selectedAura = capturedAura
+                                -- Collapse all cards and expand only the clicked one
+                                local cardKey = "placed:" .. capturedAura .. "#" .. capturedID
+                                wipe(expandedCards)
+                                expandedCards[cardKey] = true
+                                activeTab = "effects"
                                 DF:AuraDesigner_RefreshPage()
                             end
                         end)
@@ -1053,7 +1478,7 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 3,
                     }
-                    Indicators:ApplySquare(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ApplySquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local sqMap = mockFrame.dfAD_squares
                     local sq = sqMap and sqMap[instanceKey]
@@ -1063,10 +1488,16 @@ local function RefreshPlacedIndicators()
                         sq:SetScript("OnMouseUp", function(_, button)
                             if dragState.isDragging then return end
                             if button == "RightButton" then
-                                RemoveIndicatorInstance(capturedAura, capturedID)
-                                DF:AuraDesigner_RefreshPage()
+                                if not GetIndicatorLayoutGroup(capturedAura, capturedID) then
+                                    RemoveIndicatorInstance(capturedAura, capturedID)
+                                    DF:AuraDesigner_RefreshPage()
+                                end
                             elseif button == "LeftButton" then
-                                selectedAura = capturedAura
+                                -- Collapse all cards and expand only the clicked one
+                                local cardKey = "placed:" .. capturedAura .. "#" .. capturedID
+                                wipe(expandedCards)
+                                expandedCards[cardKey] = true
+                                activeTab = "effects"
                                 DF:AuraDesigner_RefreshPage()
                             end
                         end)
@@ -1085,7 +1516,7 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 0,
                     }
-                    Indicators:ApplyBar(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ApplyBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local barMap = mockFrame.dfAD_bars
                     local bar = barMap and barMap[instanceKey]
@@ -1095,10 +1526,16 @@ local function RefreshPlacedIndicators()
                         bar:SetScript("OnMouseUp", function(_, button)
                             if dragState.isDragging then return end
                             if button == "RightButton" then
-                                RemoveIndicatorInstance(capturedAura, capturedID)
-                                DF:AuraDesigner_RefreshPage()
+                                if not GetIndicatorLayoutGroup(capturedAura, capturedID) then
+                                    RemoveIndicatorInstance(capturedAura, capturedID)
+                                    DF:AuraDesigner_RefreshPage()
+                                end
                             elseif button == "LeftButton" then
-                                selectedAura = capturedAura
+                                -- Collapse all cards and expand only the clicked one
+                                local cardKey = "placed:" .. capturedAura .. "#" .. capturedID
+                                wipe(expandedCards)
+                                expandedCards[cardKey] = true
+                                activeTab = "effects"
                                 DF:AuraDesigner_RefreshPage()
                             end
                         end)
@@ -1140,12 +1577,12 @@ local function RefreshPreviewEffects()
     end
     mockFrame:SetAlpha(1)
 
-    -- If no aura selected, stay at defaults
-    if not selectedAura then return end
-
+    -- Show frame-level effects from all configured auras
+    -- (new UI has no single selectedAura — preview shows all effects)
     local adDB = GetAuraDesignerDB()
-    local auraCfg = adDB.auras[selectedAura]
-    if not auraCfg then return end
+    if not adDB or not adDB.auras then return end
+
+    for _, auraCfg in pairs(adDB.auras) do
 
     -- Border effect (uses highlight system for all 6 styles)
     if auraCfg.border and framePreview.borderOverlay and DF.ApplyHighlightStyle then
@@ -1192,6 +1629,8 @@ local function RefreshPreviewEffects()
     if auraCfg.framealpha then
         mockFrame:SetAlpha(auraCfg.framealpha.alpha or 0.5)
     end
+
+    end  -- for _, auraCfg
 end
 
 -- ============================================================
@@ -1211,11 +1650,50 @@ RefreshPreviewLightweight = function()
     local spec = ResolveSpec()
     if not spec then return end
 
+    -- Build layout group position lookup (same as RefreshPlacedIndicators)
+    local groupPositions = {}
+    if adDB.layoutGroups then
+        for _, group in ipairs(adDB.layoutGroups) do
+            if group.members then
+                for memberIdx, member in ipairs(group.members) do
+                    local key = member.auraName .. "#" .. member.indicatorID
+                    local activeIdx = memberIdx - 1
+                    local memberCfg = adDB.auras and adDB.auras[member.auraName]
+                    local indCfg = nil
+                    if memberCfg and memberCfg.indicators then
+                        for _, ind in ipairs(memberCfg.indicators) do
+                            if ind.id == member.indicatorID then indCfg = ind; break end
+                        end
+                    end
+                    local size = (indCfg and indCfg.size) or (adDB.defaults and adDB.defaults.iconSize) or 24
+                    local scale = (indCfg and indCfg.scale) or (adDB.defaults and adDB.defaults.iconScale) or 1.0
+                    local step = (size * scale) + (group.spacing or 2)
+                    local oX, oY = group.offsetX or 0, group.offsetY or 0
+                    local dir = group.growDirection or "RIGHT"
+                    if dir == "RIGHT" then oX = oX + (activeIdx * step)
+                    elseif dir == "LEFT" then oX = oX - (activeIdx * step)
+                    elseif dir == "DOWN" then oY = oY - (activeIdx * step)
+                    elseif dir == "UP" then oY = oY + (activeIdx * step) end
+                    groupPositions[key] = { anchor = group.anchor or "TOPLEFT", offsetX = oX, offsetY = oY }
+                end
+            end
+        end
+    end
+
     -- Re-apply placed indicator instances using current settings
     for auraName, auraCfg in pairs(adDB.auras) do
         if auraCfg.indicators then
             for _, indicator in ipairs(auraCfg.indicators) do
                 local instanceKey = auraName .. "#" .. indicator.id
+
+                -- Apply layout group position override if applicable
+                local effectiveConfig = indicator
+                local gPos = groupPositions[instanceKey]
+                if gPos then
+                    effectiveConfig = setmetatable({
+                        anchor = gPos.anchor, offsetX = gPos.offsetX, offsetY = gPos.offsetY,
+                    }, { __index = indicator })
+                end
 
                 if indicator.type == "icon" then
                     local iconMap = mockFrame.dfAD_icons
@@ -1227,7 +1705,7 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 3,
                         }
-                        Indicators:ApplyIcon(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                        Indicators:ApplyIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
                         -- Re-enable mouse (ApplyIcon disables it for real unit frames)
                         icon:EnableMouse(true)
                         if icon.SetMouseClickEnabled then icon:SetMouseClickEnabled(true) end
@@ -1241,7 +1719,7 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 3,
                         }
-                        Indicators:ApplySquare(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                        Indicators:ApplySquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
                         sq:EnableMouse(true)
                     end
                 elseif indicator.type == "bar" then
@@ -1253,7 +1731,7 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 0,
                         }
-                        Indicators:ApplyBar(mockFrame, indicator, mockAuraData, adDB.defaults, instanceKey)
+                        Indicators:ApplyBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
                         -- Re-enable mouse (ApplyBar disables it for real unit frames)
                         bar:EnableMouse(true)
                         if bar.SetMouseClickEnabled then bar:SetMouseClickEnabled(true) end
@@ -1268,317 +1746,20 @@ RefreshPreviewLightweight = function()
 end
 
 -- ============================================================
--- TILE STRIP
+-- INDICATOR TYPE WIDGET BUILDER
+-- (Tile strip removed in v4 redesign)
 -- ============================================================
-
-local function CreateAuraTile(parent, auraInfo, index)
-    local TILE_W, ICON_SZ = 68, 56
-    local tile = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    tile:SetSize(TILE_W, ICON_SZ + 18)  -- icon + name row
-    -- No backdrop on tile itself, icon carries the visual
-
-    -- Icon area (colored square as placeholder until real spell icons)
-    tile.iconBg = CreateFrame("Frame", nil, tile, "BackdropTemplate")
-    tile.iconBg:SetPoint("TOP", 0, 0)
-    tile.iconBg:SetSize(ICON_SZ, ICON_SZ)
-    if not tile.iconBg.SetBackdrop then Mixin(tile.iconBg, BackdropTemplateMixin) end
-    tile.iconBg:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
-    })
-    tile.iconBg:SetBackdropColor(auraInfo.color[1] * 0.25, auraInfo.color[2] * 0.25, auraInfo.color[3] * 0.25, 1)
-    tile.iconBg:SetBackdropBorderColor(0.27, 0.27, 0.27, 1)
-
-    -- Spell icon texture (with letter fallback)
-    local spec = ResolveSpec()
-    local iconTex = GetAuraIcon(spec, auraInfo.name)
-
-    tile.icon = tile.iconBg:CreateTexture(nil, "ARTWORK")
-    tile.icon:SetPoint("TOPLEFT", 2, -2)
-    tile.icon:SetPoint("BOTTOMRIGHT", -2, 2)
-
-    if iconTex then
-        tile.icon:SetTexture(iconTex)
-        tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- trim icon borders
-    else
-        -- Fallback: colored square with first letter
-        tile.icon:SetColorTexture(auraInfo.color[1] * 0.3, auraInfo.color[2] * 0.3, auraInfo.color[3] * 0.3, 1)
-    end
-
-    -- Fallback letter (shown if no spell icon available)
-    tile.letter = tile.iconBg:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    tile.letter:SetPoint("CENTER", 0, 0)
-    tile.letter:SetText(auraInfo.display:sub(1, 1))
-    tile.letter:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
-    if iconTex then
-        tile.letter:Hide()  -- hide letter when we have a real icon
-    end
-
-    -- Name label
-    tile.nameLabel = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    tile.nameLabel:SetPoint("TOP", tile.iconBg, "BOTTOM", 0, -3)
-    tile.nameLabel:SetWidth(TILE_W)
-    tile.nameLabel:SetMaxLines(1)
-    tile.nameLabel:SetText(auraInfo.display)
-    tile.nameLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
-    -- Configured badge (bottom-right of icon)
-    tile.badge = tile.iconBg:CreateFontString(nil, "OVERLAY")
-    tile.badge:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-    tile.badge:SetPoint("BOTTOMRIGHT", tile.iconBg, "BOTTOMRIGHT", -2, 2)
-    tile.badge:SetText("")
-    tile.badge:SetTextColor(1, 1, 1)
-    tile.badge:Hide()
-
-    -- Badge background (small accent pill)
-    tile.badgeBg = tile.iconBg:CreateTexture(nil, "ARTWORK", nil, 1)
-    tile.badgeBg:SetPoint("CENTER", tile.badge, "CENTER", 0, 0)
-    tile.badgeBg:SetSize(14, 12)
-    local tc = GetThemeColor()
-    tile.badgeBg:SetColorTexture(tc.r, tc.g, tc.b, 0.85)
-    tile.badgeBg:Hide()
-
-    -- Glow overlay (simulates box-shadow for selected/configured state)
-    tile.glow = tile:CreateTexture(nil, "BACKGROUND")
-    tile.glow:SetPoint("TOPLEFT", tile.iconBg, "TOPLEFT", -4, 4)
-    tile.glow:SetPoint("BOTTOMRIGHT", tile.iconBg, "BOTTOMRIGHT", 4, -4)
-    tile.glow:SetColorTexture(0, 0, 0, 0)  -- invisible by default
-    tile.glow:Hide()
-
-    tile.auraInfo = auraInfo
-    tile.auraName = auraInfo.name
-
-    tile.SetSelected = function(self, selected)
-        local c = GetThemeColor()
-        if selected then
-            self.iconBg:SetBackdropBorderColor(c.r, c.g, c.b, 1)
-            self.glow:SetColorTexture(c.r, c.g, c.b, 0.25)
-            self.glow:Show()
-        else
-            local adDB = GetAuraDesignerDB()
-            local auraCfg = adDB.auras[self.auraName]
-            if auraCfg then
-                -- Configured: accent border, subtle glow
-                self.iconBg:SetBackdropBorderColor(c.r, c.g, c.b, 0.6)
-                self.glow:SetColorTexture(c.r, c.g, c.b, 0.15)
-                self.glow:Show()
-            else
-                self.iconBg:SetBackdropBorderColor(0.27, 0.27, 0.27, 1)
-                self.glow:Hide()
-            end
-        end
-    end
-
-    tile.UpdateBadge = function(self)
-        local count = CountActiveEffects(self.auraName)
-        if count > 0 then
-            self.badge:SetText(count)
-            self.badge:Show()
-            self.badgeBg:Show()
-        else
-            self.badge:Hide()
-            self.badgeBg:Hide()
-        end
-    end
-
-    tile:SetScript("OnEnter", function(self)
-        if selectedAura ~= self.auraName and not dragState.isDragging then
-            local c = GetThemeColor()
-            self.iconBg:SetBackdropBorderColor(c.r, c.g, c.b, 0.8)
-        end
-    end)
-    tile:SetScript("OnLeave", function(self)
-        if not dragState.isDragging then
-            self:SetSelected(selectedAura == self.auraName)
-        end
-    end)
-
-    tile:SetScript("OnClick", function(self)
-        selectedAura = self.auraName
-        DF:AuraDesigner_RefreshPage()
-    end)
-
-    -- Drag support: drag aura tile onto frame preview to place at anchor
-    tile:RegisterForDrag("LeftButton")
-    tile:SetScript("OnDragStart", function(self)
-        local spec = ResolveSpec()
-        if spec then
-            StartDrag(self.auraName, self.auraInfo, spec)
-        end
-    end)
-
-    return tile
-end
-
-local function CreateGlobalSettingsTile(parent)
-    local TILE_W, ICON_SZ = 68, 56
-    local tile = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    tile:SetSize(TILE_W, ICON_SZ + 18)
-
-    -- Icon area (dashed border effect via backdrop)
-    tile.iconBg = CreateFrame("Frame", nil, tile, "BackdropTemplate")
-    tile.iconBg:SetPoint("TOP", 0, 0)
-    tile.iconBg:SetSize(ICON_SZ, ICON_SZ)
-    if not tile.iconBg.SetBackdrop then Mixin(tile.iconBg, BackdropTemplateMixin) end
-    tile.iconBg:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 2,
-    })
-    tile.iconBg:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-    tile.iconBg:SetBackdropBorderColor(0.40, 0.40, 0.40, 1)
-
-    -- Gear/cog icon
-    tile.letter = tile.iconBg:CreateTexture(nil, "OVERLAY")
-    tile.letter:SetSize(36, 36)
-    tile.letter:SetPoint("CENTER", 0, 0)
-    tile.letter:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\settings")
-    tile.letter:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    tile.nameLabel = tile:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    tile.nameLabel:SetPoint("TOP", tile.iconBg, "BOTTOM", 0, -3)
-    tile.nameLabel:SetWidth(TILE_W)
-    tile.nameLabel:SetMaxLines(1)
-    tile.nameLabel:SetText("Global Settings")
-    tile.nameLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    tile.auraName = nil
-    tile.UpdateBadge = function() end  -- No badge for global
-
-    tile.SetSelected = function(self, isSelected)
-        if isSelected then
-            local c = GetThemeColor()
-            self.iconBg:SetBackdropBorderColor(c.r, c.g, c.b, 1)
-        else
-            self.iconBg:SetBackdropBorderColor(0.40, 0.40, 0.40, 1)
-        end
-    end
-
-    tile:SetScript("OnEnter", function(self)
-        if selectedAura ~= nil then
-            self.iconBg:SetBackdropBorderColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 1)
-        end
-    end)
-    tile:SetScript("OnLeave", function(self)
-        self:SetSelected(selectedAura == nil)
-    end)
-
-    tile:SetScript("OnClick", function(self)
-        selectedAura = nil
-        DF:AuraDesigner_RefreshPage()
-    end)
-
-    return tile
-end
-
--- ============================================================
--- TILE STRIP POPULATION
--- ============================================================
-
-local function PopulateTileStrip()
-    for _, tile in ipairs(activeTiles) do
-        tile:Hide()
-    end
-    wipe(activeTiles)
-
-    if not tileStripContent then return end
-
-    local spec = ResolveSpec()
-    selectedSpec = spec
-
-    if not spec then return end
-
-    local auras = Adapter:GetTrackableAuras(spec)
-    if not auras or #auras == 0 then return end
-
-    local TILE_GAP = 6
-    local TILE_PAD = 10  -- left/right padding inside strip
-
-    local globalTile = CreateGlobalSettingsTile(tileStripContent)
-    globalTile:SetPoint("LEFT", tileStripContent, "LEFT", TILE_PAD, 0)
-    globalTile:SetSelected(selectedAura == nil)
-    activeTiles[#activeTiles + 1] = globalTile
-
-    local prevTile = globalTile
-    for i, auraInfo in ipairs(auras) do
-        local tile = CreateAuraTile(tileStripContent, auraInfo, i)
-        tile:SetPoint("LEFT", prevTile, "RIGHT", TILE_GAP, 0)
-        tile:SetSelected(selectedAura == auraInfo.name)
-        tile:UpdateBadge()
-        activeTiles[#activeTiles + 1] = tile
-        prevTile = tile
-    end
-
-    local totalWidth = TILE_PAD + (#auras + 1) * (68 + TILE_GAP) + TILE_PAD
-    tileStripContent:SetWidth(totalWidth)
-    if tileStripScrollbar then tileStripScrollbar:UpdatePosition() end
-
-    -- Update tile strip header count
-    if tileStripHeader and tileStripHeader.countLabel then
-        tileStripHeader.countLabel:SetText(tostring(#auras))
-    end
-end
-
--- ============================================================
--- RIGHT PANEL: INDICATOR TYPE SECTION BUILDER
--- Builds a collapsible section for one indicator type
--- ============================================================
-
-local function AddSectionHeader(parent, yOffset, label, typeKey, auraName, width)
-    local headerHeight = 28
-    local header = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    header:SetSize(width or 258, headerHeight)
-    header:SetPoint("TOPLEFT", 0, yOffset)
-    ApplyBackdrop(header, C_PANEL, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
-
-    -- Enable checkbox
-    local cb = CreateFrame("CheckButton", nil, header, "BackdropTemplate")
-    cb:SetSize(16, 16)
-    cb:SetPoint("LEFT", 6, 0)
-    ApplyBackdrop(cb, C_ELEMENT, C_BORDER)
-
-    cb.Check = cb:CreateTexture(nil, "OVERLAY")
-    cb.Check:SetTexture("Interface\\Buttons\\WHITE8x8")
-    local tc = GetThemeColor()
-    cb.Check:SetVertexColor(tc.r, tc.g, tc.b)
-    cb.Check:SetPoint("CENTER")
-    cb.Check:SetSize(8, 8)
-    cb:SetCheckedTexture(cb.Check)
-
-    local adDB = GetAuraDesignerDB()
-    local auraCfg = adDB.auras[auraName]
-    cb:SetChecked(auraCfg and auraCfg[typeKey] ~= nil)
-
-    -- Collapse/expand arrow
-    header.arrow = header:CreateTexture(nil, "OVERLAY")
-    header.arrow:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-    header.arrow:SetSize(14, 14)
-    header.arrow:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
-    header.arrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    -- Title
-    local title = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    title:SetPoint("LEFT", header.arrow, "RIGHT", 4, 0)
-    title:SetText(label)
-    title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
-    -- State
-    header.expanded = false
-    header.contentFrame = nil
-    header.typeKey = typeKey
-    header.auraName = auraName
-
-    return header, cb
-end
 
 -- Build the widget content for a given indicator type
 -- optProxy: optional proxy table; if nil, creates one via CreateProxy (frame-level types)
-local function BuildTypeContent(parent, typeKey, auraName, width, optProxy)
+-- yOffset: optional vertical offset to start content below other elements (e.g. trigger tags)
+-- layoutGroup: optional layout group table; if set, anchor/offset controls are replaced with a note
+-- indicatorID: optional indicator ID for placed indicators (used by Copy From)
+local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOffset, layoutGroup, indicatorID)
     local proxy = optProxy or CreateProxy(auraName, typeKey)
     local contentWidth = width or 248
     local widgets = {}
-    local totalHeight = 8  -- top padding
+    local totalHeight = 10 + (yOffset or 0)  -- top padding + optional offset
 
     local function AddWidget(widget, height)
         widget:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, -totalHeight)
@@ -1588,19 +1769,167 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy)
     end
 
     local function AddDivider()
-        totalHeight = totalHeight + 4
+        totalHeight = totalHeight + 6
         local div = parent:CreateTexture(nil, "ARTWORK")
         div:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -totalHeight)
         div:SetSize(contentWidth - 20, 1)
         div:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.4)
-        totalHeight = totalHeight + 6
+        totalHeight = totalHeight + 8
+    end
+
+    -- ── COPY FROM (placed indicators only: icon, square, bar) ──
+    if indicatorID and (typeKey == "icon" or typeKey == "square" or typeKey == "bar") then
+        local copyContainer = CreateFrame("Frame", nil, parent)
+        copyContainer:SetHeight(36)
+
+        local copyLabel = copyContainer:CreateFontString(nil, "OVERLAY")
+        copyLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+        copyLabel:SetPoint("TOPLEFT", 1, -1)
+        copyLabel:SetText("COPY APPEARANCE FROM")
+        copyLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+        local copyBtn = CreateFrame("Button", nil, copyContainer, "BackdropTemplate")
+        copyBtn:SetHeight(20)
+        copyBtn:SetPoint("TOPLEFT", 0, -12)
+        copyBtn:SetPoint("RIGHT", copyContainer, "RIGHT", 0, 0)
+        ApplyBackdrop(copyBtn,
+            {r = 0.12, g = 0.12, b = 0.12, a = 1},
+            {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.6})
+
+        local copyBtnText = copyBtn:CreateFontString(nil, "OVERLAY")
+        copyBtnText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+        copyBtnText:SetPoint("LEFT", 6, 0)
+        copyBtnText:SetText("Select indicator...")
+        copyBtnText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+        local chevron = copyBtn:CreateTexture(nil, "OVERLAY")
+        chevron:SetSize(10, 10)
+        chevron:SetPoint("RIGHT", -6, 0)
+        chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+        chevron:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+        copyBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.18, 0.18, 0.18, 1)
+            copyBtnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+        end)
+        copyBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.12, 0.12, 0.12, 1)
+            copyBtnText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+        end)
+
+        local capturedAuraName = auraName
+        local capturedIndicatorID = indicatorID
+        local capturedTypeKey = typeKey
+
+        copyBtn:SetScript("OnClick", function()
+            -- Build list of other placed indicators of the same type
+            local adDB = GetAuraDesignerDB()
+            if not adDB or not adDB.auras then return end
+
+            local spec = ResolveSpec()
+            local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
+            local displayNames = {}
+            if trackable then
+                for _, info in ipairs(trackable) do
+                    displayNames[info.name] = info.display
+                end
+            end
+
+            local sources = {}
+            for srcAura, auraCfg in pairs(adDB.auras) do
+                if auraCfg.indicators then
+                    for _, ind in ipairs(auraCfg.indicators) do
+                        if ind.type == capturedTypeKey then
+                            -- Skip self
+                            if not (srcAura == capturedAuraName and ind.id == capturedIndicatorID) then
+                                tinsert(sources, {
+                                    auraName = srcAura,
+                                    displayName = displayNames[srcAura] or srcAura,
+                                    indicatorID = ind.id,
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+
+            if #sources == 0 then return end
+            sort(sources, function(a, b) return a.displayName < b.displayName end)
+
+            -- Create or reuse picker dropdown
+            local dropName = "DFADCopyFromPicker"
+            local drop = _G[dropName]
+            if not drop then
+                drop = CreateFrame("Frame", dropName, UIParent, "BackdropTemplate")
+                drop:SetFrameStrata("FULLSCREEN_DIALOG")
+                drop:SetClampedToScreen(true)
+            end
+            if drop:IsShown() and drop._ownerBtn == copyBtn then
+                drop:Hide()
+                return
+            end
+            drop._ownerBtn = copyBtn
+
+            -- Clear previous children
+            for _, child in ipairs({drop:GetChildren()}) do child:Hide(); child:SetParent(nil) end
+            for _, rgn in ipairs({drop:GetRegions()}) do
+                if rgn:GetObjectType() == "FontString" then rgn:Hide() end
+            end
+
+            drop:SetWidth(200)
+            ApplyBackdrop(drop, C_BACKGROUND, C_BORDER)
+
+            local dy = -4
+            for _, src in ipairs(sources) do
+                local btn = CreateFrame("Button", nil, drop)
+                btn:SetHeight(20)
+                btn:SetPoint("TOPLEFT", 4, dy)
+                btn:SetPoint("RIGHT", drop, "RIGHT", -4, 0)
+
+                local lbl = btn:CreateFontString(nil, "OVERLAY")
+                lbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                lbl:SetPoint("LEFT", 6, 0)
+                lbl:SetText(src.displayName)
+                lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+                hl:SetAllPoints()
+                hl:SetColorTexture(1, 1, 1, 0.05)
+
+                local capturedSrc = src
+                btn:SetScript("OnClick", function()
+                    CopyIndicatorAppearance(capturedSrc.auraName, capturedSrc.indicatorID, capturedAuraName, capturedIndicatorID)
+                    drop:Hide()
+                    DF:AuraDesigner_RefreshPage()
+                end)
+
+                dy = dy - 20
+            end
+            drop:SetHeight(-dy + 4)
+
+            drop:ClearAllPoints()
+            drop:SetPoint("TOPLEFT", copyBtn, "BOTTOMLEFT", 0, -2)
+            drop:Show()
+
+            drop:SetScript("OnHide", function() drop._ownerBtn = nil end)
+        end)
+
+        AddWidget(copyContainer, 38)
+        AddDivider()
     end
 
     if typeKey == "icon" then
-        -- Placement
-        AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        -- Placement (or managed-by-group note)
+        if layoutGroup then
+            local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
+            groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+            AddWidget(groupNote, 18)
+        else
+            AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        end
         AddDivider()
         -- Sizing & appearance
         AddWidget(GUI:CreateSlider(parent, "Size", 8, 64, 1, proxy, "size"), 54)
@@ -1642,10 +1971,17 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy)
             true), 28)
 
     elseif typeKey == "square" then
-        -- Placement
-        AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        -- Placement (or managed-by-group note)
+        if layoutGroup then
+            local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
+            groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+            AddWidget(groupNote, 18)
+        else
+            AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        end
         AddDivider()
         -- Sizing & appearance
         AddWidget(GUI:CreateSlider(parent, "Size", 4, 64, 1, proxy, "size"), 54)
@@ -1691,10 +2027,17 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy)
             true), 28)
 
     elseif typeKey == "bar" then
-        -- Placement
-        AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
-        AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        -- Placement (or managed-by-group note)
+        if layoutGroup then
+            local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
+            groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+            AddWidget(groupNote, 18)
+        else
+            AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset X", -50, 50, 1, proxy, "offsetX"), 54)
+            AddWidget(GUI:CreateSlider(parent, "Offset Y", -50, 50, 1, proxy, "offsetY"), 54)
+        end
         AddDivider()
         -- Size & orientation
         AddWidget(GUI:CreateDropdown(parent, "Orientation", BAR_ORIENT_OPTIONS, proxy, "orientation", function()
@@ -1836,16 +2179,14 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy)
         AddWidget(GUI:CreateSlider(parent, "Expiring Alpha", 0, 1, 0.05, proxy, "expiringAlpha"), 54)
     end
 
-    totalHeight = totalHeight + 4  -- bottom padding
+    totalHeight = totalHeight + 8  -- bottom padding
     parent:SetHeight(totalHeight)
     return widgets, totalHeight
 end
 
 -- ============================================================
--- RIGHT PANEL CONTENT
+-- GLOBAL VIEW (used by Global tab)
 -- ============================================================
-
-local rightPanelChildren = {}
 
 local function BuildGlobalView(parent)
     local adDB = GetAuraDesignerDB()
@@ -1861,7 +2202,9 @@ local function BuildGlobalView(parent)
         end,
     })
     local yPos = -8
-    local contentWidth = 258
+    local parentW = parent:GetWidth()
+    if parentW < 50 then parentW = 280 end
+    local contentWidth = parentW - 16  -- 8px padding each side
     local c = GetThemeColor()
 
     -- Title
@@ -1892,7 +2235,8 @@ local function BuildGlobalView(parent)
     -- ===== FONT SETTINGS =====
     local fontDiv = parent:CreateTexture(nil, "ARTWORK")
     fontDiv:SetPoint("TOPLEFT", 10, yPos)
-    fontDiv:SetSize(238, 1)
+    fontDiv:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
+    fontDiv:SetHeight(1)
     fontDiv:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
     yPos = yPos - 10
 
@@ -1947,7 +2291,8 @@ local function BuildGlobalView(parent)
     -- ===== IMPORT FROM BUFFS TAB =====
     local div0 = parent:CreateTexture(nil, "ARTWORK")
     div0:SetPoint("TOPLEFT", 10, yPos)
-    div0:SetSize(238, 1)
+    div0:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
+    div0:SetHeight(1)
     div0:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
     yPos = yPos - 10
 
@@ -1959,7 +2304,7 @@ local function BuildGlobalView(parent)
 
     local importDesc = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     importDesc:SetPoint("TOPLEFT", 10, yPos)
-    importDesc:SetWidth(238)
+    importDesc:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
     importDesc:SetJustifyH("LEFT")
     importDesc:SetWordWrap(true)
     importDesc:SetText("Import your existing Buffs tab settings as defaults for all auras. Compatible settings will be applied automatically.")
@@ -1990,8 +2335,9 @@ local function BuildGlobalView(parent)
 
     -- Import button
     local importBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    importBtn:SetSize(238, 26)
+    importBtn:SetHeight(26)
     importBtn:SetPoint("TOPLEFT", 10, yPos)
+    importBtn:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
     ApplyBackdrop(importBtn, C_ELEMENT, C_BORDER)
 
     local importBtnText = importBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2039,7 +2385,8 @@ local function BuildGlobalView(parent)
     -- ===== DIVIDER =====
     local divider = parent:CreateTexture(nil, "ARTWORK")
     divider:SetPoint("TOPLEFT", 10, yPos)
-    divider:SetSize(238, 1)
+    divider:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
+    divider:SetHeight(1)
     divider:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
     yPos = yPos - 12
 
@@ -2056,8 +2403,9 @@ local function BuildGlobalView(parent)
     local targetLabel = (targetMode == "raid") and "Raid" or "Party"
 
     local copyBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    copyBtn:SetSize(238, 26)
+    copyBtn:SetHeight(26)
     copyBtn:SetPoint("TOPLEFT", 10, yPos)
+    copyBtn:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
     ApplyBackdrop(copyBtn, C_ELEMENT, C_BORDER)
 
     local copyText = copyBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2092,8 +2440,9 @@ local function BuildGlobalView(parent)
 
     -- Reset All button
     local resetBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    resetBtn:SetSize(238, 26)
+    resetBtn:SetHeight(26)
     resetBtn:SetPoint("TOPLEFT", 10, yPos)
+    resetBtn:SetPoint("RIGHT", parent, "RIGHT", -10, 0)
     ApplyBackdrop(resetBtn, {r = 0.3, g = 0.12, b = 0.12, a = 1}, {r = 0.5, g = 0.2, b = 0.2, a = 1})
 
     local resetText = resetBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2117,626 +2466,12 @@ local function BuildGlobalView(parent)
     parent:SetHeight(-yPos + 10)
 end
 
-local function BuildPerAuraView(parent, auraName)
-    local auraInfo
-    local spec = ResolveSpec()
-    if spec then
-        for _, info in ipairs(Adapter:GetTrackableAuras(spec)) do
-            if info.name == auraName then
-                auraInfo = info
-                break
-            end
-        end
-    end
-    if not auraInfo then return end
-
-    local adDB = GetAuraDesignerDB()
-    local auraCfg = adDB.auras[auraName]
-    local yPos = -6
-    local contentWidth = 258
-
-    -- ===== INTRO PARAGRAPH =====
-    local introText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    introText:SetPoint("TOPLEFT", 10, yPos)
-    introText:SetWidth(contentWidth - 20)
-    introText:SetText("Configure how this aura appears when active on a unit frame.")
-    introText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    introText:SetJustifyH("LEFT")
-    yPos = yPos - (introText:GetStringHeight() + 6)
-
-    -- ===== DIVIDER =====
-    local div1 = parent:CreateTexture(nil, "ARTWORK")
-    div1:SetPoint("TOPLEFT", 10, yPos)
-    div1:SetSize(238, 1)
-    div1:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-    yPos = yPos - 8
-
-    -- ===== INDICATORS SECTION HEADER =====
-    local tc0 = GetThemeColor()
-    local indHeader = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    indHeader:SetHeight(34)
-    indHeader:SetPoint("TOPLEFT", 0, yPos)
-    indHeader:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-    ApplyBackdrop(indHeader, {r = tc0.r * 0.06, g = tc0.g * 0.06, b = tc0.b * 0.06, a = 1}, {r = tc0.r * 0.25, g = tc0.g * 0.25, b = tc0.b * 0.25, a = 0.8})
-
-    local indLabel = indHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    indLabel:SetPoint("TOPLEFT", 10, -4)
-    indLabel:SetText("INDICATORS")
-    indLabel:SetTextColor(tc0.r, tc0.g, tc0.b, 0.9)
-
-    local indSubLabel = indHeader:CreateFontString(nil, "OVERLAY")
-    indSubLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
-    indSubLabel:SetPoint("TOPLEFT", indLabel, "BOTTOMLEFT", 0, -1)
-    indSubLabel:SetPoint("RIGHT", indHeader, "RIGHT", -8, 0)
-    indSubLabel:SetText("Placed on the frame — add as many as you need")
-    indSubLabel:SetTextColor(0.6, 0.6, 0.6)
-    indSubLabel:SetJustifyH("LEFT")
-    indSubLabel:SetWordWrap(true)
-    yPos = yPos - 38
-
-    -- ===== PLACED INDICATOR INSTANCES =====
-    -- Each instance is a card with type toggle, collapsible settings, and delete button
-    local indicators = auraCfg and auraCfg.indicators or {}
-
-    -- Type toggle button labels
-    local PLACED_TYPES = {
-        { key = "icon",   label = "Icon"   },
-        { key = "square", label = "Square" },
-        { key = "bar",    label = "Bar"    },
-    }
-
-    for instIdx, indicator in ipairs(indicators) do
-        local capturedID = indicator.id
-        local capturedIdx = instIdx
-
-        -- Instance card header
-        local cardHeader = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        cardHeader:SetHeight(26)
-        cardHeader:SetPoint("TOPLEFT", 0, yPos)
-        cardHeader:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-        local tc = GetThemeColor()
-        ApplyBackdrop(cardHeader, C_ELEMENT, {r = tc.r * 0.5, g = tc.g * 0.5, b = tc.b * 0.5, a = 0.6})
-
-        -- Chevron (left side)
-        local chevron = cardHeader:CreateTexture(nil, "OVERLAY")
-        chevron:SetSize(14, 14)
-        chevron:SetPoint("LEFT", 8, 0)
-        chevron:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-        -- Type toggle buttons (radio-style)
-        local toggleBtns = {}
-        local toggleX = 24
-        for _, pt in ipairs(PLACED_TYPES) do
-            local btn = CreateFrame("Button", nil, cardHeader, "BackdropTemplate")
-            btn:SetSize(46, 18)
-            btn:SetPoint("LEFT", toggleX, 0)
-            btn:SetFrameLevel(cardHeader:GetFrameLevel() + 3)
-
-            local btnLabel = btn:CreateFontString(nil, "OVERLAY")
-            btnLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
-            btnLabel:SetPoint("CENTER", 0, 0)
-            btnLabel:SetText(pt.label)
-
-            btn.typeKey = pt.key
-            btn.label = btnLabel
-            toggleBtns[#toggleBtns + 1] = btn
-            toggleX = toggleX + 50
-        end
-
-        -- Style toggle buttons based on current type
-        local function UpdateToggleStyles()
-            local currentType = indicator.type
-            for _, btn in ipairs(toggleBtns) do
-                local tc = GetThemeColor()
-                if btn.typeKey == currentType then
-                    ApplyBackdrop(btn, {r = tc.r * 0.25, g = tc.g * 0.25, b = tc.b * 0.25, a = 1}, {r = tc.r, g = tc.g, b = tc.b, a = 1})
-                    btn.label:SetTextColor(tc.r, tc.g, tc.b)
-                else
-                    ApplyBackdrop(btn, {r = 0.1, g = 0.1, b = 0.1, a = 0.5}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
-                    btn.label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-                end
-            end
-        end
-        UpdateToggleStyles()
-
-        -- Toggle button clicks
-        for _, btn in ipairs(toggleBtns) do
-            btn:SetScript("OnClick", function(self)
-                if indicator.type ~= self.typeKey then
-                    ChangeInstanceType(auraName, capturedID, self.typeKey)
-                    DF:AuraDesigner_RefreshPage()
-                end
-            end)
-        end
-
-        -- Delete button (X, right side)
-        local delBtn = CreateFrame("Button", nil, cardHeader, "BackdropTemplate")
-        delBtn:SetSize(18, 18)
-        delBtn:SetPoint("RIGHT", -4, 0)
-        delBtn:SetFrameLevel(cardHeader:GetFrameLevel() + 5)
-        ApplyBackdrop(delBtn, {r = 0, g = 0, b = 0, a = 0}, {r = 0, g = 0, b = 0, a = 0})
-        local delIcon = delBtn:CreateTexture(nil, "OVERLAY")
-        delIcon:SetSize(12, 12)
-        delIcon:SetPoint("CENTER", 0, 0)
-        delIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\close")
-        delIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-        delBtn:SetScript("OnEnter", function(self)
-            delIcon:SetVertexColor(0.9, 0.25, 0.25)
-            self:SetBackdropColor(0.8, 0.27, 0.27, 0.2)
-        end)
-        delBtn:SetScript("OnLeave", function(self)
-            delIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-            self:SetBackdropColor(0, 0, 0, 0)
-        end)
-        delBtn:SetScript("OnClick", function()
-            RemoveIndicatorInstance(auraName, capturedID)
-            DF:AuraDesigner_RefreshPage()
-        end)
-
-        yPos = yPos - 28
-
-        -- Content container (collapsible settings)
-        local content = CreateFrame("Frame", nil, parent)
-        content:SetPoint("TOPLEFT", cardHeader, "BOTTOMLEFT", 0, -2)
-        content:SetWidth(contentWidth)
-        content:Hide()
-
-        -- Expand/collapse state
-        local stateKey = auraName .. ":inst#" .. capturedID
-        local expanded = expandedSections[stateKey] or false
-
-        local function UpdateChevron()
-            if expanded then
-                chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
-            else
-                chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
-            end
-        end
-        UpdateChevron()
-
-        -- Build content using instance proxy
-        local instProxy = CreateInstanceProxy(auraName, capturedID)
-        local _, contentHeight = BuildTypeContent(content, indicator.type, auraName, contentWidth, instProxy)
-
-        -- Click header to toggle expand
-        local headerClick = CreateFrame("Button", nil, cardHeader)
-        headerClick:SetAllPoints()
-        headerClick:SetFrameLevel(cardHeader:GetFrameLevel() + 1)
-        headerClick:RegisterForClicks("LeftButtonUp")
-        headerClick:SetScript("OnEnter", function()
-            cardHeader:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
-        end)
-        headerClick:SetScript("OnLeave", function()
-            cardHeader:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-        end)
-        headerClick:SetScript("OnClick", function()
-            expanded = not expanded
-            expandedSections[stateKey] = expanded
-            if expanded then
-                content:Show()
-            else
-                content:Hide()
-            end
-            UpdateChevron()
-            DF:AuraDesigner_RefreshPage()
-        end)
-
-        if expanded then
-            content:Show()
-            yPos = yPos - contentHeight - 2
-        end
-    end
-
-    -- ===== ADD INDICATOR BUTTON =====
-    yPos = yPos - 4
-    local addBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    addBtn:SetSize(160, 24)
-    addBtn:SetPoint("TOP", parent, "TOP", 0, yPos)
-    local tc = GetThemeColor()
-    ApplyBackdrop(addBtn, {r = tc.r * 0.12, g = tc.g * 0.12, b = tc.b * 0.12, a = 1}, {r = tc.r * 0.4, g = tc.g * 0.4, b = tc.b * 0.4, a = 0.8})
-
-    local addLabel = addBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    addLabel:SetPoint("CENTER", 0, 0)
-    addLabel:SetText("+ Add Indicator")
-    addLabel:SetTextColor(0.9, 0.9, 0.9)
-
-    addBtn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(tc.r * 0.2, tc.g * 0.2, tc.b * 0.2, 1)
-        addLabel:SetTextColor(1, 1, 1)
-    end)
-    addBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(tc.r * 0.12, tc.g * 0.12, tc.b * 0.12, 1)
-        addLabel:SetTextColor(0.9, 0.9, 0.9)
-    end)
-    addBtn:SetScript("OnClick", function()
-        local inst = CreateIndicatorInstance(auraName, "icon")
-        -- Auto-expand the new instance
-        expandedSections[auraName .. ":inst#" .. inst.id] = true
-        DF:AuraDesigner_RefreshPage()
-    end)
-    yPos = yPos - 30
-
-    -- ===== SEPARATOR: placed vs frame-level =====
-    yPos = yPos - 14
-
-    -- Section header for frame-level (global) effects
-    local globalHeader = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    globalHeader:SetHeight(34)
-    globalHeader:SetPoint("TOPLEFT", 0, yPos)
-    globalHeader:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-    local tc2 = GetThemeColor()
-    ApplyBackdrop(globalHeader, {r = tc2.r * 0.06, g = tc2.g * 0.06, b = tc2.b * 0.06, a = 1}, {r = tc2.r * 0.25, g = tc2.g * 0.25, b = tc2.b * 0.25, a = 0.8})
-
-    local globalLabel = globalHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    globalLabel:SetPoint("TOPLEFT", 10, -4)
-    globalLabel:SetText("FRAME EFFECTS")
-    globalLabel:SetTextColor(tc2.r, tc2.g, tc2.b, 0.9)
-
-    local globalSubLabel = globalHeader:CreateFontString(nil, "OVERLAY")
-    globalSubLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
-    globalSubLabel:SetPoint("TOPLEFT", globalLabel, "BOTTOMLEFT", 0, -1)
-    globalSubLabel:SetPoint("RIGHT", globalHeader, "RIGHT", -8, 0)
-    globalSubLabel:SetText("Global — one per aura, modifies the frame itself")
-    globalSubLabel:SetTextColor(0.6, 0.6, 0.6)
-    globalSubLabel:SetJustifyH("LEFT")
-    globalSubLabel:SetWordWrap(true)
-
-    yPos = yPos - 38
-
-    -- ===== FRAME-LEVEL INDICATOR SECTIONS =====
-    -- 5 collapsible sections: border, healthbar, nametext, healthtext, framealpha
-    for _, typeDef in ipairs(INDICATOR_TYPES) do
-        if not typeDef.placed then
-            local typeKey = typeDef.key
-            local typeLabel = typeDef.label
-            local isEnabled = auraCfg and auraCfg[typeKey] ~= nil
-
-            local header = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-            header:SetHeight(26)
-            header:SetPoint("TOPLEFT", 0, yPos)
-            header:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
-            ApplyBackdrop(header, C_ELEMENT, C_BORDER)
-
-            local chevron = header:CreateTexture(nil, "OVERLAY")
-            chevron:SetSize(14, 14)
-            chevron:SetPoint("LEFT", 8, 0)
-            chevron:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-            local title = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            title:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
-            title:SetText(typeLabel)
-
-            local cb = CreateFrame("CheckButton", nil, header, "BackdropTemplate")
-            cb:SetSize(13, 13)
-            cb:SetPoint("RIGHT", -8, 0)
-            cb:SetFrameLevel(header:GetFrameLevel() + 5)
-            ApplyBackdrop(cb, C_ELEMENT, C_BORDER)
-
-            cb.Check = cb:CreateTexture(nil, "OVERLAY")
-            cb.Check:SetTexture("Interface\\Buttons\\WHITE8x8")
-            cb.Check:SetVertexColor(1, 1, 1)
-            cb.Check:SetPoint("CENTER")
-            cb.Check:SetSize(7, 7)
-            cb:SetCheckedTexture(cb.Check)
-            cb:SetChecked(isEnabled)
-
-            local function UpdateSectionStyle()
-                local tc = GetThemeColor()
-                if cb:GetChecked() then
-                    cb:SetBackdropColor(tc.r, tc.g, tc.b, 1)
-                    cb:SetBackdropBorderColor(tc.r, tc.g, tc.b, 1)
-                    title:SetTextColor(tc.r, tc.g, tc.b)
-                else
-                    cb:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-                    cb:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
-                    title:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-                end
-            end
-            UpdateSectionStyle()
-
-            local content = CreateFrame("Frame", nil, parent)
-            content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
-            content:SetWidth(contentWidth)
-            content:Hide()
-
-            local stateKey = auraName .. ":" .. typeKey
-            local expanded = expandedSections[stateKey] or false
-
-            local function UpdateChevron()
-                if expanded and isEnabled then
-                    chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
-                else
-                    chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
-                end
-            end
-            UpdateChevron()
-
-            local contentHeight = 0
-            if isEnabled then
-                local _, h = BuildTypeContent(content, typeKey, auraName, contentWidth)
-                contentHeight = h
-            end
-
-            yPos = yPos - 28
-
-            local headerClick = CreateFrame("Button", nil, header)
-            headerClick:SetAllPoints()
-            headerClick:SetFrameLevel(header:GetFrameLevel() + 2)
-            headerClick:RegisterForClicks("LeftButtonUp")
-            headerClick:SetScript("OnEnter", function()
-                header:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
-            end)
-            headerClick:SetScript("OnLeave", function()
-                header:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-            end)
-            headerClick:SetScript("OnClick", function()
-                if not isEnabled then return end
-                expanded = not expanded
-                expandedSections[stateKey] = expanded
-                if expanded then
-                    content:Show()
-                else
-                    content:Hide()
-                end
-                UpdateChevron()
-                DF:AuraDesigner_RefreshPage()
-            end)
-
-            cb:SetScript("OnClick", function(self)
-                local checked = self:GetChecked()
-                UpdateSectionStyle()
-                local cfg = EnsureAuraConfig(auraName)
-                if checked then
-                    EnsureTypeConfig(auraName, typeKey)
-                    isEnabled = true
-                    expanded = true
-                    expandedSections[stateKey] = true
-                    local _, h = BuildTypeContent(content, typeKey, auraName, contentWidth)
-                    contentHeight = h
-                    content:Show()
-                else
-                    cfg[typeKey] = nil
-                    isEnabled = false
-                    expanded = false
-                    expandedSections[stateKey] = false
-                    content:Hide()
-                end
-                UpdateChevron()
-                DF:AuraDesigner_RefreshPage()
-            end)
-
-            if expanded and isEnabled then
-                content:Show()
-                yPos = yPos - contentHeight - 2
-            end
-        end
-    end
-
-    -- ===== DIVIDER =====
-    yPos = yPos - 4
-    local div2 = parent:CreateTexture(nil, "ARTWORK")
-    div2:SetPoint("TOPLEFT", 10, yPos)
-    div2:SetSize(238, 1)
-    div2:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-    yPos = yPos - 12
-
-    -- ===== PRIORITY SLIDER (reversed: 10=Low on left, 1=High on right) =====
-    local auraProxy = CreateAuraProxy(auraName)
-    if not auraCfg or auraCfg.priority == nil then
-        EnsureAuraConfig(auraName)
-    end
-
-    local prioContainer = CreateFrame("Frame", nil, parent)
-    prioContainer:SetSize(contentWidth - 10, 50)
-    prioContainer:SetPoint("TOPLEFT", 5, yPos)
-
-    local prioLabel = prioContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    prioLabel:SetPoint("TOPLEFT", 0, 0)
-    prioLabel:SetText("Priority")
-    prioLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
-    local prioLowLabel = prioContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    prioLowLabel:SetPoint("BOTTOMLEFT", 0, 0)
-    prioLowLabel:SetText("Low")
-    prioLowLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    prioLowLabel:SetFont(prioLowLabel:GetFont(), 9)
-
-    local prioHighLabel = prioContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    prioHighLabel:SetPoint("BOTTOM", 180, 0)
-    prioHighLabel:SetText("High")
-    prioHighLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    prioHighLabel:SetFont(prioHighLabel:GetFont(), 9)
-
-    -- Track
-    local prioTrack = CreateFrame("Frame", nil, prioContainer, "BackdropTemplate")
-    prioTrack:SetPoint("TOPLEFT", 0, -18)
-    prioTrack:SetSize(180, 8)
-    ApplyBackdrop(prioTrack, C_ELEMENT, C_BORDER)
-
-    -- Fill tracks the thumb position (left to right)
-    local tc = GetThemeColor()
-    local prioFill = prioTrack:CreateTexture(nil, "ARTWORK")
-    prioFill:SetPoint("LEFT", 1, 0)
-    prioFill:SetHeight(6)
-    prioFill:SetColorTexture(tc.r, tc.g, tc.b, 0.8)
-
-    -- Slider
-    local prioSlider = CreateFrame("Slider", nil, prioContainer)
-    prioSlider:SetPoint("TOPLEFT", 0, -18)
-    prioSlider:SetSize(180, 8)
-    prioSlider:SetOrientation("HORIZONTAL")
-    prioSlider:SetMinMaxValues(1, 10)
-    prioSlider:SetValueStep(1)
-    prioSlider:SetObeyStepOnDrag(true)
-    prioSlider:SetHitRectInsets(-4, -4, -8, -8)
-
-    local prioThumb = prioSlider:CreateTexture(nil, "OVERLAY")
-    prioThumb:SetSize(12, 16)
-    prioThumb:SetColorTexture(tc.r, tc.g, tc.b, 1)
-    prioSlider:SetThumbTexture(prioThumb)
-
-    -- Input box
-    local prioInput = CreateFrame("EditBox", nil, prioContainer, "BackdropTemplate")
-    prioInput:SetPoint("LEFT", prioTrack, "RIGHT", 8, 0)
-    prioInput:SetSize(50, 20)
-    ApplyBackdrop(prioInput, C_ELEMENT, C_BORDER)
-    prioInput:SetFontObject(GameFontHighlightSmall)
-    prioInput:SetJustifyH("CENTER")
-    prioInput:SetAutoFocus(false)
-    prioInput:SetTextInsets(2, 2, 0, 0)
-
-    -- Transform: slider value 1 (left) = stored 10 (low), slider value 10 (right) = stored 1 (high)
-    local function StoredToSlider(stored) return 11 - (stored or 5) end
-    local function SliderToStored(slider) return 11 - slider end
-
-    local function UpdatePrioFill()
-        local val = prioSlider:GetValue()
-        local pct = (val - 1) / 9
-        prioFill:SetWidth(max(1, pct * 178))
-    end
-
-    local storedPriority = auraProxy.priority or 5
-    prioSlider:SetValue(StoredToSlider(storedPriority))
-    prioInput:SetText(tostring(storedPriority))
-    UpdatePrioFill()
-
-    prioSlider:SetScript("OnValueChanged", function(_, value)
-        local rounded = math.floor(value + 0.5)
-        local stored = SliderToStored(rounded)
-        auraProxy.priority = stored
-        prioInput:SetText(tostring(stored))
-        UpdatePrioFill()
-    end)
-
-    prioInput:SetScript("OnEnterPressed", function(self)
-        local val = tonumber(self:GetText())
-        if val then
-            val = max(1, min(10, math.floor(val + 0.5)))
-            auraProxy.priority = val
-            prioSlider:SetValue(StoredToSlider(val))
-            self:SetText(tostring(val))
-            UpdatePrioFill()
-        end
-        self:ClearFocus()
-    end)
-    prioInput:SetScript("OnEscapePressed", function(self)
-        self:SetText(tostring(auraProxy.priority or 5))
-        self:ClearFocus()
-    end)
-
-    yPos = yPos - 58
-
-    parent:SetHeight(-yPos + 10)
-end
-
-local function RefreshRightPanel()
-    for _, child in ipairs(rightPanelChildren) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-    wipe(rightPanelChildren)
-
-    if not rightScrollChild then return end
-
-    -- ========================================
-    -- Update right panel header
-    -- ========================================
-    if rightPanel and rightPanel.selHeader then
-        if selectedAura == nil then
-            -- Global view header — show cog icon
-            rightPanel.selIcon:SetColorTexture(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-            rightPanel.selIcon:SetTexCoord(0, 1, 0, 1)
-            if rightPanel.selCog then rightPanel.selCog:Show() end
-            if rightPanel.selLetter then rightPanel.selLetter:Hide() end
-            rightPanel.selName:SetText("Global Defaults")
-            local tc = GetThemeColor()
-            rightPanel.selName:SetTextColor(tc.r, tc.g, tc.b)
-            rightPanel.selSub:SetText("Default values for all auras")
-        else
-            -- Per-aura header
-            if rightPanel.selCog then rightPanel.selCog:Hide() end
-            local spec = ResolveSpec()
-            local auraInfo
-            if spec then
-                for _, info in ipairs(Adapter:GetTrackableAuras(spec)) do
-                    if info.name == selectedAura then
-                        auraInfo = info
-                        break
-                    end
-                end
-            end
-            if auraInfo then
-                local selIconTex = GetAuraIcon(spec, selectedAura)
-                if selIconTex then
-                    rightPanel.selIcon:SetTexture(selIconTex)
-                    rightPanel.selIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                    if rightPanel.selLetter then rightPanel.selLetter:Hide() end
-                else
-                    rightPanel.selIcon:SetTexCoord(0, 1, 0, 1)
-                    rightPanel.selIcon:SetColorTexture(auraInfo.color[1] * 0.4, auraInfo.color[2] * 0.4, auraInfo.color[3] * 0.4, 1)
-                    -- Show first-letter fallback
-                    if rightPanel.selLetter then
-                        rightPanel.selLetter:SetText(auraInfo.display:sub(1, 1))
-                        rightPanel.selLetter:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
-                        rightPanel.selLetter:Show()
-                    end
-                end
-                rightPanel.selName:SetText(auraInfo.display)
-                rightPanel.selName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-                local effectCount = CountActiveEffects(selectedAura)
-                if effectCount > 0 then
-                    rightPanel.selSub:SetText(effectCount .. " effect(s) configured")
-                    rightPanel.selSub:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
-                else
-                    rightPanel.selSub:SetText("Not configured")
-                    rightPanel.selSub:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-                end
-            else
-                rightPanel.selIcon:SetColorTexture(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-                rightPanel.selIcon:SetTexCoord(0, 1, 0, 1)
-                if rightPanel.selLetter then rightPanel.selLetter:Hide() end
-                rightPanel.selName:SetText(selectedAura)
-                rightPanel.selName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-                rightPanel.selSub:SetText("")
-            end
-        end
-    end
-
-    -- ========================================
-    -- Show/hide copy row and adjust scroll position
-    -- ========================================
-    if rightPanel.copyRow then
-        if selectedAura ~= nil then
-            rightPanel.copyRow:Show()
-            rightPanel.copySourceAura = nil
-            rightPanel.copyDropdownText:SetText("Select aura...")
-            rightPanel.copyDropdownText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-            rightScrollFrame:SetPoint("TOPLEFT", 0, -88)  -- 22 title + 40 header + 26 copy row
-        else
-            rightPanel.copyRow:Hide()
-            rightScrollFrame:SetPoint("TOPLEFT", 0, -62)  -- 22 title + 40 header
-        end
-    end
-
-    -- ========================================
-    -- Build right panel content
-    -- ========================================
-    local container = CreateFrame("Frame", nil, rightScrollChild)
-    container:SetPoint("TOPLEFT", 0, 0)
-    container:SetPoint("TOPRIGHT", 0, 0)
-    container:SetHeight(800)
-    rightPanelChildren[#rightPanelChildren + 1] = container
-
-    if selectedAura == nil then
-        BuildGlobalView(container)
-    else
-        BuildPerAuraView(container, selectedAura)
-    end
-
-    -- Update scroll child height to match content
-    local containerH = container:GetHeight()
-    rightScrollChild:SetHeight(containerH)
-end
+-- BuildPerAuraView + RefreshRightPanel removed in v4 redesign
+-- Per-aura configuration is now done via flat effect cards in the Effects tab
+
+-- Dummy stubs — needed to avoid nil reference if anything accidentally calls them
+local function BuildPerAuraView() end
+local function RefreshRightPanel() end
 
 -- ============================================================
 -- ENABLE BANNER
@@ -2872,7 +2607,8 @@ local function CreateEnableBanner(parent)
                 GetAuraDesignerDB().spec = opt[1]
                 specMenu:Hide()
                 UpdateSpecText()
-                selectedAura = nil
+                -- Clear expanded cards (auras change with spec)
+                wipe(expandedCards)
                 DF:AuraDesigner_RefreshPage()
             end)
 
@@ -2898,158 +2634,6 @@ local function CreateEnableBanner(parent)
 end
 
 
--- ============================================================
--- HORIZONTAL SCROLLBAR HELPER
--- Creates a thin scrollbar track + draggable thumb at the bottom
--- of a horizontal ScrollFrame. Auto-hides when content fits.
--- ============================================================
-
-local SCROLLBAR_H = 8
-local SCROLLBAR_THUMB_MIN_W = 20
-
-local function CreateHorizontalScrollbar(scrollFrame, scrollChild)
-    local track = CreateFrame("Frame", nil, scrollFrame)
-    track:SetHeight(SCROLLBAR_H)
-    track:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMLEFT", 0, 0)
-    track:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", 0, 0)
-    track:SetFrameLevel(scrollFrame:GetFrameLevel() + 5)
-
-    local trackBg = track:CreateTexture(nil, "BACKGROUND")
-    trackBg:SetAllPoints()
-    trackBg:SetColorTexture(0.08, 0.08, 0.08, 0.6)
-
-    local thumb = CreateFrame("Frame", nil, track)
-    thumb:SetHeight(SCROLLBAR_H - 2)
-    thumb:SetPoint("TOP", track, "TOP", 0, -1)
-    thumb:EnableMouse(true)
-    thumb:SetMovable(true)
-
-    local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
-    thumbTex:SetAllPoints()
-    thumbTex:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-    thumb.tex = thumbTex
-
-    -- Highlight on hover
-    thumb:SetScript("OnEnter", function(self)
-        self.tex:SetColorTexture(0.55, 0.55, 0.55, 0.9)
-    end)
-    thumb:SetScript("OnLeave", function(self)
-        if not self.isDragging then
-            self.tex:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-        end
-    end)
-
-    -- Drag logic
-    thumb:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            self.isDragging = true
-            self.tex:SetColorTexture(0.65, 0.65, 0.65, 1.0)
-            local cx = select(1, GetCursorPosition()) / UIParent:GetEffectiveScale()
-            self.dragStartX = cx
-            self.dragStartScroll = scrollFrame:GetHorizontalScroll()
-        end
-    end)
-    thumb:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" then
-            self.isDragging = false
-            if self:IsMouseOver() then
-                self.tex:SetColorTexture(0.55, 0.55, 0.55, 0.9)
-            else
-                self.tex:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-            end
-        end
-    end)
-    thumb:SetScript("OnUpdate", function(self)
-        if not self.isDragging then return end
-        local cx = select(1, GetCursorPosition()) / UIParent:GetEffectiveScale()
-        local dx = cx - self.dragStartX
-        local trackW = track:GetWidth()
-        local thumbW = self:GetWidth()
-        local scrollRange = trackW - thumbW
-        if scrollRange <= 0 then return end
-        local contentW = scrollChild:GetWidth()
-        local visibleW = scrollFrame:GetWidth()
-        local maxScroll = max(0, contentW - visibleW)
-        local scrollPerPixel = maxScroll / scrollRange
-        local newScroll = max(0, min(maxScroll, self.dragStartScroll + dx * scrollPerPixel))
-        scrollFrame:SetHorizontalScroll(newScroll)
-        track:UpdatePosition()
-    end)
-
-    -- Click on track to jump
-    track:EnableMouse(true)
-    track:SetScript("OnMouseDown", function(self, button)
-        if button == "LeftButton" then
-            local cx = select(1, GetCursorPosition()) / UIParent:GetEffectiveScale()
-            local trackLeft = self:GetLeft()
-            local trackW = self:GetWidth()
-            local thumbW = thumb:GetWidth()
-            local clickRatio = (cx - trackLeft - thumbW / 2) / (trackW - thumbW)
-            clickRatio = max(0, min(1, clickRatio))
-            local contentW = scrollChild:GetWidth()
-            local visibleW = scrollFrame:GetWidth()
-            local maxScroll = max(0, contentW - visibleW)
-            scrollFrame:SetHorizontalScroll(clickRatio * maxScroll)
-            self:UpdatePosition()
-        end
-    end)
-
-    -- Update thumb position and size
-    function track:UpdatePosition()
-        local contentW = scrollChild:GetWidth()
-        local visibleW = scrollFrame:GetWidth()
-        if contentW <= visibleW then
-            track:Hide()
-            return
-        end
-        track:Show()
-        local trackW = track:GetWidth()
-        local ratio = visibleW / contentW
-        local thumbW = max(SCROLLBAR_THUMB_MIN_W, trackW * ratio)
-        thumb:SetWidth(thumbW)
-
-        local maxScroll = contentW - visibleW
-        local scrollPos = scrollFrame:GetHorizontalScroll()
-        local scrollRatio = (maxScroll > 0) and (scrollPos / maxScroll) or 0
-        local xOffset = scrollRatio * (trackW - thumbW)
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOPLEFT", track, "TOPLEFT", xOffset, -1)
-    end
-
-    track:Hide()  -- hidden by default until content overflows
-    return track
-end
-
--- ============================================================
--- STRIP HEADER HELPER
--- Creates a small header bar (TRACKABLE AURAS, ACTIVE EFFECTS, etc.)
--- ============================================================
-
-local function CreateStripHeader(parent, text, accentColor)
-    local header = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    header:SetHeight(18)
-    ApplyBackdrop(header, C_BACKGROUND, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
-
-    local label = header:CreateFontString(nil, "OVERLAY")
-    label:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
-    label:SetPoint("LEFT", 10, 0)
-    label:SetText(text)
-    if accentColor then
-        label:SetTextColor(accentColor.r, accentColor.g, accentColor.b)
-    else
-        label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    end
-
-    -- Right-side count
-    local countLabel = header:CreateFontString(nil, "OVERLAY")
-    countLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
-    countLabel:SetPoint("RIGHT", -10, 0)
-    countLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    header.countLabel = countLabel
-
-    header.label = label
-    return header
-end
 
 -- ============================================================
 -- FRAME PREVIEW
@@ -3072,14 +2656,13 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
 
     -- Outer container with label
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    local INSTR_COUNT = 3  -- number of instruction rows (stored for height recalc)
+    local INSTR_COUNT = 3  -- number of instruction rows
     local INSTR_ROW_H = 18
-    local SLIDER_AREA_H = 30  -- extra vertical space for the scale slider row
-    local scaledH = FRAME_H * previewScale
-    container:SetHeight(max(scaledH + 100 + SLIDER_AREA_H + INSTR_COUNT * INSTR_ROW_H, 170 + SLIDER_AREA_H + INSTR_COUNT * INSTR_ROW_H))
-    local rightInset = rightPanelRef and (rightPanelRef:GetWidth() + 6) or 290
+    local rightInset = rightPanelRef and (rightPanelRef:GetWidth() + 6) or 0
     container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
     container:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -rightInset, yOffset)
+    container:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+    container:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -rightInset, 0)
     ApplyBackdrop(container, {r = 0.12, g = 0.12, b = 0.12, a = 1}, C_BORDER)
 
     -- "Frame Preview" label
@@ -3196,17 +2779,11 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
     container.borderOverlay.rightLine = container.borderOverlay:CreateTexture(nil, "OVERLAY")
     container.borderOverlay:Hide()
 
-    -- Click background to deselect aura (return to Global view)
+    -- Click background — no-op in new UI (was used to deselect aura in old tile view)
     local bgClick = CreateFrame("Button", nil, mockFrame)
     bgClick:SetAllPoints()
     bgClick:SetFrameLevel(mockFrame:GetFrameLevel() + 1)  -- Below dots and indicators
     bgClick:RegisterForClicks("LeftButtonUp")
-    bgClick:SetScript("OnClick", function()
-        if selectedAura then
-            selectedAura = nil
-            DF:AuraDesigner_RefreshPage()
-        end
-    end)
 
     -- ========================================
     -- 9 ANCHOR POINT DOTS
@@ -3272,14 +2849,14 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
 
     -- Instructions with keyboard badge styling
     local instrRows = {
-        { key = "Click",       desc = "an aura tile to configure its display settings" },
-        { key = "Drag",        desc = "an aura tile onto the frame to place, or drag a placed indicator to move it" },
+        { key = "Click",       desc = "an indicator on the frame to expand its settings" },
+        { key = "Drag",        desc = "a placed indicator to reposition it on the frame" },
         { key = "Right-click", desc = "a placed indicator to remove it from the frame" },
     }
 
     local instrCount = #instrRows
     for i, row in ipairs(instrRows) do
-        local rowBottomOffset = 4 + (instrCount - i) * 18
+        local rowBottomOffset = 10 + (instrCount - i) * 18
 
         -- Key badge background
         local badge = CreateFrame("Frame", nil, container, "BackdropTemplate")
@@ -3301,43 +2878,22 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
         descText:SetWordWrap(true)
         descText:SetJustifyH("LEFT")
         descText:SetText(row.desc)
-        descText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
+        descText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.8)
     end
 
     -- ========================================
     -- PREVIEW SCALE SLIDER
     -- ========================================
-    local function RecalcContainerHeight(scale)
-        local sh = FRAME_H * scale
-        local instrH = INSTR_COUNT * INSTR_ROW_H
-        container:SetHeight(max(sh + 100 + SLIDER_AREA_H + instrH, 170 + SLIDER_AREA_H + instrH))
-    end
-
-    local function RepositionEffectsStrip()
-        if activeEffectsStrip and origY_framePreview then
-            local SECTION_GAP = 8
-            origY_effectsStrip = origY_framePreview - (container:GetHeight() + SECTION_GAP)
-            local delta = -currentBannerShift
-            activeEffectsStrip:ClearAllPoints()
-            activeEffectsStrip:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, origY_effectsStrip + delta)
-            activeEffectsStrip:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -(contentRightInset or 286), origY_effectsStrip + delta)
-        end
-    end
-
     local scaleSlider = GUI:CreateSlider(container, "Preview Scale", 0.75, 2.5, 0.05, adDB, "previewScale",
         -- callback (on release)
         function()
             local s = adDB.previewScale or 1.0
             mockFrame:SetScale(s)
-            RecalcContainerHeight(s)
-            RepositionEffectsStrip()
         end,
         -- lightweightUpdate (during drag)
         function()
             local s = adDB.previewScale or 1.0
             mockFrame:SetScale(s)
-            RecalcContainerHeight(s)
-            RepositionEffectsStrip()
         end
     )
     scaleSlider:SetPoint("TOPLEFT", previewLabel, "BOTTOMLEFT", -4, -4)
@@ -3353,264 +2909,1524 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
     return container
 end
 
+
 -- ============================================================
--- ACTIVE EFFECTS STRIP
--- With header bar and horizontal scroll for effect entries
+-- TAB SYSTEM, SPELL PICKER & EFFECT CARDS (v4 redesign)
+-- Functions for the new tabbed right panel, spell picker overlay,
+-- and collapsible effect card rendering.
 -- ============================================================
 
-local function CreateActiveEffectsStrip(parent, yOffset, rightPanelRef)
-    local rightInset = rightPanelRef and (rightPanelRef:GetWidth() + 6) or 290
-    local wrapper = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    wrapper:SetHeight(104)  -- 18 header + 82 strip + 4 padding
-    wrapper:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
-    wrapper:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -rightInset, yOffset)
-    ApplyBackdrop(wrapper, {r = 0.12, g = 0.12, b = 0.12, a = 1}, C_BORDER)
+-- Forward declarations (mutually referencing functions)
+local SwitchTab, ShowSpellPicker, HideSpellPicker
+local BuildEffectsTab, BuildGlobalTab, BuildLayoutGroupsTab
+local PopulateSpellGrid, CreateEffectCard
 
-    -- Header
-    local tc = GetThemeColor()
-    local header = CreateStripHeader(wrapper, "ACTIVE EFFECTS", tc)
-    header:SetPoint("TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", 0, 0)
-    wrapper.header = header
+local spellPickerMode = "placed"   -- "placed" | "frame"
 
-    -- Strip scroll area
-    local stripScroll = CreateFrame("ScrollFrame", nil, wrapper)
-    stripScroll:SetPoint("TOPLEFT", 0, -18)
-    stripScroll:SetPoint("BOTTOMRIGHT", 0, 0)
-    stripScroll:EnableMouseWheel(true)
-
-    local stripContent = CreateFrame("Frame", nil, stripScroll)
-    stripContent:SetHeight(82)
-    stripContent:SetWidth(800)
-    stripScroll:SetScrollChild(stripContent)
-
-    -- Horizontal scrollbar
-    local effectsScrollbar = CreateHorizontalScrollbar(stripScroll, stripContent)
-    wrapper.scrollbar = effectsScrollbar
-
-    stripScroll:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetHorizontalScroll()
-        local maxScrollVal = max(0, stripContent:GetWidth() - self:GetWidth())
-        local newScroll = max(0, min(maxScrollVal, current - (delta * 68)))
-        self:SetHorizontalScroll(newScroll)
-        effectsScrollbar:UpdatePosition()
-    end)
-
-    wrapper.stripContent = stripContent
-
-    -- Placeholder text
-    wrapper.placeholder = wrapper:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    wrapper.placeholder:SetPoint("CENTER", stripScroll, "CENTER", 0, 0)
-    wrapper.placeholder:SetText("Enable effects on an aura to see them here")
-    wrapper.placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.5)
-
-    return wrapper
+-- Check if a specific aura has a frame-level effect of given type
+local function HasFrameEffect(auraName, typeKey)
+    local adDB = GetAuraDesignerDB()
+    if not adDB or not adDB.auras then return false end
+    local auraCfg = adDB.auras[auraName]
+    return auraCfg and auraCfg[typeKey] ~= nil
 end
 
--- ============================================================
--- ACTIVE EFFECTS STRIP REFRESH
--- ============================================================
-local activeEffectEntries = {}
-
-local function RefreshActiveEffectsStrip()
-    if not activeEffectsStrip then return end
-
-    -- Clear old entries
-    for _, entry in ipairs(activeEffectEntries) do
-        entry:Hide()
+-- Clear all child frames and regions from the tab content area
+local function ClearTabContent()
+    if not tabContentFrame then return end
+    local children = { tabContentFrame:GetChildren() }
+    for _, child in ipairs(children) do
+        child:Hide()
+        child:ClearAllPoints()
     end
-    wipe(activeEffectEntries)
+    local regions = { tabContentFrame:GetRegions() }
+    for _, region in ipairs(regions) do
+        region:Hide()
+    end
+end
 
-    local adDB = GetAuraDesignerDB()
+-- ── HIDE SPELL PICKER ──
+HideSpellPicker = function()
+    if not spellPickerView then return end
+    spellPickerActive = false
+    spellPickerType = nil
+    spellPickerView:Hide()
+    if tabBar then tabBar:Show() end
+    if tabScrollFrame then tabScrollFrame:Show() end
+end
+
+-- ── SHOW SPELL PICKER ──
+-- typeKey: "icon"|"square"|"bar" (placed) or "border"|"healthbar"|etc. (frame)
+-- mode: "placed" (default) or "frame"
+ShowSpellPicker = function(typeKey, mode)
+    if not spellPickerView then return end
+    spellPickerActive = true
+    spellPickerType = typeKey
+    spellPickerMode = mode or "placed"
+
+    if tabBar then tabBar:Hide() end
+    if tabScrollFrame then tabScrollFrame:Hide() end
+
+    if spellPickerMode == "placed" then
+        spellPickerView.title:SetText("Select a spell")
+    else
+        local effectLabel = FRAME_LEVEL_LABELS[typeKey] or typeKey
+        spellPickerView.title:SetText("Select trigger for " .. effectLabel)
+    end
+
+    local badgeColor = BADGE_COLORS[typeKey] or BADGE_COLORS.icon
+    local typeLabel = PLACED_TYPE_LABELS[typeKey] or FRAME_LEVEL_LABELS[typeKey] or typeKey
+    spellPickerView.typeBadge:SetText(typeLabel)
+    spellPickerView.typeBadge:SetTextColor(badgeColor.r, badgeColor.g, badgeColor.b)
+
+    PopulateSpellGrid()
+    spellPickerView:Show()
+end
+
+-- ── SWITCH TAB ──
+SwitchTab = function(tabKey)
+    activeTab = tabKey
+    if spellPickerActive then
+        HideSpellPicker()
+    end
+
+    for key, btn in pairs(tabButtons) do
+        if key == tabKey then
+            btn.accent:Show()
+            btn.label:SetTextColor(btn.tabColor.r, btn.tabColor.g, btn.tabColor.b)
+        else
+            btn.accent:Hide()
+            btn.label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+        end
+    end
+
+    ClearTabContent()
+
+    if tabKey == "effects" then
+        BuildEffectsTab()
+    elseif tabKey == "layout" then
+        BuildLayoutGroupsTab()
+    elseif tabKey == "global" then
+        BuildGlobalTab()
+    end
+
+    if tabScrollFrame then
+        tabScrollFrame:SetVerticalScroll(0)
+    end
+end
+
+-- ── POPULATE SPELL GRID ──
+PopulateSpellGrid = function()
+    if not spellPickerView or not spellPickerView.gridFrame then return end
+    local grid = spellPickerView.gridFrame
+
+    local children = { grid:GetChildren() }
+    for _, child in ipairs(children) do child:Hide() end
+    local regions = { grid:GetRegions() }
+    for _, region in ipairs(regions) do region:Hide() end
+
     local spec = ResolveSpec()
     if not spec then return end
 
-    local auraList = Adapter:GetTrackableAuras(spec)
-    if not auraList then return end
+    local auras = Adapter:GetTrackableAuras(spec)
+    if not auras or #auras == 0 then return end
 
-    -- Build a lookup for aura info
-    local auraInfoLookup = {}
-    for _, info in ipairs(auraList) do
-        auraInfoLookup[info.name] = info
-    end
+    local CARD_SIZE = 78
+    local CARD_GAP = 6
+    local PADDING = 8
+    local gridWidth = grid:GetWidth()
+    if gridWidth < 100 then gridWidth = 260 end
+    local cols = max(2, math.floor((gridWidth - PADDING * 2 + CARD_GAP) / (CARD_SIZE + CARD_GAP)))
 
-    -- Collect all active effects (instances + frame-level)
-    local effects = {}
-    for auraName, auraCfg in pairs(adDB.auras) do
-        local info = auraInfoLookup[auraName]
-        if info then
-            -- Placed indicator instances
-            if auraCfg.indicators then
-                for _, indicator in ipairs(auraCfg.indicators) do
-                    local typeLabel = indicator.type:sub(1,1):upper() .. indicator.type:sub(2)
-                    tinsert(effects, {
-                        auraName = auraName,
-                        display = info.display,
-                        color = info.color,
-                        typeKey = indicator.type,
-                        typeLabel = typeLabel,
-                        isInstance = true,
-                        indicatorID = indicator.id,
-                    })
-                end
-            end
-            -- Frame-level types
-            for _, typeDef in ipairs(INDICATOR_TYPES) do
-                if not typeDef.placed and auraCfg[typeDef.key] then
-                    tinsert(effects, {
-                        auraName = auraName,
-                        display = info.display,
-                        color = info.color,
-                        typeKey = typeDef.key,
-                        typeLabel = typeDef.label,
-                        isInstance = false,
-                    })
-                end
-            end
-        end
-    end
+    for i, auraInfo in ipairs(auras) do
+        local row = math.floor((i - 1) / cols)
+        local col = (i - 1) % cols
+        local x = PADDING + col * (CARD_SIZE + CARD_GAP)
+        local y = -(PADDING + row * (CARD_SIZE + CARD_GAP))
 
-    if #effects == 0 then
-        activeEffectsStrip.placeholder:Show()
-        return
-    end
-    activeEffectsStrip.placeholder:Hide()
-
-    local stripParent = activeEffectsStrip.stripContent or activeEffectsStrip
-    local xOffset = 10
-    for _, effect in ipairs(effects) do
-        local entry = CreateFrame("Button", nil, stripParent, "BackdropTemplate")
-        entry:SetSize(68, 74)
-        entry:SetPoint("LEFT", stripParent, "LEFT", xOffset, 0)
-        local isSelected = (effect.auraName == selectedAura)
-        if isSelected then
-            local tc = GetThemeColor()
-            ApplyBackdrop(entry, {r = tc.r * 0.12, g = tc.g * 0.12, b = tc.b * 0.12, a = 1}, {r = tc.r * 0.4, g = tc.g * 0.4, b = tc.b * 0.4, a = 0.6})
+        local alreadyUsed
+        if spellPickerMode == "placed" then
+            alreadyUsed = IsAuraTypePlaced(auraInfo.name, spellPickerType)
         else
-            ApplyBackdrop(entry, {r = 0, g = 0, b = 0, a = 0}, {r = 0, g = 0, b = 0, a = 0})
+            alreadyUsed = HasFrameEffect(auraInfo.name, spellPickerType)
         end
 
-        -- X button to disable (with dark pill background for visibility over spell name)
-        local xBtn = CreateFrame("Button", nil, entry, "BackdropTemplate")
-        xBtn:SetSize(16, 16)
-        xBtn:SetPoint("TOPRIGHT", -1, -1)
-        xBtn:SetFrameLevel(entry:GetFrameLevel() + 5)
-        ApplyBackdrop(xBtn, {r = 0.05, g = 0.05, b = 0.05, a = 0.85}, {r = 0.4, g = 0.12, b = 0.12, a = 0.8})
-        local xIcon = xBtn:CreateTexture(nil, "OVERLAY")
-        xIcon:SetSize(10, 10)
-        xIcon:SetPoint("CENTER", 0, 0)
-        xIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\close")
-        xIcon:SetVertexColor(0.9, 0.25, 0.25)
-        xBtn:SetScript("OnEnter", function(self)
-            xIcon:SetVertexColor(1, 0.35, 0.35)
-            self:SetBackdropColor(0.6, 0.12, 0.12, 0.9)
-            self:SetBackdropBorderColor(0.9, 0.25, 0.25, 1)
-        end)
-        xBtn:SetScript("OnLeave", function(self)
-            xIcon:SetVertexColor(0.9, 0.25, 0.25)
-            self:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
-            self:SetBackdropBorderColor(0.4, 0.12, 0.12, 0.8)
-        end)
-        xBtn:SetScript("OnClick", function()
-            if effect.isInstance then
-                -- Remove placed indicator instance
-                RemoveIndicatorInstance(effect.auraName, effect.indicatorID)
-            else
-                -- Remove frame-level type
-                local cfg = adDB.auras[effect.auraName]
-                if cfg then
-                    cfg[effect.typeKey] = nil
-                end
-            end
-            DF:AuraDesigner_RefreshPage()
-        end)
+        local card = CreateFrame("Button", nil, grid, "BackdropTemplate")
+        card:SetSize(CARD_SIZE, CARD_SIZE)
+        card:SetPoint("TOPLEFT", x, y)
+
+        if alreadyUsed then
+            ApplyBackdrop(card, {r = 0.10, g = 0.10, b = 0.10, a = 0.5}, {r = 0.20, g = 0.20, b = 0.20, a = 0.5})
+        else
+            ApplyBackdrop(card, {r = 0.14, g = 0.14, b = 0.14, a = 1}, {r = 0.28, g = 0.28, b = 0.28, a = 1})
+        end
+
+        -- Spell icon
+        local iconTex = GetAuraIcon(spec, auraInfo.name)
+        local icon = card:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(42, 42)
+        icon:SetPoint("TOP", 0, -6)
+        if iconTex then
+            icon:SetTexture(iconTex)
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        else
+            icon:SetColorTexture(auraInfo.color[1] * 0.4, auraInfo.color[2] * 0.4, auraInfo.color[3] * 0.4, 1)
+        end
+        if alreadyUsed then icon:SetAlpha(0.35) end
+
+        -- Letter fallback
+        if not iconTex then
+            local letter = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            letter:SetPoint("CENTER", icon, "CENTER", 0, 0)
+            letter:SetText(auraInfo.display:sub(1, 1))
+            letter:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
+            if alreadyUsed then letter:SetAlpha(0.35) end
+        end
 
         -- Spell name
-        local name = entry:CreateFontString(nil, "OVERLAY")
+        local name = card:CreateFontString(nil, "OVERLAY")
         name:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-        name:SetPoint("TOP", 0, -2)
-        name:SetWidth(64)
+        name:SetPoint("BOTTOM", 0, 4)
+        name:SetWidth(CARD_SIZE - 6)
         name:SetMaxLines(2)
         name:SetWordWrap(true)
-        name:SetText(effect.display)
+        name:SetText(auraInfo.display)
         name:SetTextColor(1, 1, 1)
         name:SetJustifyH("CENTER")
+        if alreadyUsed then name:SetAlpha(0.35) end
 
-        -- Icon with accent border
-        local iconFrame = CreateFrame("Frame", nil, entry, "BackdropTemplate")
-        iconFrame:SetSize(36, 36)
-        iconFrame:SetPoint("CENTER", 0, 2)
-        if not iconFrame.SetBackdrop then Mixin(iconFrame, BackdropTemplateMixin) end
-        iconFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
-        })
-        iconFrame:SetBackdropColor(effect.color[1] * 0.25, effect.color[2] * 0.25, effect.color[3] * 0.25, 1)
-        local tc = GetThemeColor()
-        iconFrame:SetBackdropBorderColor(tc.r, tc.g, tc.b, 1)
-
-        -- Spell icon or letter fallback
-        local spec = ResolveSpec()
-        local effIconTex = GetAuraIcon(spec, effect.auraName)
-
-        local effIcon = iconFrame:CreateTexture(nil, "ARTWORK")
-        effIcon:SetPoint("TOPLEFT", 2, -2)
-        effIcon:SetPoint("BOTTOMRIGHT", -2, 2)
-        if effIconTex then
-            effIcon:SetTexture(effIconTex)
-            effIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        else
-            effIcon:SetColorTexture(effect.color[1] * 0.3, effect.color[2] * 0.3, effect.color[3] * 0.3, 1)
+        -- "Placed" / "Active" overlay
+        if alreadyUsed then
+            local usedLabel = card:CreateFontString(nil, "OVERLAY")
+            usedLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+            usedLabel:SetPoint("CENTER", icon, "CENTER", 0, 0)
+            usedLabel:SetText(spellPickerMode == "placed" and "Placed" or "Active")
+            usedLabel:SetTextColor(0.6, 0.6, 0.6)
         end
 
-        local letter = iconFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        letter:SetPoint("CENTER", 0, 0)
-        letter:SetText(effect.display:sub(1, 1))
-        letter:SetTextColor(effect.color[1], effect.color[2], effect.color[3])
-        if effIconTex then letter:Hide() end
+        -- Interaction behavior
+        if not alreadyUsed then
+            card:SetScript("OnEnter", function(self)
+                local tc = GetThemeColor()
+                self:SetBackdropBorderColor(tc.r, tc.g, tc.b, 1)
+            end)
+            card:SetScript("OnLeave", function(self)
+                self:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
+            end)
 
-        -- Type label (uppercase accent text)
-        local typeLabel = entry:CreateFontString(nil, "OVERLAY")
-        typeLabel:SetFont("Fonts\\FRIZQT__.TTF", 7, "OUTLINE")
-        typeLabel:SetPoint("BOTTOM", 0, 3)
-        typeLabel:SetWidth(64)
-        typeLabel:SetMaxLines(1)
-        typeLabel:SetText(effect.typeLabel:upper())
-        typeLabel:SetTextColor(0.7, 0.7, 0.7)
+            if spellPickerMode == "placed" then
+                -- Placed indicators: drag-and-drop onto the frame preview
+                local capturedAuraInfo = auraInfo
+                local capturedType = spellPickerType
+                card:RegisterForDrag("LeftButton")
+                card:SetScript("OnDragStart", function()
+                    local spec = ResolveSpec()
+                    HideSpellPicker()
+                    SwitchTab("effects")
+                    StartDrag(capturedAuraInfo.name, capturedAuraInfo, spec, capturedType)
+                end)
+                -- Click also works — place at default anchor (CENTER)
+                card:SetScript("OnClick", function()
+                    local instance = CreateIndicatorInstance(capturedAuraInfo.name, capturedType)
+                    if instance then
+                        local cardKey = "placed:" .. capturedAuraInfo.name .. "#" .. instance.id
+                        expandedCards[cardKey] = true
+                    end
+                    HideSpellPicker()
+                    SwitchTab("effects")
+                    RefreshPlacedIndicators()
+                    RefreshPreviewEffects()
+                end)
+            else
+                -- Frame-level effects: click to add directly
+                card:SetScript("OnClick", function()
+                    EnsureTypeConfig(auraInfo.name, spellPickerType)
+                    local cardKey = "frame:" .. spellPickerType .. ":" .. auraInfo.name
+                    expandedCards[cardKey] = true
+                    HideSpellPicker()
+                    SwitchTab("effects")
+                    RefreshPlacedIndicators()
+                    RefreshPreviewEffects()
+                end)
+            end
+        end
+    end
 
-        -- Click to select aura
-        entry:SetScript("OnClick", function()
-            selectedAura = effect.auraName
-            DF:AuraDesigner_RefreshPage()
+    -- Set grid height
+    local totalRows = math.ceil(#auras / cols)
+    grid:SetHeight(PADDING * 2 + totalRows * (CARD_SIZE + CARD_GAP))
+end
+
+-- ── CREATE EFFECT CARD ──
+-- Creates a collapsible card for one effect in the effects list.
+-- Returns the new yPos after the card.
+CreateEffectCard = function(parent, yPos, effect)
+    local isPlaced = (effect.source == "placed")
+    local cardKey
+    if isPlaced then
+        cardKey = "placed:" .. effect.auraName .. "#" .. effect.indicatorID
+    else
+        cardKey = "frame:" .. effect.typeKey .. ":" .. effect.auraName
+    end
+
+    local isExpanded = expandedCards[cardKey] or false
+
+    -- Card container
+    local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    card:SetPoint("TOPLEFT", 6, yPos)
+    card:SetPoint("RIGHT", parent, "RIGHT", -6, 0)
+
+    -- ── HEADER ──
+    local header = CreateFrame("Button", nil, card, "BackdropTemplate")
+    header:SetHeight(30)
+    header:SetPoint("TOPLEFT", 0, 0)
+    header:SetPoint("TOPRIGHT", 0, 0)
+    ApplyBackdrop(header, C_ELEMENT, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
+
+    -- Chevron
+    local chevron = header:CreateTexture(nil, "OVERLAY")
+    chevron:SetSize(12, 12)
+    chevron:SetPoint("LEFT", 8, 0)
+    if isExpanded then
+        chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+    else
+        chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
+    end
+    chevron:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+    -- Spell icon (small, before type badge)
+    local spec = ResolveSpec()
+    local iconTex = GetAuraIcon(spec, effect.auraName)
+    local spellIcon = header:CreateTexture(nil, "ARTWORK")
+    spellIcon:SetSize(20, 20)
+    spellIcon:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+    if iconTex then
+        spellIcon:SetTexture(iconTex)
+        spellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    else
+        -- Color swatch fallback using aura color
+        local trackable3 = spec and Adapter and Adapter:GetTrackableAuras(spec)
+        local auraColor = nil
+        if trackable3 then
+            for _, ai in ipairs(trackable3) do
+                if ai.name == effect.auraName then auraColor = ai.color; break end
+            end
+        end
+        if auraColor then
+            spellIcon:SetColorTexture(auraColor[1] * 0.5, auraColor[2] * 0.5, auraColor[3] * 0.5, 1)
+        else
+            spellIcon:SetColorTexture(0.25, 0.25, 0.25, 1)
+        end
+    end
+
+    -- Type badge
+    local badgeColor = BADGE_COLORS[effect.typeKey] or BADGE_COLORS.icon
+    local typeLabel = isPlaced
+        and (PLACED_TYPE_LABELS[effect.typeKey] or effect.typeKey)
+        or (FRAME_LEVEL_LABELS[effect.typeKey] or effect.typeKey)
+
+    local badgeBg = CreateFrame("Frame", nil, header, "BackdropTemplate")
+    badgeBg:SetHeight(16)
+    badgeBg:SetPoint("LEFT", spellIcon, "RIGHT", 4, 0)
+    ApplyBackdrop(badgeBg,
+        {r = badgeColor.r * 0.20, g = badgeColor.g * 0.20, b = badgeColor.b * 0.20, a = 1},
+        {r = badgeColor.r * 0.45, g = badgeColor.g * 0.45, b = badgeColor.b * 0.45, a = 0.8})
+
+    local badgeText = badgeBg:CreateFontString(nil, "OVERLAY")
+    badgeText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    badgeText:SetPoint("CENTER", 0, 0)
+    badgeText:SetText(typeLabel)
+    badgeText:SetTextColor(1, 1, 1)
+    badgeBg:SetWidth(max(badgeText:GetStringWidth() + 12, 32))
+
+    -- Aura name + anchor/trigger/group info
+    local infoStr = effect.displayName
+    local indicatorGroup = nil  -- layout group this indicator belongs to
+    if isPlaced then
+        indicatorGroup = GetIndicatorLayoutGroup(effect.auraName, effect.indicatorID)
+        if indicatorGroup then
+            infoStr = infoStr .. "  -  " .. indicatorGroup.name
+        elseif effect.anchor then
+            infoStr = infoStr .. "  -  " .. (ANCHOR_OPTIONS[effect.anchor] or effect.anchor)
+        end
+    else
+        -- Show trigger count for frame-level effects
+        local triggers = GetFrameEffectTriggers(effect.auraName, effect.typeKey)
+        if #triggers > 1 then
+            infoStr = infoStr .. "  -  +" .. (#triggers - 1) .. " trigger" .. (#triggers > 2 and "s" or "")
+        end
+    end
+    local infoText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    infoText:SetPoint("LEFT", badgeBg, "RIGHT", 6, 0)
+    infoText:SetPoint("RIGHT", header, "RIGHT", indicatorGroup and -8 or -30, 0)
+    infoText:SetMaxLines(1)
+    infoText:SetText(infoStr)
+    if indicatorGroup then
+        -- Use dimmed text for grouped indicators — they're managed by the group
+        infoText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    else
+        infoText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+    end
+
+    -- Delete button — hidden for grouped indicators (managed by layout group)
+    if not indicatorGroup then
+        local delBtn = CreateFrame("Button", nil, header, "BackdropTemplate")
+        delBtn:SetSize(22, 22)
+        delBtn:SetPoint("RIGHT", -4, 0)
+        delBtn:SetFrameLevel(header:GetFrameLevel() + 2)
+
+        -- Draw a thick × using two rotated texture lines
+        local xSize = 12
+        local xThick = 2
+        local line1 = delBtn:CreateTexture(nil, "OVERLAY")
+        line1:SetSize(xSize, xThick)
+        line1:SetPoint("CENTER", 0, 0)
+        line1:SetColorTexture(0.55, 0.20, 0.20, 1)
+        line1:SetRotation(math.rad(45))
+        local line2 = delBtn:CreateTexture(nil, "OVERLAY")
+        line2:SetSize(xSize, xThick)
+        line2:SetPoint("CENTER", 0, 0)
+        line2:SetColorTexture(0.55, 0.20, 0.20, 1)
+        line2:SetRotation(math.rad(-45))
+
+        delBtn:SetScript("OnEnter", function()
+            line1:SetColorTexture(1, 0.35, 0.35, 1)
+            line2:SetColorTexture(1, 0.35, 0.35, 1)
         end)
-        entry:SetScript("OnEnter", function(self)
-            if not isSelected then
-                self:SetBackdropColor(1, 1, 1, 0.03)
+        delBtn:SetScript("OnLeave", function()
+            line1:SetColorTexture(0.55, 0.20, 0.20, 1)
+            line2:SetColorTexture(0.55, 0.20, 0.20, 1)
+        end)
+        delBtn:SetScript("OnClick", function()
+            local adDB = GetAuraDesignerDB()
+            if isPlaced then
+                RemoveIndicatorInstance(effect.auraName, effect.indicatorID)
+            else
+                local auraCfg = adDB.auras[effect.auraName]
+                if auraCfg then auraCfg[effect.typeKey] = nil end
+            end
+            expandedCards[cardKey] = nil
+            SwitchTab("effects")
+            RefreshPlacedIndicators()
+            RefreshPreviewEffects()
+        end)
+    end
+
+    -- Header click → toggle expansion
+    header:SetScript("OnClick", function()
+        expandedCards[cardKey] = not expandedCards[cardKey]
+        SwitchTab("effects")
+    end)
+    header:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
+    end)
+    header:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+    end)
+
+    local totalCardH = 30
+
+    -- ── BODY (only when expanded) ──
+    if isExpanded then
+        local body = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+        body:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
+        ApplyBackdrop(body, {r = 0.09, g = 0.09, b = 0.09, a = 1},
+            {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.3})
+
+        -- Create the appropriate proxy
+        local proxy
+        if isPlaced then
+            proxy = CreateInstanceProxy(effect.auraName, effect.indicatorID)
+        else
+            proxy = CreateProxy(effect.auraName, effect.typeKey)
+        end
+
+        -- Build type-specific widgets (derive width from parent scroll frame)
+        local bodyWidth = (tabContentFrame and tabContentFrame:GetWidth() or 260) - 24
+        if bodyWidth < 100 then bodyWidth = 240 end
+
+        local triggersH = 0
+
+        -- ── TRIGGER TAGS (frame-level effects only) ──
+        if not isPlaced then
+            local triggers = GetFrameEffectTriggers(effect.auraName, effect.typeKey)
+            local trigContainer = CreateFrame("Frame", nil, body)
+            trigContainer:SetPoint("TOPLEFT", 8, -6)
+            trigContainer:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+
+            local trigLabel = trigContainer:CreateFontString(nil, "OVERLAY")
+            trigLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+            trigLabel:SetPoint("TOPLEFT", 0, 0)
+            trigLabel:SetText("TRIGGERED BY")
+            trigLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+            -- Build display name lookup for tags
+            local spec = ResolveSpec()
+            local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
+            local displayNames = {}
+            if trackable then
+                for _, info in ipairs(trackable) do
+                    displayNames[info.name] = info.display
+                end
+            end
+
+            -- Tag flow layout
+            local TAG_H = 20
+            local TAG_GAP = 4
+            local TAG_ROW_GAP = 3
+            local tagX, tagY = 0, -(12 + 4)  -- below label
+            local canRemove = #triggers > 1
+
+            for ti, trigName in ipairs(triggers) do
+                local tagFrame = CreateFrame("Frame", nil, trigContainer, "BackdropTemplate")
+                tagFrame:SetHeight(TAG_H)
+
+                local tagText = tagFrame:CreateFontString(nil, "OVERLAY")
+                tagText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                tagText:SetPoint("LEFT", 6, 0)
+                tagText:SetText(displayNames[trigName] or trigName)
+                tagText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                local tagW = tagText:GetStringWidth() + 12
+                if canRemove then tagW = tagW + 16 end  -- room for × button
+                tagW = max(tagW, 40)
+
+                -- Wrap to next row if needed
+                local containerW = trigContainer:GetWidth()
+                if containerW < 50 then containerW = bodyWidth - 16 end
+                if tagX > 0 and (tagX + tagW) > containerW then
+                    tagX = 0
+                    tagY = tagY - (TAG_H + TAG_ROW_GAP)
+                end
+
+                tagFrame:SetPoint("TOPLEFT", trigContainer, "TOPLEFT", tagX, tagY)
+                tagFrame:SetWidth(tagW)
+                ApplyBackdrop(tagFrame,
+                    {r = 0.14, g = 0.14, b = 0.17, a = 1},
+                    {r = 0.30, g = 0.30, b = 0.35, a = 0.8})
+
+                -- Remove × button on each tag (unless it's the last one)
+                if canRemove then
+                    local removeBtn = CreateFrame("Button", nil, tagFrame)
+                    removeBtn:SetSize(14, 14)
+                    removeBtn:SetPoint("RIGHT", -2, 0)
+                    local rx1 = removeBtn:CreateTexture(nil, "OVERLAY")
+                    rx1:SetSize(8, 1.5)
+                    rx1:SetPoint("CENTER", 0, 0)
+                    rx1:SetColorTexture(0.50, 0.30, 0.30, 1)
+                    rx1:SetRotation(math.rad(45))
+                    local rx2 = removeBtn:CreateTexture(nil, "OVERLAY")
+                    rx2:SetSize(8, 1.5)
+                    rx2:SetPoint("CENTER", 0, 0)
+                    rx2:SetColorTexture(0.50, 0.30, 0.30, 1)
+                    rx2:SetRotation(math.rad(-45))
+                    removeBtn:SetScript("OnEnter", function()
+                        rx1:SetColorTexture(1, 0.40, 0.40, 1)
+                        rx2:SetColorTexture(1, 0.40, 0.40, 1)
+                    end)
+                    removeBtn:SetScript("OnLeave", function()
+                        rx1:SetColorTexture(0.50, 0.30, 0.30, 1)
+                        rx2:SetColorTexture(0.50, 0.30, 0.30, 1)
+                    end)
+                    local capturedTrigName = trigName
+                    removeBtn:SetScript("OnClick", function()
+                        RemoveFrameEffectTrigger(effect.auraName, effect.typeKey, capturedTrigName)
+                        SwitchTab("effects")
+                        RefreshPreviewEffects()
+                    end)
+                end
+
+                tagX = tagX + tagW + TAG_GAP
+            end
+
+            -- "+ Add Trigger" button
+            local addTrigW = 80
+            if tagX > 0 and (tagX + addTrigW) > (bodyWidth - 16) then
+                tagX = 0
+                tagY = tagY - (TAG_H + TAG_ROW_GAP)
+            end
+            local addTrigBtn = CreateFrame("Button", nil, trigContainer, "BackdropTemplate")
+            addTrigBtn:SetSize(addTrigW, TAG_H)
+            addTrigBtn:SetPoint("TOPLEFT", trigContainer, "TOPLEFT", tagX, tagY)
+            ApplyBackdrop(addTrigBtn,
+                {r = 0.10, g = 0.12, b = 0.10, a = 1},
+                {r = 0.25, g = 0.40, b = 0.25, a = 0.8})
+            local addTrigText = addTrigBtn:CreateFontString(nil, "OVERLAY")
+            addTrigText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            addTrigText:SetPoint("CENTER", 0, 0)
+            addTrigText:SetText("+ Add Trigger")
+            addTrigText:SetTextColor(0.5, 0.8, 0.5)
+            addTrigBtn:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(0.15, 0.20, 0.15, 1)
+                addTrigText:SetTextColor(0.7, 1.0, 0.7)
+            end)
+            addTrigBtn:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(0.10, 0.12, 0.10, 1)
+                addTrigText:SetTextColor(0.5, 0.8, 0.5)
+            end)
+
+            -- Trigger picker dropdown
+            addTrigBtn:SetScript("OnClick", function()
+                -- Build dropdown with trackable auras not already in triggers
+                local spec2 = ResolveSpec()
+                local auraList = spec2 and Adapter and Adapter:GetTrackableAuras(spec2)
+                if not auraList then return end
+
+                local currentTriggers = GetFrameEffectTriggers(effect.auraName, effect.typeKey)
+                local trigLookup = {}
+                for _, t in ipairs(currentTriggers) do trigLookup[t] = true end
+
+                -- Create or reuse dropdown frame
+                local dropName = "DFADTriggerPicker"
+                local drop = _G[dropName]
+                if not drop then
+                    drop = CreateFrame("Frame", dropName, UIParent, "BackdropTemplate")
+                    drop:SetFrameStrata("FULLSCREEN_DIALOG")
+                    drop:SetClampedToScreen(true)
+                end
+                -- Hide if already showing for this button
+                if drop:IsShown() and drop._ownerBtn == addTrigBtn then
+                    drop:Hide()
+                    return
+                end
+                drop._ownerBtn = addTrigBtn
+
+                -- Clear children
+                for _, child in ipairs({drop:GetChildren()}) do child:Hide(); child:SetParent(nil) end
+                for _, rgn in ipairs({drop:GetRegions()}) do
+                    if rgn:GetObjectType() == "FontString" then rgn:Hide() end
+                end
+
+                drop:SetWidth(180)
+                ApplyBackdrop(drop, C_BACKGROUND, C_BORDER)
+
+                local dy = -4
+                local count = 0
+                for _, auraInfo in ipairs(auraList) do
+                    local alreadyAdded = trigLookup[auraInfo.name]
+                    local btn = CreateFrame("Button", nil, drop)
+                    btn:SetHeight(20)
+                    btn:SetPoint("TOPLEFT", 4, dy)
+                    btn:SetPoint("RIGHT", drop, "RIGHT", -4, 0)
+
+                    local lbl = btn:CreateFontString(nil, "OVERLAY")
+                    lbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                    lbl:SetPoint("LEFT", 6, 0)
+                    lbl:SetText(auraInfo.display or auraInfo.name)
+                    if alreadyAdded then
+                        lbl:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.5)
+                        btn:Disable()
+                    else
+                        lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+                        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+                        hl:SetAllPoints()
+                        hl:SetColorTexture(1, 1, 1, 0.05)
+                        local capturedName = auraInfo.name
+                        btn:SetScript("OnClick", function()
+                            AddFrameEffectTrigger(effect.auraName, effect.typeKey, capturedName)
+                            drop:Hide()
+                            SwitchTab("effects")
+                            RefreshPreviewEffects()
+                        end)
+                    end
+                    dy = dy - 20
+                    count = count + 1
+                end
+                drop:SetHeight(-dy + 4)
+
+                -- Position below the add button
+                drop:ClearAllPoints()
+                drop:SetPoint("TOPLEFT", addTrigBtn, "BOTTOMLEFT", 0, -2)
+                drop:Show()
+
+                -- Auto-hide when clicking elsewhere
+                drop:SetScript("OnHide", function() drop._ownerBtn = nil end)
+            end)
+
+            triggersH = -(tagY) + TAG_H + 8  -- total height of trigger section
+            trigContainer:SetHeight(triggersH)
+        end
+
+        local _, bodyH = BuildTypeContent(body, effect.typeKey, effect.auraName, bodyWidth, proxy, triggersH, indicatorGroup, effect.indicatorID)
+        body:SetHeight((bodyH or 50) + triggersH)
+        totalCardH = totalCardH + (bodyH or 50) + triggersH
+    end
+
+    card:SetHeight(totalCardH)
+    return yPos - totalCardH - 5
+end
+
+-- ── BUILD EFFECTS TAB ──
+BuildEffectsTab = function()
+    if not tabContentFrame then return end
+    local parent = tabContentFrame
+    local yPos = -10
+    local tc = GetThemeColor()
+
+    -- "+ Add Indicator" button (prominent, theme-colored border)
+    local addBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    addBtn:SetHeight(32)
+    addBtn:SetPoint("TOPLEFT", 8, yPos)
+    addBtn:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+    ApplyBackdrop(addBtn,
+        {r = tc.r * 0.10, g = tc.g * 0.10, b = tc.b * 0.10, a = 1},
+        {r = tc.r * 0.50, g = tc.g * 0.50, b = tc.b * 0.50, a = 1})
+
+    local addBtnText = addBtn:CreateFontString(nil, "OVERLAY")
+    addBtnText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    addBtnText:SetPoint("CENTER", 0, 0)
+    addBtnText:SetText("+ Add Indicator")
+    addBtnText:SetTextColor(tc.r, tc.g, tc.b)
+
+    addBtn:SetScript("OnEnter", function(self)
+        local c = GetThemeColor()
+        self:SetBackdropColor(c.r * 0.20, c.g * 0.20, c.b * 0.20, 1)
+        self:SetBackdropBorderColor(c.r * 0.80, c.g * 0.80, c.b * 0.80, 1)
+        addBtnText:SetTextColor(1, 1, 1)
+    end)
+    addBtn:SetScript("OnLeave", function(self)
+        local c = GetThemeColor()
+        self:SetBackdropColor(c.r * 0.10, c.g * 0.10, c.b * 0.10, 1)
+        self:SetBackdropBorderColor(c.r * 0.50, c.g * 0.50, c.b * 0.50, 1)
+        addBtnText:SetTextColor(c.r, c.g, c.b)
+    end)
+
+    -- Dropdown menu for add button
+    local menuFrame = CreateFrame("Frame", nil, addBtn, "BackdropTemplate")
+    menuFrame:SetPoint("TOPLEFT", addBtn, "BOTTOMLEFT", 0, -2)
+    menuFrame:SetPoint("TOPRIGHT", addBtn, "BOTTOMRIGHT", 0, -2)
+    menuFrame:SetFrameStrata("DIALOG")
+    menuFrame:SetFrameLevel(100)
+    ApplyBackdrop(menuFrame, {r = 0.10, g = 0.10, b = 0.10, a = 0.98}, C_BORDER)
+    menuFrame:Hide()
+    menuFrame:EnableMouse(true)
+
+    local PLACED_ITEMS = {
+        { label = "Icon",   type = "icon"   },
+        { label = "Square", type = "square" },
+        { label = "Bar",    type = "bar"    },
+    }
+    local FRAME_ITEMS = {
+        { label = "Border",            type = "border"     },
+        { label = "Health Bar Color",  type = "healthbar"  },
+        { label = "Name Text Color",   type = "nametext"   },
+        { label = "Health Text Color", type = "healthtext" },
+        { label = "Frame Alpha",       type = "framealpha" },
+    }
+
+    local my = -4
+
+    -- Section: Placed on Frame
+    local placedHeader = menuFrame:CreateFontString(nil, "OVERLAY")
+    placedHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    placedHeader:SetPoint("TOPLEFT", 10, my)
+    placedHeader:SetText("PLACED ON FRAME")
+    placedHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    my = my - 14
+
+    for _, item in ipairs(PLACED_ITEMS) do
+        local menuBtn = CreateFrame("Button", nil, menuFrame)
+        menuBtn:SetHeight(24)
+        menuBtn:SetPoint("TOPLEFT", 4, my)
+        menuBtn:SetPoint("RIGHT", menuFrame, "RIGHT", -4, 0)
+        local bc = BADGE_COLORS[item.type]
+        local lbl = menuBtn:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        lbl:SetPoint("LEFT", 8, 0)
+        lbl:SetText(item.label)
+        lbl:SetTextColor(bc.r, bc.g, bc.b)
+        local hl = menuBtn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.05)
+        local capturedType = item.type
+        menuBtn:SetScript("OnClick", function()
+            menuFrame:Hide()
+            ShowSpellPicker(capturedType, "placed")
+        end)
+        my = my - 24
+    end
+
+    -- Divider
+    my = my - 4
+    local mdiv = menuFrame:CreateTexture(nil, "ARTWORK")
+    mdiv:SetPoint("TOPLEFT", 8, my)
+    mdiv:SetPoint("RIGHT", menuFrame, "RIGHT", -8, 0)
+    mdiv:SetHeight(1)
+    mdiv:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.6)
+    my = my - 6
+
+    -- Section: Frame-level Effects
+    local frameHeader = menuFrame:CreateFontString(nil, "OVERLAY")
+    frameHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    frameHeader:SetPoint("TOPLEFT", 10, my)
+    frameHeader:SetText("FRAME-LEVEL EFFECTS")
+    frameHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    my = my - 14
+
+    for _, item in ipairs(FRAME_ITEMS) do
+        local menuBtn = CreateFrame("Button", nil, menuFrame)
+        menuBtn:SetHeight(24)
+        menuBtn:SetPoint("TOPLEFT", 4, my)
+        menuBtn:SetPoint("RIGHT", menuFrame, "RIGHT", -4, 0)
+        local bc = BADGE_COLORS[item.type]
+        local lbl = menuBtn:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+        lbl:SetPoint("LEFT", 8, 0)
+        lbl:SetText(item.label)
+        lbl:SetTextColor(bc.r, bc.g, bc.b)
+        local hl = menuBtn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.05)
+        local capturedType = item.type
+        menuBtn:SetScript("OnClick", function()
+            menuFrame:Hide()
+            ShowSpellPicker(capturedType, "frame")
+        end)
+        my = my - 24
+    end
+
+    menuFrame:SetHeight(-my + 6)
+
+    addBtn:SetScript("OnClick", function()
+        if menuFrame:IsShown() then
+            menuFrame:Hide()
+        else
+            menuFrame:Show()
+        end
+    end)
+
+    yPos = yPos - 38
+
+    -- ── FILTER CHIPS (wrapping layout) ──
+    local chipsFrame = CreateFrame("Frame", nil, parent)
+    chipsFrame:SetPoint("TOPLEFT", 8, yPos)
+    chipsFrame:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+
+    local FILTER_CHIPS = {
+        { key = "all",         label = "All"    },
+        { key = "icon",        label = "Icon"   },
+        { key = "square",      label = "Square" },
+        { key = "bar",         label = "Bar"    },
+        { key = "border",      label = "Border" },
+        { key = "healthbar",   label = "Health" },
+        { key = "nametext",    label = "Name"   },
+        { key = "healthtext",  label = "HP"     },
+        { key = "framealpha",  label = "Alpha"  },
+    }
+
+    local CHIP_H = 18
+    local CHIP_GAP = 3
+    local CHIP_ROW_GAP = 3
+    local chipBtns = {}
+
+    for _, chip in ipairs(FILTER_CHIPS) do
+        local chipBtn = CreateFrame("Button", nil, chipsFrame, "BackdropTemplate")
+        chipBtn:SetHeight(CHIP_H)
+
+        local chipTxt = chipBtn:CreateFontString(nil, "OVERLAY")
+        chipTxt:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+        chipTxt:SetPoint("CENTER", 0, 0)
+        chipTxt:SetText(chip.label)
+
+        local tw = chipTxt:GetStringWidth()
+        chipBtn:SetWidth(max(tw + 12, 26))
+
+        if activeFilter == chip.key then
+            ApplyBackdrop(chipBtn,
+                {r = tc.r * 0.20, g = tc.g * 0.20, b = tc.b * 0.20, a = 1},
+                {r = tc.r * 0.50, g = tc.g * 0.50, b = tc.b * 0.50, a = 1})
+            chipTxt:SetTextColor(tc.r, tc.g, tc.b)
+        else
+            ApplyBackdrop(chipBtn,
+                {r = 0.14, g = 0.14, b = 0.14, a = 1},
+                {r = 0.25, g = 0.25, b = 0.25, a = 1})
+            chipTxt:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+        end
+
+        local capturedKey = chip.key
+        chipBtn:SetScript("OnClick", function()
+            activeFilter = capturedKey
+            SwitchTab("effects")
+        end)
+        chipBtn:SetScript("OnEnter", function(self)
+            if activeFilter ~= capturedKey then
+                self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
             end
         end)
-        entry:SetScript("OnLeave", function(self)
-            if not isSelected then
-                self:SetBackdropColor(0, 0, 0, 0)
+        chipBtn:SetScript("OnLeave", function(self)
+            if activeFilter ~= capturedKey then
+                self:SetBackdropColor(0.14, 0.14, 0.14, 1)
             end
         end)
 
-        tinsert(activeEffectEntries, entry)
-        xOffset = xOffset + 74
+        tinsert(chipBtns, chipBtn)
     end
 
-    -- Update scroll content width
-    if stripParent.SetWidth then
-        stripParent:SetWidth(max(xOffset + 10, 100))
+    -- Flow-layout: position chips with wrapping on parent resize
+    local function LayoutChips()
+        local maxW = chipsFrame:GetWidth()
+        if maxW < 20 then maxW = 260 end
+        local cx, cy = 0, 0
+        for _, btn in ipairs(chipBtns) do
+            local bw = btn:GetWidth()
+            if cx > 0 and (cx + bw) > maxW then
+                cx = 0
+                cy = cy - (CHIP_H + CHIP_ROW_GAP)
+            end
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", chipsFrame, "TOPLEFT", cx, cy)
+            cx = cx + bw + CHIP_GAP
+        end
+        chipsFrame:SetHeight(max(-cy + CHIP_H, CHIP_H))
     end
-    if activeEffectsStrip and activeEffectsStrip.scrollbar then
-        activeEffectsStrip.scrollbar:UpdatePosition()
+    LayoutChips()
+    chipsFrame:SetScript("OnSizeChanged", LayoutChips)
+
+    yPos = yPos - (chipsFrame:GetHeight() + 10)
+
+    -- ── EFFECTS LIST ──
+    local effects = CollectAllEffects()
+
+    -- Apply filter
+    local filtered = {}
+    for _, effect in ipairs(effects) do
+        if activeFilter == "all" or effect.typeKey == activeFilter then
+            tinsert(filtered, effect)
+        end
     end
 
-    -- Update header count
-    if activeEffectsStrip.header and activeEffectsStrip.header.label then
-        activeEffectsStrip.header.label:SetText("ACTIVE EFFECTS (" .. #effects .. ")")
+    if #filtered == 0 then
+        local empty = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        empty:SetPoint("TOP", parent, "TOP", 0, yPos - 30)
+        empty:SetWidth(220)
+        empty:SetText(activeFilter == "all"
+            and "No effects configured yet.\nClick '+ Add Indicator' to get started."
+            or "No " .. (PLACED_TYPE_LABELS[activeFilter] or FRAME_LEVEL_LABELS[activeFilter] or activeFilter) .. " effects configured.")
+        empty:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
+        empty:SetJustifyH("CENTER")
+    else
+        for _, effect in ipairs(filtered) do
+            yPos = CreateEffectCard(parent, yPos, effect)
+        end
     end
+
+    parent:SetHeight(max(-yPos + 20, 200))
+end
+
+-- ── BUILD GLOBAL TAB ──
+-- Wraps the existing BuildGlobalView into the tab content frame
+BuildGlobalTab = function()
+    if not tabContentFrame then return end
+    BuildGlobalView(tabContentFrame)
+end
+
+-- ── BUILD LAYOUT GROUPS TAB ──
+BuildLayoutGroupsTab = function()
+    if not tabContentFrame then return end
+    local parent = tabContentFrame
+    local yPos = -10
+    local tc = GetThemeColor()
+
+    -- Grow direction options
+    local GROW_DIRECTIONS = {
+        RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down",
+        _order = { "RIGHT", "LEFT", "UP", "DOWN" },
+    }
+
+    -- "+ Create Group" button (prominent, theme-colored)
+    local addBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    addBtn:SetHeight(32)
+    addBtn:SetPoint("TOPLEFT", 8, yPos)
+    addBtn:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+    local gc = { r = 0.91, g = 0.66, b = 0.25 }  -- Layout Groups tab color
+    ApplyBackdrop(addBtn,
+        {r = gc.r * 0.10, g = gc.g * 0.10, b = gc.b * 0.10, a = 1},
+        {r = gc.r * 0.50, g = gc.g * 0.50, b = gc.b * 0.50, a = 1})
+    local addBtnText = addBtn:CreateFontString(nil, "OVERLAY")
+    addBtnText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    addBtnText:SetPoint("CENTER", 0, 0)
+    addBtnText:SetText("+ Create Group")
+    addBtnText:SetTextColor(gc.r, gc.g, gc.b)
+    addBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(gc.r * 0.20, gc.g * 0.20, gc.b * 0.20, 1)
+        self:SetBackdropBorderColor(gc.r * 0.80, gc.g * 0.80, gc.b * 0.80, 1)
+        addBtnText:SetTextColor(1, 1, 1)
+    end)
+    addBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(gc.r * 0.10, gc.g * 0.10, gc.b * 0.10, 1)
+        self:SetBackdropBorderColor(gc.r * 0.50, gc.g * 0.50, gc.b * 0.50, 1)
+        addBtnText:SetTextColor(gc.r, gc.g, gc.b)
+    end)
+    addBtn:SetScript("OnClick", function()
+        local group = CreateLayoutGroup()
+        if group then
+            expandedGroups[group.id] = true
+            SwitchTab("layout")
+            RefreshPlacedIndicators()
+        end
+    end)
+    yPos = yPos - 42
+
+    -- Get groups
+    local adDB = GetAuraDesignerDB()
+    local groups = adDB and adDB.layoutGroups or {}
+
+    -- Display name lookup
+    local spec = ResolveSpec()
+    local trackable = spec and Adapter and Adapter:GetTrackableAuras(spec)
+    local displayNames = {}
+    if trackable then
+        for _, info in ipairs(trackable) do
+            displayNames[info.name] = info.display
+        end
+    end
+
+    if #groups == 0 then
+        -- Empty state
+        local empty = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        empty:SetPoint("TOP", parent, "TOP", 0, yPos - 30)
+        empty:SetWidth(220)
+        empty:SetText("No layout groups created yet.\nClick '+ Create Group' to get started.")
+        empty:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
+        empty:SetJustifyH("CENTER")
+    else
+        -- Render group cards
+        for _, group in ipairs(groups) do
+            local isExpanded = expandedGroups[group.id] or false
+            local groupCardKey = "group:" .. group.id
+
+            -- Card container
+            local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+            card:SetPoint("TOPLEFT", 6, yPos)
+            card:SetPoint("RIGHT", parent, "RIGHT", -6, 0)
+
+            -- ── HEADER ──
+            local header = CreateFrame("Button", nil, card, "BackdropTemplate")
+            header:SetHeight(30)
+            header:SetPoint("TOPLEFT", 0, 0)
+            header:SetPoint("TOPRIGHT", 0, 0)
+            ApplyBackdrop(header, C_ELEMENT, {r = gc.r * 0.35, g = gc.g * 0.35, b = gc.b * 0.35, a = 0.5})
+
+            -- Chevron
+            local chevron = header:CreateTexture(nil, "OVERLAY")
+            chevron:SetSize(12, 12)
+            chevron:SetPoint("LEFT", 8, 0)
+            if isExpanded then
+                chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+            else
+                chevron:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
+            end
+            chevron:SetVertexColor(gc.r, gc.g, gc.b)
+
+            -- Group name
+            local nameText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            nameText:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
+            nameText:SetPoint("RIGHT", header, "RIGHT", -60, 0)
+            nameText:SetMaxLines(1)
+            local memberCount = group.members and #group.members or 0
+            nameText:SetText(group.name .. "  -  " .. memberCount .. " indicator" .. (memberCount ~= 1 and "s" or ""))
+            nameText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+            -- Delete button
+            local delBtn = CreateFrame("Button", nil, header, "BackdropTemplate")
+            delBtn:SetSize(22, 22)
+            delBtn:SetPoint("RIGHT", -4, 0)
+            delBtn:SetFrameLevel(header:GetFrameLevel() + 2)
+            local xSize, xThick = 12, 2
+            local line1 = delBtn:CreateTexture(nil, "OVERLAY")
+            line1:SetSize(xSize, xThick)
+            line1:SetPoint("CENTER", 0, 0)
+            line1:SetColorTexture(0.55, 0.20, 0.20, 1)
+            line1:SetRotation(math.rad(45))
+            local line2 = delBtn:CreateTexture(nil, "OVERLAY")
+            line2:SetSize(xSize, xThick)
+            line2:SetPoint("CENTER", 0, 0)
+            line2:SetColorTexture(0.55, 0.20, 0.20, 1)
+            line2:SetRotation(math.rad(-45))
+            delBtn:SetScript("OnEnter", function()
+                line1:SetColorTexture(1, 0.35, 0.35, 1)
+                line2:SetColorTexture(1, 0.35, 0.35, 1)
+            end)
+            delBtn:SetScript("OnLeave", function()
+                line1:SetColorTexture(0.55, 0.20, 0.20, 1)
+                line2:SetColorTexture(0.55, 0.20, 0.20, 1)
+            end)
+            local capturedGroupID = group.id
+            delBtn:SetScript("OnClick", function()
+                DeleteLayoutGroup(capturedGroupID)
+                SwitchTab("layout")
+                RefreshPlacedIndicators()
+            end)
+
+            -- Header click → toggle expansion
+            header:SetScript("OnClick", function()
+                expandedGroups[group.id] = not expandedGroups[group.id]
+                SwitchTab("layout")
+            end)
+            header:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
+            end)
+            header:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+            end)
+
+            local totalCardH = 30
+
+            -- ── BODY (when expanded) ──
+            if isExpanded then
+                local body = CreateFrame("Frame", nil, card, "BackdropTemplate")
+                body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+                body:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
+                ApplyBackdrop(body, {r = 0.09, g = 0.09, b = 0.09, a = 1},
+                    {r = gc.r * 0.20, g = gc.g * 0.20, b = gc.b * 0.20, a = 0.3})
+
+                local by = -10
+                local bodyWidth = (tabContentFrame and tabContentFrame:GetWidth() or 260) - 24
+                if bodyWidth < 100 then bodyWidth = 240 end
+
+                -- Group Name (editable)
+                local nameLabel = body:CreateFontString(nil, "OVERLAY")
+                nameLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+                nameLabel:SetPoint("TOPLEFT", 8, by)
+                nameLabel:SetText("GROUP NAME")
+                nameLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                by = by - 16
+
+                local nameEdit = CreateFrame("EditBox", nil, body, "BackdropTemplate")
+                nameEdit:SetHeight(22)
+                nameEdit:SetPoint("TOPLEFT", 8, by)
+                nameEdit:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+                nameEdit:SetFontObject("GameFontHighlightSmall")
+                nameEdit:SetAutoFocus(false)
+                nameEdit:SetText(group.name)
+                nameEdit:SetMaxLetters(30)
+                ApplyBackdrop(nameEdit, {r = 0.12, g = 0.12, b = 0.12, a = 1}, C_BORDER)
+                nameEdit:SetTextInsets(6, 6, 0, 0)
+                nameEdit:SetScript("OnEnterPressed", function(self)
+                    local val = self:GetText()
+                    if val and val ~= "" then
+                        group.name = val
+                    end
+                    self:ClearFocus()
+                    SwitchTab("layout")
+                end)
+                nameEdit:SetScript("OnEscapePressed", function(self)
+                    self:SetText(group.name)
+                    self:ClearFocus()
+                end)
+                by = by - 32
+
+                -- ── MEMBERS SECTION ──
+                local memLabel = body:CreateFontString(nil, "OVERLAY")
+                memLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+                memLabel:SetPoint("TOPLEFT", 8, by)
+                memLabel:SetText("MEMBERS")
+                memLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                by = by - 18
+
+                if group.members and #group.members > 0 then
+                    for mi, member in ipairs(group.members) do
+                        local memberRow = CreateFrame("Frame", nil, body, "BackdropTemplate")
+                        memberRow:SetHeight(34)
+                        memberRow:SetPoint("TOPLEFT", 8, by)
+                        memberRow:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+                        ApplyBackdrop(memberRow,
+                            {r = 0.11, g = 0.11, b = 0.11, a = 1},
+                            {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.3})
+
+                        -- Up/Down buttons for reordering (stacked vertically on left)
+                        local canMoveUp = mi > 1
+                        local canMoveDown = mi < #group.members
+                        local capturedMi = mi
+
+                        if canMoveUp then
+                            local upBtn = CreateFrame("Button", nil, memberRow)
+                            upBtn:SetSize(20, 16)
+                            upBtn:SetPoint("TOPLEFT", 2, -1)
+                            local upIcon = upBtn:CreateTexture(nil, "OVERLAY")
+                            upIcon:SetSize(14, 14)
+                            upIcon:SetPoint("CENTER", 0, 0)
+                            upIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+                            upIcon:SetRotation(math.rad(180))  -- flip to point up
+                            upIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                            upBtn:SetScript("OnClick", function()
+                                SwapGroupMembers(capturedGroupID, capturedMi, capturedMi - 1)
+                                SwitchTab("layout")
+                                RefreshPlacedIndicators()
+                            end)
+                            upBtn:SetScript("OnEnter", function() upIcon:SetVertexColor(1, 1, 1) end)
+                            upBtn:SetScript("OnLeave", function() upIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b) end)
+                        end
+                        if canMoveDown then
+                            local downBtn = CreateFrame("Button", nil, memberRow)
+                            downBtn:SetSize(20, 16)
+                            downBtn:SetPoint("BOTTOMLEFT", 2, 1)
+                            local downIcon = downBtn:CreateTexture(nil, "OVERLAY")
+                            downIcon:SetSize(14, 14)
+                            downIcon:SetPoint("CENTER", 0, 0)
+                            downIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+                            downIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                            downBtn:SetScript("OnClick", function()
+                                SwapGroupMembers(capturedGroupID, capturedMi, capturedMi + 1)
+                                SwitchTab("layout")
+                                RefreshPlacedIndicators()
+                            end)
+                            downBtn:SetScript("OnEnter", function() downIcon:SetVertexColor(1, 1, 1) end)
+                            downBtn:SetScript("OnLeave", function() downIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b) end)
+                        end
+
+                        -- Spell icon
+                        local memberSpec = ResolveSpec()
+                        local memberIconTex = GetAuraIcon(memberSpec, member.auraName)
+                        local mSpellIcon = memberRow:CreateTexture(nil, "ARTWORK")
+                        mSpellIcon:SetSize(22, 22)
+                        mSpellIcon:SetPoint("LEFT", 26, 0)
+                        if memberIconTex then
+                            mSpellIcon:SetTexture(memberIconTex)
+                            mSpellIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                        else
+                            -- Color swatch fallback
+                            local auraInfo2 = nil
+                            local trackable2 = memberSpec and Adapter and Adapter:GetTrackableAuras(memberSpec)
+                            if trackable2 then
+                                for _, ai in ipairs(trackable2) do
+                                    if ai.name == member.auraName then auraInfo2 = ai; break end
+                                end
+                            end
+                            if auraInfo2 then
+                                mSpellIcon:SetColorTexture(auraInfo2.color[1] * 0.5, auraInfo2.color[2] * 0.5, auraInfo2.color[3] * 0.5, 1)
+                            else
+                                mSpellIcon:SetColorTexture(0.25, 0.25, 0.25, 1)
+                            end
+                        end
+
+                        -- Type badge
+                        local memberType = nil
+                        local memberAuraCfg = adDB and adDB.auras and adDB.auras[member.auraName]
+                        if memberAuraCfg and memberAuraCfg.indicators then
+                            for _, ind in ipairs(memberAuraCfg.indicators) do
+                                if ind.id == member.indicatorID then
+                                    memberType = ind.type
+                                    break
+                                end
+                            end
+                        end
+                        local mBadgeColor = BADGE_COLORS[memberType or "icon"] or BADGE_COLORS.icon
+                        local mBadgeLabel = PLACED_TYPE_LABELS[memberType or "icon"] or "Icon"
+
+                        local mBadge = CreateFrame("Frame", nil, memberRow, "BackdropTemplate")
+                        mBadge:SetHeight(16)
+                        mBadge:SetPoint("LEFT", mSpellIcon, "RIGHT", 4, 0)
+                        ApplyBackdrop(mBadge,
+                            {r = mBadgeColor.r * 0.20, g = mBadgeColor.g * 0.20, b = mBadgeColor.b * 0.20, a = 1},
+                            {r = mBadgeColor.r * 0.45, g = mBadgeColor.g * 0.45, b = mBadgeColor.b * 0.45, a = 0.6})
+                        local mBadgeText = mBadge:CreateFontString(nil, "OVERLAY")
+                        mBadgeText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+                        mBadgeText:SetPoint("CENTER", 0, 0)
+                        mBadgeText:SetText(mBadgeLabel)
+                        mBadgeText:SetTextColor(1, 1, 1)
+                        mBadge:SetWidth(max(mBadgeText:GetStringWidth() + 12, 32))
+
+                        -- Aura name
+                        local mName = memberRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        mName:SetPoint("LEFT", mBadge, "RIGHT", 6, 0)
+                        mName:SetPoint("RIGHT", memberRow, "RIGHT", -24, 0)
+                        mName:SetMaxLines(1)
+                        mName:SetText(displayNames[member.auraName] or member.auraName)
+                        mName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                        -- Remove button (using close icon)
+                        local remBtn = CreateFrame("Button", nil, memberRow)
+                        remBtn:SetSize(18, 18)
+                        remBtn:SetPoint("RIGHT", -4, 0)
+                        local remIcon = remBtn:CreateTexture(nil, "OVERLAY")
+                        remIcon:SetSize(12, 12)
+                        remIcon:SetPoint("CENTER", 0, 0)
+                        remIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\close")
+                        remIcon:SetVertexColor(0.55, 0.30, 0.30, 1)
+                        remBtn:SetScript("OnEnter", function()
+                            remIcon:SetVertexColor(1, 0.40, 0.40, 1)
+                        end)
+                        remBtn:SetScript("OnLeave", function()
+                            remIcon:SetVertexColor(0.55, 0.30, 0.30, 1)
+                        end)
+                        local capturedMember = member
+                        remBtn:SetScript("OnClick", function()
+                            RemoveGroupMember(capturedGroupID, capturedMember.auraName, capturedMember.indicatorID)
+                            -- Also delete the placed indicator itself
+                            RemoveIndicatorInstance(capturedMember.auraName, capturedMember.indicatorID)
+                            SwitchTab("layout")
+                            RefreshPlacedIndicators()
+                            RefreshPreviewEffects()
+                        end)
+
+                        by = by - 38
+                    end
+                else
+                    local noMem = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    noMem:SetPoint("TOPLEFT", 12, by)
+                    noMem:SetText("No members yet")
+                    noMem:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
+                    by = by - 20
+                end
+
+                -- "+ Add aura" button
+                by = by - 6
+                local addMemBtn = CreateFrame("Button", nil, body, "BackdropTemplate")
+                addMemBtn:SetHeight(22)
+                addMemBtn:SetPoint("TOPLEFT", 8, by)
+                addMemBtn:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+                ApplyBackdrop(addMemBtn,
+                    {r = 0.10, g = 0.12, b = 0.10, a = 1},
+                    {r = 0.25, g = 0.40, b = 0.25, a = 0.6})
+                local addMemText = addMemBtn:CreateFontString(nil, "OVERLAY")
+                addMemText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                addMemText:SetPoint("CENTER", 0, 0)
+                addMemText:SetText("+ Add aura")
+                addMemText:SetTextColor(0.5, 0.8, 0.5)
+                addMemBtn:SetScript("OnEnter", function(self)
+                    self:SetBackdropColor(0.15, 0.20, 0.15, 1)
+                    addMemText:SetTextColor(0.7, 1.0, 0.7)
+                end)
+                addMemBtn:SetScript("OnLeave", function(self)
+                    self:SetBackdropColor(0.10, 0.12, 0.10, 1)
+                    addMemText:SetTextColor(0.5, 0.8, 0.5)
+                end)
+                addMemBtn:SetScript("OnClick", function()
+                    -- Show ALL trackable auras with type buttons (Icon/Square/Bar)
+                    local spec = ResolveSpec()
+                    local auras = spec and Adapter and Adapter:GetTrackableAuras(spec)
+                    if not auras or #auras == 0 then return end
+
+                    -- Build set of auras already in this group (by auraName)
+                    local grp = GetLayoutGroupByID(capturedGroupID)
+                    local alreadyInGroup = {}
+                    if grp and grp.members then
+                        for _, m in ipairs(grp.members) do
+                            alreadyInGroup[m.auraName] = true
+                        end
+                    end
+
+                    -- Create/reuse dropdown
+                    local dropName = "DFADGroupMemberPicker"
+                    local drop = _G[dropName]
+                    if not drop then
+                        drop = CreateFrame("Frame", dropName, UIParent, "BackdropTemplate")
+                        drop:SetFrameStrata("FULLSCREEN_DIALOG")
+                        drop:SetClampedToScreen(true)
+                    end
+                    if drop:IsShown() and drop._ownerBtn == addMemBtn then
+                        drop:Hide()
+                        return
+                    end
+                    drop._ownerBtn = addMemBtn
+
+                    local DROP_W = 240
+                    local MAX_H = 300
+                    drop:SetWidth(DROP_W)
+                    ApplyBackdrop(drop, C_BACKGROUND, C_BORDER)
+
+                    -- Inner scroll frame for long lists
+                    if not drop._scrollFrame then
+                        local sf = CreateFrame("ScrollFrame", nil, drop)
+                        sf:SetPoint("TOPLEFT", 0, 0)
+                        sf:SetPoint("BOTTOMRIGHT", 0, 0)
+                        drop._scrollFrame = sf
+                        local sc = CreateFrame("Frame", nil, sf)
+                        sc:SetWidth(DROP_W)
+                        sf:SetScrollChild(sc)
+                        drop._scrollChild = sc
+                        sf:SetScript("OnMouseWheel", function(self2, delta2)
+                            local cur = self2:GetVerticalScroll()
+                            local maxS = max(0, self2:GetVerticalScrollRange())
+                            self2:SetVerticalScroll(max(0, min(maxS, cur - (delta2 * 24))))
+                        end)
+                    end
+                    local scrollChild = drop._scrollChild
+                    local scrollFrame = drop._scrollFrame
+                    scrollChild:SetWidth(DROP_W)
+                    -- Clear old children
+                    for _, child in ipairs({scrollChild:GetChildren()}) do child:Hide(); child:SetParent(nil) end
+                    for _, rgn in ipairs({scrollChild:GetRegions()}) do
+                        if rgn:GetObjectType() == "FontString" or rgn:GetObjectType() == "Texture" then rgn:Hide() end
+                    end
+                    scrollFrame:Show()
+                    -- Forward mouse wheel from scroll child to scroll frame
+                    scrollChild:EnableMouseWheel(true)
+                    scrollChild:SetScript("OnMouseWheel", function(_, delta2)
+                        scrollFrame:GetScript("OnMouseWheel")(scrollFrame, delta2)
+                    end)
+
+                    local dy2 = -4
+                    for _, auraInfo in ipairs(auras) do
+                        local isExisting = alreadyInGroup[auraInfo.name]
+                        local ROW_H = 24
+                        local row = CreateFrame("Frame", nil, scrollChild)
+                        row:SetHeight(ROW_H)
+                        row:SetPoint("TOPLEFT", 4, dy2)
+                        row:SetPoint("RIGHT", scrollChild, "RIGHT", -4, 0)
+
+                        -- Color dot
+                        local dot = row:CreateTexture(nil, "ARTWORK")
+                        dot:SetSize(6, 6)
+                        dot:SetPoint("LEFT", 4, 0)
+                        dot:SetColorTexture(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3], 1)
+
+                        -- Aura name
+                        local rName = row:CreateFontString(nil, "OVERLAY")
+                        rName:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                        rName:SetPoint("LEFT", dot, "RIGHT", 6, 0)
+                        rName:SetText(auraInfo.display)
+
+                        if isExisting then
+                            rName:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.5)
+                            dot:SetAlpha(0.4)
+                        else
+                            rName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                            -- Type buttons (Icon / Square only — bars not supported in layout groups)
+                            local PLACED_TYPES = { "icon", "square" }
+                            local btnX = -4
+                            for ti = #PLACED_TYPES, 1, -1 do
+                                local typeKey = PLACED_TYPES[ti]
+                                local bc = BADGE_COLORS[typeKey] or BADGE_COLORS.icon
+                                local typeLbl = PLACED_TYPE_LABELS[typeKey] or typeKey
+
+                                local typeBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
+                                typeBtn:SetSize(36, 16)
+                                typeBtn:SetPoint("RIGHT", row, "RIGHT", btnX, 0)
+                                ApplyBackdrop(typeBtn,
+                                    {r = bc.r * 0.15, g = bc.g * 0.15, b = bc.b * 0.15, a = 1},
+                                    {r = bc.r * 0.4, g = bc.g * 0.4, b = bc.b * 0.4, a = 0.6})
+
+                                local tLbl = typeBtn:CreateFontString(nil, "OVERLAY")
+                                tLbl:SetFont("Fonts\\FRIZQT__.TTF", 7.5, "OUTLINE")
+                                tLbl:SetPoint("CENTER", 0, 0)
+                                tLbl:SetText(typeLbl)
+                                tLbl:SetTextColor(bc.r, bc.g, bc.b)
+
+                                typeBtn:SetScript("OnEnter", function(self)
+                                    self:SetBackdropBorderColor(bc.r, bc.g, bc.b, 1)
+                                    tLbl:SetTextColor(1, 1, 1)
+                                end)
+                                typeBtn:SetScript("OnLeave", function(self)
+                                    self:SetBackdropBorderColor(bc.r * 0.4, bc.g * 0.4, bc.b * 0.4, 0.6)
+                                    tLbl:SetTextColor(bc.r, bc.g, bc.b)
+                                end)
+
+                                local capturedAuraName = auraInfo.name
+                                local capturedTypeKey = typeKey
+                                typeBtn:SetScript("OnClick", function()
+                                    -- Create placed indicator for this aura+type if needed
+                                    local instance = CreateIndicatorInstance(capturedAuraName, capturedTypeKey)
+                                    if instance then
+                                        AddGroupMember(capturedGroupID, capturedAuraName, instance.id)
+                                    end
+                                    drop:Hide()
+                                    SwitchTab("layout")
+                                    RefreshPlacedIndicators()
+                                end)
+
+                                btnX = btnX - 40
+                            end
+
+                            -- Row highlight
+                            local hl = row:CreateTexture(nil, "BACKGROUND")
+                            hl:SetAllPoints()
+                            hl:SetColorTexture(1, 1, 1, 0)
+                            row:SetScript("OnEnter", function() hl:SetColorTexture(1, 1, 1, 0.03) end)
+                            row:SetScript("OnLeave", function() hl:SetColorTexture(1, 1, 1, 0) end)
+                        end
+                        dy2 = dy2 - ROW_H
+                    end
+                    local totalH = -dy2 + 4
+                    scrollChild:SetHeight(totalH)
+                    drop:SetHeight(math.min(totalH, MAX_H))
+
+                    drop:ClearAllPoints()
+                    drop:SetPoint("TOPLEFT", addMemBtn, "BOTTOMLEFT", 0, -2)
+                    drop:Show()
+                    drop:SetScript("OnHide", function() drop._ownerBtn = nil end)
+                end)
+                by = by - 28
+
+                -- ── PLACEMENT SECTION ──
+                by = by - 10
+                local placeLabel = body:CreateFontString(nil, "OVERLAY")
+                placeLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+                placeLabel:SetPoint("TOPLEFT", 8, by)
+                placeLabel:SetText("PLACEMENT")
+                placeLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                by = by - 18
+
+                -- Use GUI widgets with the group table as the proxy
+                local anchorDrop = GUI:CreateDropdown(body, "Anchor", ANCHOR_OPTIONS, group, "anchor", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end)
+                anchorDrop:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if anchorDrop.SetWidth then anchorDrop:SetWidth(bodyWidth - 10) end
+                by = by - 54
+
+                local oxSlider = GUI:CreateSlider(body, "Offset X", -50, 50, 1, group, "offsetX", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end, function()
+                    RefreshPlacedIndicators()
+                end)
+                oxSlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if oxSlider.SetWidth then oxSlider:SetWidth(bodyWidth - 10) end
+                by = by - 54
+
+                local oySlider = GUI:CreateSlider(body, "Offset Y", -50, 50, 1, group, "offsetY", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end, function()
+                    RefreshPlacedIndicators()
+                end)
+                oySlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if oySlider.SetWidth then oySlider:SetWidth(bodyWidth - 10) end
+                by = by - 54
+
+                -- ── GROWTH SECTION ──
+                by = by - 10
+                local growLabel = body:CreateFontString(nil, "OVERLAY")
+                growLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+                growLabel:SetPoint("TOPLEFT", 8, by)
+                growLabel:SetText("GROWTH")
+                growLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+                by = by - 18
+
+                local dirDrop = GUI:CreateDropdown(body, "Grow Direction", GROW_DIRECTIONS, group, "growDirection", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end)
+                dirDrop:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if dirDrop.SetWidth then dirDrop:SetWidth(bodyWidth - 10) end
+                by = by - 54
+
+                local spacingSlider = GUI:CreateSlider(body, "Spacing", 0, 20, 1, group, "spacing", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end, function()
+                    RefreshPlacedIndicators()
+                end)
+                spacingSlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if spacingSlider.SetWidth then spacingSlider:SetWidth(bodyWidth - 10) end
+                by = by - 54
+
+                local bodyH = -by + 12
+                body:SetHeight(bodyH)
+                totalCardH = totalCardH + bodyH
+            end
+
+            card:SetHeight(totalCardH)
+            yPos = yPos - totalCardH - 5
+        end
+    end
+
+    parent:SetHeight(max(-yPos + 20, 200))
 end
 
 -- ============================================================
@@ -3618,6 +4434,7 @@ end
 -- ============================================================
 
 function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
+    local prevDB = db  -- capture before overwrite to detect mode switch
     GUI = guiRef
     page = pageRef
     db = dbRef
@@ -3626,26 +4443,35 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     local parent = page.child
 
     -- ========================================
-    -- CLEANUP: Hide frames from any previous build
-    -- When the page is rebuilt (e.g., window resize), old frames
-    -- would stay visible underneath new ones without this.
+    -- REUSE: If mainFrame already exists and db hasn't changed (same mode),
+    -- just re-parent, show, and refresh. Avoids full teardown on resize.
+    -- A mode switch (Party↔Raid) changes db, so we must rebuild in that case.
     -- ========================================
+    if mainFrame and prevDB == dbRef then
+        mainFrame:SetParent(parent)
+        mainFrame:SetAllPoints()
+        mainFrame:Show()
+        DF:AuraDesigner_RefreshPage()
+        return
+    end
+
+    -- Full build (first time, or mode switch)
     if mainFrame then
         mainFrame:Hide()
         mainFrame:SetParent(nil)
     end
-    -- Clear placed indicator references (they were children of the old preview)
     wipe(placedIndicators)
-    -- Clear right panel children (they were children of the old scroll child)
-    wipe(rightPanelChildren)
+    wipe(expandedCards)
+    wipe(effectCardPool)
+
+    activeTab = "effects"
+    activeFilter = "all"
+    spellPickerActive = false
+    spellPickerType = nil
 
     -- Layout constants
     local BANNER_H = 36
-    local TILE_HEADER_H = 18
-    local TILE_STRIP_H = 82   -- inner scroll area
     local SECTION_GAP = 8
-    local RIGHT_PANEL_W = 280
-    local RIGHT_GAP = 6       -- gap between left content and right panel
 
     -- ========================================
     -- MAIN FRAME
@@ -3653,20 +4479,13 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     mainFrame = CreateFrame("Frame", nil, parent)
     mainFrame:SetAllPoints()
 
-    -- Override RefreshStates: Aura Designer uses its own layout system, not the
-    -- standard widget-based one. The default RefreshStates would calculate maxY = 0
-    -- (no standard widgets) and set page.child:SetHeight(~40), which makes mainFrame
-    -- (via SetAllPoints) too short. This causes rightPanel and rightScrollFrame to
-    -- have zero effective height since their BOTTOMRIGHT anchors to mainFrame's bottom.
+    -- Override RefreshStates: Aura Designer uses its own layout system
     page.RefreshStates = function(self)
-        -- Set scroll child height to match the visible page area so mainFrame fills it
         local pageH = self:GetHeight()
         self.child:SetHeight(math.max(pageH, 600))
-        -- Keep scroll child width in sync with content area
         if self.child and GUI.contentFrame then
             self.child:SetWidth(GUI.contentFrame:GetWidth() - 30)
         end
-        -- Refresh AD-specific UI (coexist banner, enable state, etc.)
         DF:AuraDesigner_RefreshPage()
     end
 
@@ -3680,14 +4499,10 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     enableBanner:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 0, yPos)
     enableBanner.UpdateSpecText()
 
-    -- Add sync/copy buttons to the banner (reuses the standard copy button system)
     if GUI.CreateCopyButton then
         local copyBtn = GUI.CreateCopyButton(enableBanner, {"auraDesigner"}, "Aura Designer", "auras_auradesigner")
         copyBtn:ClearAllPoints()
         copyBtn:SetPoint("RIGHT", enableBanner, "RIGHT", -5, 0)
-
-        -- Reposition spec dropdown to make room for sync + copy buttons
-        -- Copy btn = 115px, sync btn = 120px, gaps = ~12px total → need ~252px from right
         enableBanner.specBtn:SetSize(135, 22)
         enableBanner.specBtn:ClearAllPoints()
         enableBanner.specBtn:SetPoint("RIGHT", enableBanner, "RIGHT", -256, 0)
@@ -3699,9 +4514,8 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
 
     -- ========================================
     -- COEXISTENCE INFO BANNER
-    -- Shown when AD is enabled and standard Buffs are also visible.
     -- ========================================
-    contentBaseY = yPos  -- store for dynamic repositioning in RefreshPage
+    contentBaseY = yPos
     coexistBanner = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
     coexistBanner:SetHeight(COEXIST_BANNER_H)
     coexistBanner:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, yPos)
@@ -3721,9 +4535,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     disableBuffsBtn.text:SetAllPoints()
     disableBuffsBtn.text:SetText("Disable Buffs")
     disableBuffsBtn.text:SetTextColor(tc.r, tc.g, tc.b)
-    disableBuffsBtn:SetScript("OnEnter", function(self)
-        self.text:SetTextColor(1, 1, 1)
-    end)
+    disableBuffsBtn:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
     disableBuffsBtn:SetScript("OnLeave", function(self)
         local tc2 = GetThemeColor()
         self.text:SetTextColor(tc2.r, tc2.g, tc2.b)
@@ -3733,374 +4545,222 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
         DF:AuraDesigner_RefreshPage()
         DF:InvalidateAuraLayout()
         DF:UpdateAllFrames()
-        -- Refresh buffs tab if it has RefreshStates
         local buffsPage = GUI and GUI.Pages and GUI.Pages["auras_buffs"]
-        if buffsPage and buffsPage.RefreshStates then
-            buffsPage:RefreshStates()
-        end
+        if buffsPage and buffsPage.RefreshStates then buffsPage:RefreshStates() end
     end)
-
-    coexistBanner:Hide()  -- Visibility managed by RefreshPage
-    -- Don't subtract yPos here — managed dynamically in RefreshPage
+    coexistBanner:Hide()
 
     -- ========================================
-    -- RIGHT PANEL (fixed 280px, starts here)
-    -- Built BEFORE left content so left content can anchor to it
+    -- 50/50 SPLIT: LEFT PANEL + RIGHT PANEL
     -- ========================================
-    rightPanel = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-    rightPanel:SetWidth(RIGHT_PANEL_W)
-    rightPanel:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 0, yPos)
-    rightPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+    local splitContainer = CreateFrame("Frame", nil, mainFrame)
+    splitContainer:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, yPos)
+    splitContainer:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
+    mainFrame.splitContainer = splitContainer
+
+    -- ── LEFT PANEL (frame preview) ──
+    leftPanel = CreateFrame("Frame", nil, splitContainer, "BackdropTemplate")
+    leftPanel:SetPoint("TOPLEFT", 0, 0)
+    leftPanel:SetPoint("BOTTOMLEFT", 0, 0)
+    leftPanel:SetPoint("RIGHT", splitContainer, "CENTER", -2, 0)
+    ApplyBackdrop(leftPanel, C_PANEL, C_BORDER)
+
+    -- Frame preview (reuses existing CreateFramePreview with adapted anchoring)
+    origY_framePreview = 0
+    framePreview = CreateFramePreview(leftPanel, 0, nil)
+    contentRightInset = 0  -- No right inset needed in new layout
+
+    -- ── RIGHT PANEL (tabbed settings) ──
+    rightPanel = CreateFrame("Frame", nil, splitContainer, "BackdropTemplate")
+    rightPanel:SetPoint("TOPRIGHT", 0, 0)
+    rightPanel:SetPoint("BOTTOMRIGHT", 0, 0)
+    rightPanel:SetPoint("LEFT", splitContainer, "CENTER", 2, 0)
     ApplyBackdrop(rightPanel, {r = 0.10, g = 0.10, b = 0.10, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
 
-    -- Right panel "SETTINGS" title bar
-    rightPanel.titleBar = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
-    rightPanel.titleBar:SetHeight(22)
-    rightPanel.titleBar:SetPoint("TOPLEFT", 0, 0)
-    rightPanel.titleBar:SetPoint("TOPRIGHT", 0, 0)
-    ApplyBackdrop(rightPanel.titleBar, {r = 0.09, g = 0.09, b = 0.09, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
+    -- ── TAB BAR ──
+    tabBar = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
+    tabBar:SetHeight(28)
+    tabBar:SetPoint("TOPLEFT", 0, 0)
+    tabBar:SetPoint("TOPRIGHT", 0, 0)
+    ApplyBackdrop(tabBar, {r = 0.09, g = 0.09, b = 0.09, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
 
-    local settingsTitle = rightPanel.titleBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    settingsTitle:SetPoint("LEFT", 10, 0)
-    settingsTitle:SetText("SETTINGS")
-    settingsTitle:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    local TAB_DEFS = {
+        { key = "effects", label = "Effects",        color = GetThemeColor() },
+        { key = "layout",  label = "Layout Groups",  color = { r = 0.91, g = 0.66, b = 0.25 } },
+        { key = "global",  label = "Global",         color = { r = 0.51, g = 0.86, b = 0.51 } },
+    }
 
-    -- Right panel selected-aura header
-    rightPanel.selHeader = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
-    rightPanel.selHeader:SetHeight(40)
-    rightPanel.selHeader:SetPoint("TOPLEFT", rightPanel.titleBar, "BOTTOMLEFT", 0, 0)
-    rightPanel.selHeader:SetPoint("TOPRIGHT", rightPanel.titleBar, "BOTTOMRIGHT", 0, 0)
-    ApplyBackdrop(rightPanel.selHeader, C_BACKGROUND, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
-
-    rightPanel.selIconFrame = CreateFrame("Frame", nil, rightPanel.selHeader, "BackdropTemplate")
-    rightPanel.selIconFrame:SetSize(30, 30)
-    rightPanel.selIconFrame:SetPoint("LEFT", 10, 0)
-    ApplyBackdrop(rightPanel.selIconFrame, {r = 0, g = 0, b = 0, a = 0.3}, C_BORDER)
-
-    rightPanel.selIcon = rightPanel.selIconFrame:CreateTexture(nil, "ARTWORK")
-    rightPanel.selIcon:SetPoint("TOPLEFT", 1, -1)
-    rightPanel.selIcon:SetPoint("BOTTOMRIGHT", -1, 1)
-
-    -- Cog overlay for global defaults view
-    rightPanel.selCog = rightPanel.selIconFrame:CreateTexture(nil, "OVERLAY")
-    rightPanel.selCog:SetSize(20, 20)
-    rightPanel.selCog:SetPoint("CENTER", 0, 0)
-    rightPanel.selCog:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\settings")
-    rightPanel.selCog:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    rightPanel.selCog:Hide()
-
-    -- Letter fallback for auras without a spell icon
-    rightPanel.selLetter = rightPanel.selIconFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rightPanel.selLetter:SetPoint("CENTER", 0, 0)
-    rightPanel.selLetter:Hide()
-
-    rightPanel.selName = rightPanel.selHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rightPanel.selName:SetPoint("TOPLEFT", rightPanel.selIconFrame, "TOPRIGHT", 8, -2)
-    rightPanel.selName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
-    rightPanel.selSub = rightPanel.selHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rightPanel.selSub:SetPoint("TOPLEFT", rightPanel.selName, "BOTTOMLEFT", 0, -1)
-    rightPanel.selSub:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    -- Copy-from row (visible only in per-aura view)
-    rightPanel.copyRow = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
-    rightPanel.copyRow:SetHeight(26)
-    rightPanel.copyRow:SetPoint("TOPLEFT", rightPanel.selHeader, "BOTTOMLEFT", 0, 0)
-    rightPanel.copyRow:SetPoint("TOPRIGHT", rightPanel.selHeader, "BOTTOMRIGHT", 0, 0)
-    -- Accent-tinted background (matches mockup rgba(115,115,242,.04) over panel)
-    local ctc = GetThemeColor()
-    ApplyBackdrop(rightPanel.copyRow, {r = C_PANEL.r + ctc.r * 0.04, g = C_PANEL.g + ctc.g * 0.04, b = C_PANEL.b + ctc.b * 0.04, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
-    rightPanel.copyRow:Hide()
-
-    local copyLabel = rightPanel.copyRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    copyLabel:SetPoint("LEFT", 10, 0)
-    copyLabel:SetText("Copy from:")
-    copyLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    -- Dropdown (simple button that opens a menu)
-    rightPanel.copyDropdown = CreateFrame("Frame", nil, rightPanel.copyRow, "BackdropTemplate")
-    rightPanel.copyDropdown:SetHeight(18)
-    rightPanel.copyDropdown:SetPoint("LEFT", copyLabel, "RIGHT", 6, 0)
-    rightPanel.copyDropdown:SetPoint("RIGHT", rightPanel.copyRow, "RIGHT", -60, 0)
-    ApplyBackdrop(rightPanel.copyDropdown, C_ELEMENT, C_BORDER)
-
-    rightPanel.copyDropdownText = rightPanel.copyDropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rightPanel.copyDropdownText:SetPoint("LEFT", 5, 0)
-    rightPanel.copyDropdownText:SetPoint("RIGHT", -14, 0)
-    rightPanel.copyDropdownText:SetJustifyH("LEFT")
-    rightPanel.copyDropdownText:SetText("Select aura...")
-    rightPanel.copyDropdownText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    local copyArrow = rightPanel.copyDropdown:CreateTexture(nil, "OVERLAY")
-    copyArrow:SetSize(10, 10)
-    copyArrow:SetPoint("RIGHT", -3, 0)
-    copyArrow:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
-    copyArrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-
-    -- Copy button
-    rightPanel.copyBtn = CreateFrame("Button", nil, rightPanel.copyRow, "BackdropTemplate")
-    rightPanel.copyBtn:SetSize(46, 18)
-    rightPanel.copyBtn:SetPoint("RIGHT", rightPanel.copyRow, "RIGHT", -8, 0)
-    local tc = GetThemeColor()
-    ApplyBackdrop(rightPanel.copyBtn, C_ELEMENT, {r = tc.r, g = tc.g, b = tc.b, a = 0.8})
-
-    local copyBtnText = rightPanel.copyBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    copyBtnText:SetPoint("CENTER", 0, 0)
-    copyBtnText:SetText("Copy")
-    copyBtnText:SetTextColor(tc.r, tc.g, tc.b)
-
-    rightPanel.copyBtn:SetScript("OnEnter", function(self)
-        local c = GetThemeColor()
-        self:SetBackdropColor(c.r, c.g, c.b, 0.3)
-    end)
-    rightPanel.copyBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
-    end)
-
-    -- State for copy-from selection
-    rightPanel.copySourceAura = nil
-
-    -- Custom popup menu frame (reusable, addon-styled)
-    local copyMenuFrame = CreateFrame("Frame", nil, rightPanel.copyDropdown, "BackdropTemplate")
-    copyMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-    copyMenuFrame:SetClampedToScreen(true)
-    ApplyBackdrop(copyMenuFrame, C_PANEL, C_BORDER)
-    copyMenuFrame:Hide()
-    local copyMenuButtons = {}
-
-    -- Dropdown click: show menu of other auras for the current spec
-    local copyDropdownBtn = CreateFrame("Button", nil, rightPanel.copyDropdown)
-    copyDropdownBtn:SetAllPoints()
-    copyDropdownBtn:SetScript("OnClick", function(self)
-        if copyMenuFrame:IsShown() then
-            copyMenuFrame:Hide()
-            return
-        end
-
-        local spec = ResolveSpec()
-        if not spec then return end
-        local auraList = Adapter:GetTrackableAuras(spec)
-        if not auraList then return end
-
-        -- Clear old buttons
-        for _, btn in ipairs(copyMenuButtons) do
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-        wipe(copyMenuButtons)
-
-        -- Build menu items
-        local idx = 0
-        for _, info in ipairs(auraList) do
-            if info.name ~= selectedAura then
-                local menuBtn = CreateFrame("Button", nil, copyMenuFrame)
-                menuBtn:SetPoint("TOPLEFT", 2, -2 - idx * 20)
-                menuBtn:SetPoint("TOPRIGHT", -2, -2 - idx * 20)
-                menuBtn:SetHeight(20)
-
-                local btnText = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                btnText:SetPoint("LEFT", 8, 0)
-                btnText:SetText(info.display)
-                btnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
-                local hl = menuBtn:CreateTexture(nil, "HIGHLIGHT")
-                hl:SetAllPoints()
-                local c = GetThemeColor()
-                hl:SetColorTexture(c.r, c.g, c.b, 0.3)
-
-                local capturedName = info.name
-                local capturedDisplay = info.display
-                menuBtn:SetScript("OnClick", function()
-                    rightPanel.copySourceAura = capturedName
-                    rightPanel.copyDropdownText:SetText(capturedDisplay)
-                    rightPanel.copyDropdownText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-                    copyMenuFrame:Hide()
-                end)
-
-                tinsert(copyMenuButtons, menuBtn)
-                idx = idx + 1
-            end
-        end
-
-        if idx == 0 then
-            rightPanel.copyDropdownText:SetText("No other auras")
-            rightPanel.copyDropdownText:SetTextColor(0.5, 0.5, 0.5)
-            return
-        end
-
-        copyMenuFrame:SetPoint("TOPLEFT", rightPanel.copyDropdown, "BOTTOMLEFT", 0, -2)
-        copyMenuFrame:SetPoint("TOPRIGHT", rightPanel.copyDropdown, "BOTTOMRIGHT", 0, -2)
-        copyMenuFrame:SetHeight(idx * 20 + 4)
-        copyMenuFrame:Show()
-    end)
-
-    -- Close menu when clicking elsewhere
-    copyMenuFrame:SetScript("OnShow", function()
-        copyMenuFrame:SetPropagateKeyboardInput(true)
-    end)
-    copyMenuFrame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-            self:SetPropagateKeyboardInput(false)
+    wipe(tabButtons)
+    for i, def in ipairs(TAB_DEFS) do
+        local btn = CreateFrame("Button", nil, tabBar)
+        btn:SetHeight(28)
+        if i == 1 then
+            btn:SetPoint("TOPLEFT", 0, 0)
         else
-            self:SetPropagateKeyboardInput(true)
+            btn:SetPoint("TOPLEFT", tabButtons[TAB_DEFS[i-1].key], "TOPRIGHT", 0, 0)
         end
-    end)
+        btn:SetWidth(tabBar:GetWidth() / #TAB_DEFS)  -- Equal width
 
-    -- Copy button click: copy all settings from source to current aura
-    rightPanel.copyBtn:SetScript("OnClick", function()
-        if not rightPanel.copySourceAura or not selectedAura then return end
-        local adDB = GetAuraDesignerDB()
-        local sourceCfg = adDB.auras[rightPanel.copySourceAura]
-        if not sourceCfg then return end
+        -- Bottom accent line
+        btn.accent = btn:CreateTexture(nil, "OVERLAY")
+        btn.accent:SetHeight(2)
+        btn.accent:SetPoint("BOTTOMLEFT", 0, 0)
+        btn.accent:SetPoint("BOTTOMRIGHT", 0, 0)
+        btn.accent:SetColorTexture(def.color.r, def.color.g, def.color.b, 1)
+        btn.accent:Hide()
 
-        -- Deep copy
-        local function deepCopy(tbl)
-            local copy = {}
-            for k, v in pairs(tbl) do
-                if type(v) == "table" then
-                    copy[k] = deepCopy(v)
-                else
-                    copy[k] = v
-                end
-            end
-            return copy
-        end
+        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.label:SetPoint("CENTER", 0, 1)
+        btn.label:SetText(def.label)
+        btn.label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
-        -- Save current aura's indicator positions before overwriting
-        local currentCfg = adDB.auras[selectedAura]
-        local currentPositions = {}
-        if currentCfg and currentCfg.indicators then
-            for i, inst in ipairs(currentCfg.indicators) do
-                currentPositions[i] = {
-                    anchor = inst.anchor,
-                    offsetX = inst.offsetX,
-                    offsetY = inst.offsetY,
-                }
-            end
-        end
+        -- Highlight
+        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0.03)
 
-        local newCfg = deepCopy(sourceCfg)
-        -- Re-assign instance IDs and preserve current positions
-        if newCfg.indicators then
-            local nextID = 1
-            for i, inst in ipairs(newCfg.indicators) do
-                inst.id = nextID
-                -- Keep the target aura's current positions when available
-                if currentPositions[i] then
-                    inst.anchor = currentPositions[i].anchor
-                    inst.offsetX = currentPositions[i].offsetX
-                    inst.offsetY = currentPositions[i].offsetY
-                end
-                nextID = nextID + 1
-            end
-            newCfg.nextIndicatorID = nextID
-        end
-        adDB.auras[selectedAura] = newCfg
-        DF:AuraDesigner_RefreshPage()
-    end)
+        btn.tabKey = def.key
+        btn.tabColor = def.color
+        btn:SetScript("OnClick", function(self)
+            SwitchTab(self.tabKey)
+        end)
 
-    -- Scroll frame below header (and copy row when visible)
-    -- Default offset: 22 title + 40 header = 62
-    rightScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
-    rightScrollFrame:SetPoint("TOPLEFT", 0, -62)
-    rightScrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
-
-    rightScrollChild = CreateFrame("Frame", nil, rightScrollFrame)
-    rightScrollChild:SetWidth(258)
-    rightScrollChild:SetHeight(800)
-    rightScrollFrame:SetScrollChild(rightScrollChild)
-
-    local scrollBar = rightScrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:ClearAllPoints()
-        scrollBar:SetPoint("TOPLEFT", rightScrollFrame, "TOPRIGHT", 2, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", rightScrollFrame, "BOTTOMRIGHT", 2, 16)
+        tabButtons[def.key] = btn
     end
 
-    -- Smooth scroll — override default scroll step for smaller increments
+    -- Make tab buttons equal width on parent resize
+    tabBar:SetScript("OnSizeChanged", function(self, w, h)
+        local tabW = w / #TAB_DEFS
+        for _, def in ipairs(TAB_DEFS) do
+            local btn = tabButtons[def.key]
+            if btn then btn:SetWidth(tabW) end
+        end
+    end)
+
+    -- ── TAB CONTENT (scrollable) ──
+    tabScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
+    tabScrollFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
+    tabScrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
+
+    tabContentFrame = CreateFrame("Frame", nil, tabScrollFrame)
+    -- Pre-compute initial width from parent geometry so SwitchTab() has
+    -- accurate dimensions before the first layout pass fires OnSizeChanged.
+    local earlyW = parent:GetWidth()
+    if earlyW < 100 then earlyW = (GUI.contentFrame and GUI.contentFrame:GetWidth() or 600) - 30 end
+    tabContentFrame:SetWidth(max(1, (earlyW / 2) - 2 - 22))
+    tabContentFrame:SetHeight(800)
+    tabScrollFrame:SetScrollChild(tabContentFrame)
+
+    -- Match scroll child width to scroll frame
+    tabScrollFrame:SetScript("OnSizeChanged", function(self, w, h)
+        tabContentFrame:SetWidth(w)
+    end)
+
+    local scrollBar = tabScrollFrame.ScrollBar
+    if scrollBar then
+        scrollBar:ClearAllPoints()
+        scrollBar:SetPoint("TOPLEFT", tabScrollFrame, "TOPRIGHT", 2, -16)
+        scrollBar:SetPoint("BOTTOMLEFT", tabScrollFrame, "BOTTOMRIGHT", 2, 16)
+    end
+
+    -- Smooth scroll
     local SCROLL_STEP = 30
-    rightScrollFrame:SetScript("OnMouseWheel", function(self, delta)
+    tabScrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local current = self:GetVerticalScroll()
         local maxScroll = max(0, self:GetVerticalScrollRange())
         local newScroll = max(0, min(maxScroll, current - (delta * SCROLL_STEP)))
         self:SetVerticalScroll(newScroll)
     end)
-    -- Also propagate mouse wheel from the scroll child
-    rightScrollChild:EnableMouseWheel(true)
-    rightScrollChild:SetScript("OnMouseWheel", function(self, delta)
-        local parent = self:GetParent()
-        if parent and parent:GetScript("OnMouseWheel") then
-            parent:GetScript("OnMouseWheel")(parent, delta)
+    tabContentFrame:EnableMouseWheel(true)
+    tabContentFrame:SetScript("OnMouseWheel", function(self, delta)
+        local p = self:GetParent()
+        if p and p:GetScript("OnMouseWheel") then
+            p:GetScript("OnMouseWheel")(p, delta)
         end
     end)
 
-    -- ========================================
-    -- LEFT CONTENT: TILE STRIP
-    -- All left content anchors TOPRIGHT to rightPanel's TOPLEFT
-    -- ========================================
-    -- Store layout info for dynamic repositioning (coexist banner)
-    contentRightInset = RIGHT_PANEL_W + RIGHT_GAP
-    origY_tileWrap = yPos
+    -- ── SPELL PICKER VIEW (hidden by default, overlays tabs when active) ──
+    spellPickerView = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
+    spellPickerView:SetPoint("TOPLEFT", 0, 0)
+    spellPickerView:SetPoint("BOTTOMRIGHT", 0, 0)
+    ApplyBackdrop(spellPickerView, {r = 0.10, g = 0.10, b = 0.10, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
+    spellPickerView:Hide()
 
-    local tileWrap = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-    tileWrapRef = tileWrap
-    mainFrame.tileWrap = tileWrap
-    tileWrap:SetHeight(TILE_HEADER_H + TILE_STRIP_H)
-    tileWrap:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, yPos)
-    tileWrap:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -contentRightInset, yPos)
-    ApplyBackdrop(tileWrap, C_PANEL, C_BORDER)
+    -- Spell picker header
+    local pickerHeader = CreateFrame("Frame", nil, spellPickerView, "BackdropTemplate")
+    pickerHeader:SetHeight(28)
+    pickerHeader:SetPoint("TOPLEFT", 0, 0)
+    pickerHeader:SetPoint("TOPRIGHT", 0, 0)
+    ApplyBackdrop(pickerHeader, {r = 0.09, g = 0.09, b = 0.09, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
 
-    -- Header bar
-    tileStripHeader = CreateStripHeader(tileWrap, "TRACKABLE AURAS")
-    tileStripHeader:SetPoint("TOPLEFT", 0, 0)
-    tileStripHeader:SetPoint("TOPRIGHT", 0, 0)
+    local backBtn = CreateFrame("Button", nil, pickerHeader)
+    backBtn:SetSize(24, 24)
+    backBtn:SetPoint("LEFT", 4, 0)
+    backBtn.icon = backBtn:CreateTexture(nil, "OVERLAY")
+    backBtn.icon:SetSize(14, 14)
+    backBtn.icon:SetPoint("CENTER", 0, 0)
+    backBtn.icon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
+    backBtn.icon:SetRotation(math.rad(180))  -- flip to point left
+    backBtn.icon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+    backBtn:SetScript("OnClick", function() HideSpellPicker() end)
+    backBtn:SetScript("OnEnter", function(self) self.icon:SetVertexColor(1, 1, 1) end)
+    backBtn:SetScript("OnLeave", function(self) self.icon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b) end)
 
-    -- Scroll area below header
-    tileStrip = CreateFrame("ScrollFrame", nil, tileWrap)
-    tileStrip:SetPoint("TOPLEFT", 0, -TILE_HEADER_H)
-    tileStrip:SetPoint("BOTTOMRIGHT", 0, 0)
-    tileStrip:EnableMouseWheel(true)
+    spellPickerView.title = pickerHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    spellPickerView.title:SetPoint("LEFT", backBtn, "RIGHT", 4, 0)
+    spellPickerView.title:SetText("Select a spell")
+    spellPickerView.title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
-    tileStripContent = CreateFrame("Frame", nil, tileStrip)
-    tileStripContent:SetHeight(TILE_STRIP_H)
-    tileStripContent:SetWidth(800)
-    tileStrip:SetScrollChild(tileStripContent)
+    spellPickerView.typeBadge = pickerHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    spellPickerView.typeBadge:SetPoint("LEFT", spellPickerView.title, "RIGHT", 6, 0)
 
-    -- Horizontal scrollbar
-    local tileScrollbar = CreateHorizontalScrollbar(tileStrip, tileStripContent)
-    tileStripScrollbar = tileScrollbar
+    -- Spell picker hint
+    local pickerHint = spellPickerView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pickerHint:SetPoint("TOPLEFT", pickerHeader, "BOTTOMLEFT", 12, -8)
+    pickerHint:SetText("Click a spell to place it on the frame")
+    pickerHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
-    tileStrip:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetHorizontalScroll()
-        local maxScroll = max(0, tileStripContent:GetWidth() - self:GetWidth())
-        local newScroll = max(0, min(maxScroll, current - (delta * 68)))
-        self:SetHorizontalScroll(newScroll)
-        tileScrollbar:UpdatePosition()
+    -- Spell picker scroll frame for the grid
+    local pickerScroll = CreateFrame("ScrollFrame", nil, spellPickerView, "UIPanelScrollFrameTemplate")
+    pickerScroll:SetPoint("TOPLEFT", pickerHeader, "BOTTOMLEFT", 0, -24)
+    pickerScroll:SetPoint("BOTTOMRIGHT", -22, 0)
+
+    spellPickerView.gridFrame = CreateFrame("Frame", nil, pickerScroll)
+    spellPickerView.gridFrame:SetWidth(1)
+    spellPickerView.gridFrame:SetHeight(400)
+    pickerScroll:SetScrollChild(spellPickerView.gridFrame)
+
+    pickerScroll:SetScript("OnSizeChanged", function(self, w, h)
+        spellPickerView.gridFrame:SetWidth(w)
     end)
 
-    yPos = yPos - (TILE_HEADER_H + TILE_STRIP_H + SECTION_GAP)
+    local pickerScrollBar = pickerScroll.ScrollBar
+    if pickerScrollBar then
+        pickerScrollBar:ClearAllPoints()
+        pickerScrollBar:SetPoint("TOPLEFT", pickerScroll, "TOPRIGHT", 2, -16)
+        pickerScrollBar:SetPoint("BOTTOMLEFT", pickerScroll, "BOTTOMRIGHT", 2, 16)
+    end
+
+    spellPickerView.scrollFrame = pickerScroll
 
     -- ========================================
-    -- LEFT CONTENT: FRAME PREVIEW
+    -- POPULATE (new UI)
     -- ========================================
-    origY_framePreview = yPos
-    framePreview = CreateFramePreview(mainFrame, yPos, rightPanel)
-    local previewH = framePreview:GetHeight()
-    yPos = yPos - (previewH + SECTION_GAP)
 
-    -- ========================================
-    -- LEFT CONTENT: ACTIVE EFFECTS STRIP
-    -- ========================================
-    origY_effectsStrip = yPos
-    activeEffectsStrip = CreateActiveEffectsStrip(mainFrame, yPos, rightPanel)
+    -- Force initial width sync: OnSizeChanged won't fire until the frame renders,
+    -- but SwitchTab needs accurate widths now for slider/dropdown sizing.
+    -- Compute initial scroll content width from parent geometry.
+    -- rightPanel:GetWidth() returns 0 before the first layout pass, so we
+    -- calculate from the parent which already has valid geometry on a mode
+    -- switch (Party↔Raid).
+    local parentW = parent:GetWidth()
+    if parentW < 100 then parentW = (GUI.contentFrame and GUI.contentFrame:GetWidth() or 600) - 30 end
+    local initW = (parentW / 2) - 2 - 22  -- half split minus gap minus scrollbar
+    if initW > 50 then
+        tabContentFrame:SetWidth(initW)
+    end
 
-    -- ========================================
-    -- POPULATE
-    -- ========================================
-    PopulateTileStrip()
-    RefreshRightPanel()
-    RefreshActiveEffectsStrip()
+    SwitchTab("effects")
     RefreshPlacedIndicators()
     RefreshPreviewEffects()
 end
@@ -4112,22 +4772,18 @@ end
 function DF:AuraDesigner_RefreshPage()
     if not mainFrame then return end
 
-    -- Refresh tile states
-    for _, tile in ipairs(activeTiles) do
-        tile:SetSelected(selectedAura == tile.auraName)
-        if tile.UpdateBadge then tile:UpdateBadge() end
-    end
-
     -- Check if spec changed
     local currentSpec = ResolveSpec()
     if currentSpec ~= selectedSpec then
-        selectedAura = nil
-        PopulateTileStrip()
+        selectedSpec = currentSpec
     end
 
-    -- Refresh panels
-    RefreshRightPanel()
-    RefreshActiveEffectsStrip()
+    -- Rebuild the current tab to reflect data changes
+    if activeTab and SwitchTab then
+        SwitchTab(activeTab)
+    end
+
+    -- Refresh frame preview
     RefreshPlacedIndicators()
     RefreshPreviewEffects()
 
@@ -4148,30 +4804,15 @@ function DF:AuraDesigner_RefreshPage()
             coexistBanner:Hide()
         end
 
-        -- Shift content panels down when banner is visible
+        -- Shift the split container when banner is visible
         local newShift = bannerVisible and (COEXIST_BANNER_H + COEXIST_GAP) or 0
         if newShift ~= currentBannerShift then
             currentBannerShift = newShift
-            local delta = -newShift  -- negative = shift down
-            if rightPanel then
-                rightPanel:ClearAllPoints()
-                rightPanel:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", 0, contentBaseY + delta)
-                rightPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
-            end
-            if tileWrapRef and origY_tileWrap then
-                tileWrapRef:ClearAllPoints()
-                tileWrapRef:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, origY_tileWrap + delta)
-                tileWrapRef:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -contentRightInset, origY_tileWrap + delta)
-            end
-            if framePreview and origY_framePreview then
-                framePreview:ClearAllPoints()
-                framePreview:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, origY_framePreview + delta)
-                framePreview:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -contentRightInset, origY_framePreview + delta)
-            end
-            if activeEffectsStrip and origY_effectsStrip then
-                activeEffectsStrip:ClearAllPoints()
-                activeEffectsStrip:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, origY_effectsStrip + delta)
-                activeEffectsStrip:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -contentRightInset, origY_effectsStrip + delta)
+            local delta = -newShift
+            if mainFrame.splitContainer then
+                mainFrame.splitContainer:ClearAllPoints()
+                mainFrame.splitContainer:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, contentBaseY + delta)
+                mainFrame.splitContainer:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", 0, 0)
             end
         end
     end

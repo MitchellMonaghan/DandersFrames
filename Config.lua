@@ -1851,6 +1851,8 @@ DF.PartyDefaults = {
             durationColorByTime = false,
         },
         auras = {},
+        layoutGroups = {},
+        nextLayoutGroupID = 1,
     },
 
 }
@@ -3015,6 +3017,8 @@ DF.RaidDefaults = {
             durationColorByTime = false,
         },
         auras = {},
+        layoutGroups = {},
+        nextLayoutGroupID = 1,
     },
 
 }
