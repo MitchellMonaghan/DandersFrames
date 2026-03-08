@@ -519,23 +519,34 @@ end
 -- Usage as iterator: for frame in DF:IterateCompactFrames() do ... end
 function DF:IterateCompactFrames(callback)
     local frames = {}
-    
-    -- Add party frames (includes player via headers)
-    if DF.IteratePartyFrames then
-        DF:IteratePartyFrames(function(frame)
-            if frame then
-                table.insert(frames, frame)
-            end
-        end)
-    end
-    
-    -- Add raid frames
-    if DF.IterateRaidFrames then
-        DF:IterateRaidFrames(function(frame)
-            if frame then
-                table.insert(frames, frame)
-            end
-        end)
+
+    -- Arena first (IsInRaid()=true in arena, so must check before raid)
+    if DF.IsInArena and DF:IsInArena() then
+        if DF.IterateArenaFrames then
+            DF:IterateArenaFrames(function(frame)
+                if frame then
+                    table.insert(frames, frame)
+                end
+            end)
+        end
+    else
+        -- Add party frames (includes player via headers)
+        if DF.IteratePartyFrames then
+            DF:IteratePartyFrames(function(frame)
+                if frame then
+                    table.insert(frames, frame)
+                end
+            end)
+        end
+
+        -- Add raid frames
+        if DF.IterateRaidFrames then
+            DF:IterateRaidFrames(function(frame)
+                if frame then
+                    table.insert(frames, frame)
+                end
+            end)
+        end
     end
     
     -- If callback provided, call it for each frame (RG_Aliases style)
@@ -554,37 +565,62 @@ function DF:IterateCompactFrames(callback)
     end
 end
 
--- Get all frames as a table (alternative to iterator)
+-- Get all visible frames as a table (alternative to iterator)
 function DF:GetAllFrames()
     local frames = {}
-    
+
+    -- Arena first (IsInRaid()=true in arena, so must check before raid)
+    if DF.IsInArena and DF:IsInArena() then
+        if DF.IterateArenaFrames then
+            DF:IterateArenaFrames(function(frame)
+                if frame and frame:IsShown() then
+                    table.insert(frames, frame)
+                end
+            end)
+        end
+        return frames
+    end
+
     -- Add party frames (includes player via headers)
     if DF.IteratePartyFrames then
         DF:IteratePartyFrames(function(frame)
-            if frame then
+            if frame and frame:IsShown() then
                 table.insert(frames, frame)
             end
         end)
     end
-    
+
     -- Add raid frames
     if DF.IterateRaidFrames then
         DF:IterateRaidFrames(function(frame)
-            if frame then
+            if frame and frame:IsShown() then
                 table.insert(frames, frame)
             end
         end)
     end
-    
+
     return frames
 end
 
 -- Get frame for a specific unit
 function DF:GetFrameForUnit(unit)
     if not unit then return nil end
-    
+
     local foundFrame = nil
-    
+
+    -- Arena first (IsInRaid()=true in arena, so must check before raid)
+    if DF.IsInArena and DF:IsInArena() then
+        if DF.IterateArenaFrames then
+            DF:IterateArenaFrames(function(frame)
+                if frame and frame.unit == unit then
+                    foundFrame = frame
+                    return true  -- Stop iteration
+                end
+            end)
+        end
+        return foundFrame
+    end
+
     -- Check party frames (includes player)
     if DF.IteratePartyFrames then
         DF:IteratePartyFrames(function(frame)
@@ -595,7 +631,7 @@ function DF:GetFrameForUnit(unit)
         end)
         if foundFrame then return foundFrame end
     end
-    
+
     -- Check raid frames
     if DF.IterateRaidFrames then
         DF:IterateRaidFrames(function(frame)
@@ -605,7 +641,7 @@ function DF:GetFrameForUnit(unit)
             end
         end)
     end
-    
+
     return foundFrame
 end
 

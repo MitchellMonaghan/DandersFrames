@@ -1497,13 +1497,13 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
                             local poisonColor = db.debuffBorderColorPoison or {r = 0.0, g = 0.6, b = 0.0}
                             local bleedColor = db.debuffBorderColorBleed or {r = 1.0, g = 0.0, b = 0.0}
                             
-                            curve:AddPoint(0, CreateColor(noneColor.r, noneColor.g, noneColor.b, 0.8))   -- None
-                            curve:AddPoint(1, CreateColor(magicColor.r, magicColor.g, magicColor.b, 0.8))   -- Magic
-                            curve:AddPoint(2, CreateColor(curseColor.r, curseColor.g, curseColor.b, 0.8))   -- Curse
-                            curve:AddPoint(3, CreateColor(diseaseColor.r, diseaseColor.g, diseaseColor.b, 0.8)) -- Disease
-                            curve:AddPoint(4, CreateColor(poisonColor.r, poisonColor.g, poisonColor.b, 0.8))   -- Poison
-                            curve:AddPoint(9, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 0.8))   -- Enrage
-                            curve:AddPoint(11, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 0.8))  -- Bleed
+                            curve:AddPoint(0, CreateColor(noneColor.r, noneColor.g, noneColor.b, 1.0))   -- None
+                            curve:AddPoint(1, CreateColor(magicColor.r, magicColor.g, magicColor.b, 1.0))   -- Magic
+                            curve:AddPoint(2, CreateColor(curseColor.r, curseColor.g, curseColor.b, 1.0))   -- Curse
+                            curve:AddPoint(3, CreateColor(diseaseColor.r, diseaseColor.g, diseaseColor.b, 1.0)) -- Disease
+                            curve:AddPoint(4, CreateColor(poisonColor.r, poisonColor.g, poisonColor.b, 1.0))   -- Poison
+                            curve:AddPoint(9, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 1.0))   -- Enrage
+                            curve:AddPoint(11, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 1.0))  -- Bleed
                             
                             DF.debuffBorderCurve = curve
                         end
@@ -1511,25 +1511,26 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
                         -- Get color from API
                         local borderColor = C_UnitAuras.GetAuraDispelTypeColor(unit, auraInstanceID, DF.debuffBorderCurve)
                         if borderColor then
-                            local r, g, b, a = 0.8, 0, 0, 0.8
+                            local r, g, b = 0.8, 0, 0
                             if borderColor.GetRGBA then
-                                r, g, b, a = borderColor:GetRGBA()
+                                r, g, b = borderColor:GetRGB()
                             elseif borderColor.r then
-                                r, g, b, a = borderColor.r, borderColor.g, borderColor.b, borderColor.a or 0.8
+                                r, g, b = borderColor.r, borderColor.g, borderColor.b
                             end
-                            icon.border:SetColorTexture(r, g, b, a)
+                            icon.border:SetColorTexture(r, g, b, 1.0)
                         else
                             -- Fallback to none color
                             local c = db.debuffBorderColorNone or {r = 0.8, g = 0, b = 0}
-                            icon.border:SetColorTexture(c.r, c.g, c.b, 0.8)
+                            icon.border:SetColorTexture(c.r, c.g, c.b, 1.0)
                         end
                     else
                         -- Color by type disabled or API not available - use default red
-                        icon.border:SetColorTexture(0.8, 0, 0, 0.8)
+                        icon.border:SetColorTexture(0.8, 0, 0, 1.0)
                     end
                 else
-                    icon.border:SetColorTexture(0, 0, 0, 0.8)  -- Black for buffs and dead/offline debuffs
+                    icon.border:SetColorTexture(0, 0, 0, 1.0)  -- Black for buffs and dead/offline debuffs
                 end
+                icon.border:SetAlpha(0.8)
                 icon.border:Show()
             elseif not masqueBorderControl then
                 icon.border:Hide()
@@ -1861,36 +1862,37 @@ function DF:UpdateAuraIconsDirect(frame, icons, auraType, maxAuras)
                                     local poisonColor = db.debuffBorderColorPoison or {r = 0.0, g = 0.6, b = 0.0}
                                     local bleedColor = db.debuffBorderColorBleed or {r = 1.0, g = 0.0, b = 0.0}
 
-                                    curve:AddPoint(0, CreateColor(noneColor.r, noneColor.g, noneColor.b, 0.8))
-                                    curve:AddPoint(1, CreateColor(magicColor.r, magicColor.g, magicColor.b, 0.8))
-                                    curve:AddPoint(2, CreateColor(curseColor.r, curseColor.g, curseColor.b, 0.8))
-                                    curve:AddPoint(3, CreateColor(diseaseColor.r, diseaseColor.g, diseaseColor.b, 0.8))
-                                    curve:AddPoint(4, CreateColor(poisonColor.r, poisonColor.g, poisonColor.b, 0.8))
-                                    curve:AddPoint(9, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 0.8))
-                                    curve:AddPoint(11, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 0.8))
+                                    curve:AddPoint(0, CreateColor(noneColor.r, noneColor.g, noneColor.b, 1.0))
+                                    curve:AddPoint(1, CreateColor(magicColor.r, magicColor.g, magicColor.b, 1.0))
+                                    curve:AddPoint(2, CreateColor(curseColor.r, curseColor.g, curseColor.b, 1.0))
+                                    curve:AddPoint(3, CreateColor(diseaseColor.r, diseaseColor.g, diseaseColor.b, 1.0))
+                                    curve:AddPoint(4, CreateColor(poisonColor.r, poisonColor.g, poisonColor.b, 1.0))
+                                    curve:AddPoint(9, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 1.0))
+                                    curve:AddPoint(11, CreateColor(bleedColor.r, bleedColor.g, bleedColor.b, 1.0))
 
                                     DF.debuffBorderCurve = curve
                                 end
 
                                 local borderColor = C_UnitAuras.GetAuraDispelTypeColor(unit, auraInstanceID, DF.debuffBorderCurve)
                                 if borderColor then
-                                    local r, g, b, a = 0.8, 0, 0, 0.8
+                                    local r, g, b = 0.8, 0, 0
                                     if borderColor.GetRGBA then
-                                        r, g, b, a = borderColor:GetRGBA()
+                                        r, g, b = borderColor:GetRGB()
                                     elseif borderColor.r then
-                                        r, g, b, a = borderColor.r, borderColor.g, borderColor.b, borderColor.a or 0.8
+                                        r, g, b = borderColor.r, borderColor.g, borderColor.b
                                     end
-                                    icon.border:SetColorTexture(r, g, b, a)
+                                    icon.border:SetColorTexture(r, g, b, 1.0)
                                 else
                                     local c = db.debuffBorderColorNone or {r = 0.8, g = 0, b = 0}
-                                    icon.border:SetColorTexture(c.r, c.g, c.b, 0.8)
+                                    icon.border:SetColorTexture(c.r, c.g, c.b, 1.0)
                                 end
                             else
-                                icon.border:SetColorTexture(0.8, 0, 0, 0.8)
+                                icon.border:SetColorTexture(0.8, 0, 0, 1.0)
                             end
                         else
-                            icon.border:SetColorTexture(0, 0, 0, 0.8)
+                            icon.border:SetColorTexture(0, 0, 0, 1.0)
                         end
+                        icon.border:SetAlpha(0.8)
                         icon.border:Show()
                     elseif not masqueBorderControl then
                         icon.border:Hide()
@@ -2401,6 +2403,45 @@ local function InstallBlizzardHooks()
         end)
     end
 
+    -- Hook side menu frames to forcibly re-hide when Blizzard re-shows them
+    -- SetAlpha(0) alone is insufficient — Blizzard code resets alpha on various events
+    local function ShouldHideSideMenu()
+        local raidDb = DF:GetRaidDB()
+        local partyDb = DF:GetDB()
+        if not raidDb or not partyDb then return false end
+        if IsInRaid() then
+            return raidDb.hideBlizzardRaidFrames and not raidDb.showBlizzardSideMenu
+        else
+            return partyDb.hideBlizzardPartyFrames and not partyDb.showBlizzardSideMenu
+        end
+    end
+
+    local function ForceHideSideMenuFrame(frame)
+        if not frame then return end
+        pcall(function()
+            if not InCombatLockdown() then
+                frame:Hide()
+            else
+                frame:SetAlpha(0)
+            end
+        end)
+    end
+
+    if CompactRaidFrameManager then
+        hooksecurefunc(CompactRaidFrameManager, "Show", function()
+            if ShouldHideSideMenu() then
+                ForceHideSideMenuFrame(CompactRaidFrameManager)
+            end
+        end)
+        if CompactRaidFrameManager.displayFrame then
+            hooksecurefunc(CompactRaidFrameManager.displayFrame, "Show", function()
+                if ShouldHideSideMenu() then
+                    ForceHideSideMenuFrame(CompactRaidFrameManager.displayFrame)
+                end
+            end)
+        end
+    end
+
     blizzardHooksInstalled = true
 end
 
@@ -2567,39 +2608,60 @@ function DF:UpdateBlizzardFrameVisibility()
         SafeHideFrame(groupFrame, hideRaidFrames)
     end
     
+    -- Force hide/show a frame using actual Hide()/Show() outside combat,
+    -- falling back to SetAlpha inside combat to avoid taint
+    local function ForceHideShow(frame, hide)
+        if not frame then return end
+        pcall(function()
+            if InCombatLockdown() then
+                frame:SetAlpha(hide and 0 or 1)
+            else
+                if hide then
+                    frame:Hide()
+                else
+                    frame:SetAlpha(1)
+                    frame:Show()
+                end
+            end
+        end)
+    end
+
     -- Handle raid frame manager
     if CompactRaidFrameManager then
         local sideMenuVisible = showSideMenu or not hideRaidFrames
-        
+
         SafeHideFrame(CompactRaidFrameManager.container, hideRaidFrames)
         SafeHideFrame(CompactRaidFrameManager.toggleButton, hideRaidFrames)
-        
+
         -- Handle the display frame (side panel with settings/pings) separately
-        SafeHideFrame(CompactRaidFrameManager.displayFrame, not sideMenuVisible)
-        
+        -- Use actual Hide() to prevent Blizzard from re-showing via alpha resets
+        ForceHideShow(CompactRaidFrameManager.displayFrame, not sideMenuVisible)
+
         -- The main manager frame itself
-        SafeHideFrame(CompactRaidFrameManager, not sideMenuVisible)
+        ForceHideShow(CompactRaidFrameManager, not sideMenuVisible)
     end
-    
+
     -- Handle the side menu elements for party frames
     local partySideMenuVisible = showSideMenu or not hidePartyFrames
-    
+
     if CompactPartyFrame then
         -- Only adjust title if we want to show/hide the side menu differently
         if not partySideMenuVisible then
             SafeSetAlpha(CompactPartyFrame.title, 0)
+        else
+            SafeSetAlpha(CompactPartyFrame.title, 1)
         end
-        SafeHideFrame(CompactPartyFrame.dropdown, not partySideMenuVisible)
-        SafeHideFrame(CompactPartyFrame.menuButton, not partySideMenuVisible)
+        ForceHideShow(CompactPartyFrame.dropdown, not partySideMenuVisible)
+        ForceHideShow(CompactPartyFrame.menuButton, not partySideMenuVisible)
     end
-    
+
     if PartyFrame then
-        SafeHideFrame(PartyFrame.DropdownButton, not partySideMenuVisible)
+        ForceHideShow(PartyFrame.DropdownButton, not partySideMenuVisible)
         SafeSetAlpha(PartyFrame.PartyMemberFrameDropDown, partySideMenuVisible and 1 or 0)
     end
-    
+
     if EditModeManagerFrame and EditModeManagerFrame.PartyFramesSidePanel then
-        SafeHideFrame(EditModeManagerFrame.PartyFramesSidePanel, not sideMenuVisible)
+        ForceHideShow(EditModeManagerFrame.PartyFramesSidePanel, not sideMenuVisible)
     end
 end
 

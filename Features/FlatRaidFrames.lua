@@ -843,15 +843,19 @@ function FlatRaidFrames:UpdateSorting()
         DebugPrint("UpdateSorting: no header")
         return
     end
-    
+
     if InCombatLockdown() then
         self.pendingNameListUpdate = true
         DebugPrint("Sorting update deferred (combat)")
         return
     end
-    
+
     local db = GetRaidDB()
     if not db then return end
+
+    -- Re-apply layout attributes (point, xOffset, yOffset) from the DB
+    -- so that Hide/Show below rebuilds children with the correct spacing. (#269)
+    self:ApplyLayoutSettings(true)
     
     -- Check sorting settings
     local sortEnabled = db.sortEnabled

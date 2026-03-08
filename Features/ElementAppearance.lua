@@ -422,11 +422,11 @@ function DF:UpdateNameTextAppearance(frame)
     -- ========================================
     if db.oorEnabled then
         local oorAlpha = db.oorNameTextAlpha or 1
-        
-        -- Set color first
-        frame.nameText:SetTextColor(r, g, b, 1.0)
-        
-        -- Apply OOR alpha
+
+        -- Set color with dead/offline alpha (not hardcoded 1.0)
+        frame.nameText:SetTextColor(r, g, b, alpha)
+
+        -- Apply OOR alpha on top
         ApplyOORAlpha(frame.nameText, inRange, alpha, oorAlpha)
     else
         -- Frame-level OOR: just apply color with alpha
@@ -478,8 +478,9 @@ function DF:UpdateHealthTextAppearance(frame)
     -- ========================================
     if db.oorEnabled then
         local oorAlpha = db.oorHealthTextAlpha or 0.25
-        
-        frame.healthText:SetTextColor(r, g, b, 1.0)
+
+        -- Set color with dead/offline alpha (not hardcoded 1.0)
+        frame.healthText:SetTextColor(r, g, b, alpha)
         ApplyOORAlpha(frame.healthText, inRange, alpha, oorAlpha)
     else
         frame.healthText:SetTextColor(r, g, b, alpha)

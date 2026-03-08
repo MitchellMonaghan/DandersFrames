@@ -1,5 +1,18 @@
 # DandersFrames Changelog
 
+## [4.0.14] - 2026-03-08
+
+### Bug Fixes
+* (Fading) **Fixed power/resource bar not fading when out of range** — power bars stayed at full opacity while the rest of the frame faded
+* (Fading) **Fixed name text and health text not fading when units are dead or offline** in element-specific alpha mode
+* (Fading) **Fixed debuff borders staying visible when faded** — colored debuff borders now properly fade along with the icon
+* (Fading) Fixed defensive icons not fading when using Direct API mode with multiple defensives
+* (Fading) Fixed name text flickering or staying at full alpha after switching specs
+* (Fading) Fixed range checking not updating after changing talents
+* (Missing Buff) Fixed missing buff indicator incorrectly showing on NPC followers in follower dungeons
+* (API) Fixed external API functions not returning arena frames — `GetFrameForUnit()`, `GetAllFrames()`, and `IterateFrames()` now work correctly inside arenas
+* (Side Menu) Improved hiding of Blizzard's raid/party side menu when disabled in settings
+
 ## [4.0.13] - 2026-03-08
 
 ### Bug Fixes

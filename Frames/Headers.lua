@@ -72,6 +72,7 @@ local FOLLOWER_RECHECK_MAX = 3    -- max retry attempts
 -- GUID AND ROLE CACHING
 -- Only trigger updates when data actually changes
 -- ============================================================
+local issecretvalue = issecretvalue or function() return false end
 local unitGuidCache = {}   -- unit -> GUID mapping
 local unitRoleCache = {}   -- unit -> role mapping  
 local unitLeaderCache = nil -- tracks current leader unit (single value, not table)
@@ -161,7 +162,7 @@ function DF:RebuildUnitFrameMap()
         -- a wipe and every OnAttributeChanged falls through to the full
         -- C_Timer.After(0) refresh path, causing a one-frame health stale.
         local guid = UnitGUID(unit)
-        if guid then
+        if guid and not issecretvalue(guid) then
             unitGuidCache[unit] = guid
         end
     end
@@ -282,6 +283,8 @@ end
 local function HasUnitChanged(unit)
     if not unit then return false end
     local newGuid = UnitGUID(unit)
+    -- Secret values (Midnight 12.0) can't be compared safely — treat as changed
+    if issecretvalue(newGuid) then return true end
     local oldGuid = unitGuidCache[unit]
     if newGuid ~= oldGuid then
         unitGuidCache[unit] = newGuid
@@ -551,10 +554,11 @@ function DF:InitializeHeaderChild(frame)
             local actualUnit = value and SecureButton_GetModifiedUnit(self) or nil
             local oldUnit = self.unit
             
-            -- Get GUIDs for comparison
-            local newGuid = actualUnit and UnitGUID(actualUnit) or nil
+            -- Get GUIDs for comparison (guard against secret values from Midnight 12.0)
+            local rawNewGuid = actualUnit and UnitGUID(actualUnit) or nil
+            local newGuid = (rawNewGuid and not issecretvalue(rawNewGuid)) and rawNewGuid or nil
             local oldGuid = oldUnit and unitGuidCache[oldUnit] or nil
-            
+
             -- LEVEL 1: Skip if unit string AND GUID are both the same
             -- (Must check GUID because same unit string can have different player after roster change)
             if oldUnit == actualUnit then
@@ -567,7 +571,7 @@ function DF:InitializeHeaderChild(frame)
                 DF:RosterDebugCount("OnAttributeChanged(unit)-SAME-UNIT-NEW-GUID")
                 -- Fall through to full refresh
             end
-            
+
             -- LEVEL 2: Different unit strings but same GUID (player moved slots)
             -- e.g., raid3 -> raid5 but same person
             if actualUnit and oldUnit and newGuid and newGuid == oldGuid then
@@ -645,8 +649,11 @@ function DF:InitializeHeaderChild(frame)
                 if not self.isPinnedFrame then
                     unitFrameMap[actualUnit] = self
                 end
-                unitGuidCache[actualUnit] = UnitGUID(actualUnit)
-                
+                local cacheGuid = UnitGUID(actualUnit)
+                if cacheGuid and not issecretvalue(cacheGuid) then
+                    unitGuidCache[actualUnit] = cacheGuid
+                end
+
                 local num = actualUnit:match("%d+")
                 if num then
                     self.index = tonumber(num)
@@ -3797,11 +3804,15 @@ end
 function DF:ApplyRaidGroupSorting()
     if InCombatLockdown() then return end
     if not DF.raidSeparatedHeaders then return end
-    
+
     -- Flat mode has its own sorting via FlatRaidFrames:UpdateSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
-    
+
+    -- Re-apply child layout attributes (point, xOffset, yOffset) from the DB
+    -- so that Hide/Show below rebuilds children with the correct spacing. (#269)
+    DF:UpdateRaidHeaderLayoutAttributes()
+
     -- Cache raid roster info once (avoids 320+ GetRaidRosterInfo calls)
     CacheRaidRosterInfo()
     
@@ -7920,7 +7931,7 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
         local unit = arg1
         if unit then
             local frame = unitFrameMap[unit]
-            
+
             -- SELF-HEALING: Same pattern as UNIT_HEALTH - rebuild map on miss.
             -- A missed UNIT_CONNECTION event directly causes "shows offline when
             -- online" or vice versa.
@@ -7932,7 +7943,7 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
                     frame = unitFrameMap[unit]
                 end
             end
-            
+
             if frame and frame.dfEventsEnabled ~= false then
                 if DF.UpdateUnitFrame then
                     DF:UpdateUnitFrame(frame)
@@ -7944,6 +7955,40 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
                     DF:UpdateUnitFrame(pinnedFrame)
                 end
             end
+
+            -- Delayed re-check: UnitIsConnected may not return the updated
+            -- state immediately, and the map rebuild throttle (1s) can cause
+            -- the reconnect event to miss. Schedule a follow-up that bypasses
+            -- the throttle and verifies the visual state matches reality. (#275)
+            C_Timer.After(0.5, function()
+                if not UnitExists(unit) then return end
+                local isConnected = UnitIsConnected(unit)
+                local isDead = UnitIsDead(unit) or UnitIsGhost(unit)
+
+                local recheckFrame = unitFrameMap[unit]
+                -- Bypass throttle: rebuild map if frame still missing
+                if not recheckFrame then
+                    DF:RebuildUnitFrameMap()
+                    recheckFrame = unitFrameMap[unit]
+                end
+                if recheckFrame and recheckFrame.dfEventsEnabled ~= false then
+                    -- Stale state: connected+alive but still faded, or disconnected but not faded
+                    local stale = (isConnected and not isDead and recheckFrame.dfDeadFadeApplied)
+                                  or (not isConnected and not recheckFrame.dfDeadFadeApplied)
+                    if stale and DF.UpdateUnitFrame then
+                        DF:UpdateUnitFrame(recheckFrame)
+                    end
+                end
+                -- Also re-check pinned frame
+                local recheckPinned = FindPinnedFrameForUnit(unit)
+                if recheckPinned and recheckPinned.dfEventsEnabled ~= false then
+                    local stale = (isConnected and not isDead and recheckPinned.dfDeadFadeApplied)
+                                  or (not isConnected and not recheckPinned.dfDeadFadeApplied)
+                    if stale and DF.UpdateUnitFrame then
+                        DF:UpdateUnitFrame(recheckPinned)
+                    end
+                end
+            end)
         end
         return
     end

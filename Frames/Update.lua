@@ -847,8 +847,11 @@ function DF:UpdateUnitFrame(frame, source)
             local powerType, powerToken = UnitPowerType(unit)
             local powerColor = DF:GetPowerColor(powerToken, powerType)
             frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
-            frame.dfPowerBar:SetAlpha(1)
             frame.dfPowerBar:Show()
+            -- Let the appearance system handle alpha (OOR, dead, element-specific)
+            if DF.UpdatePowerBarAppearance then
+                DF:UpdatePowerBarAppearance(frame)
+            end
         else
             frame.dfPowerBar:Hide()
         end

@@ -669,6 +669,13 @@ function DF:UpdateMissingBuffIcon(frame)
         missingBuffCache[frame] = nil
         return
     end
+
+    -- Hide for non-player units (NPCs, followers, pets can't have raid buffs)
+    if not UnitIsPlayer(unit) then
+        frame.missingBuffFrame:Hide()
+        missingBuffCache[frame] = nil
+        return
+    end
     
     -- Check for missing buffs
     local missingSpellID = nil
@@ -998,6 +1005,11 @@ function DF:UpdateDefensiveBar(frame)
         -- If no defensives found, hide the primary icon too
         if count == 0 then
             frame.defensiveIcon:Hide()
+        end
+
+        -- Apply range-based fading to shown icons
+        if count > 0 and DF.UpdateDefensiveIconAppearance then
+            DF:UpdateDefensiveIconAppearance(frame)
         end
 
         return

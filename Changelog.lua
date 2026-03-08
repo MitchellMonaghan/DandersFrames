@@ -1,8 +1,21 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-03-07T21:52:38Z"
+DF.BUILD_DATE = "2026-03-08T15:59:33Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [4.0.14] - 2026-03-08
+
+### Bug Fixes
+* (Fading) **Fixed power/resource bar not fading when out of range** — power bars stayed at full opacity while the rest of the frame faded
+* (Fading) **Fixed name text and health text not fading when units are dead or offline** in element-specific alpha mode
+* (Fading) **Fixed debuff borders staying visible when faded** — colored debuff borders now properly fade along with the icon
+* (Fading) Fixed defensive icons not fading when using Direct API mode with multiple defensives
+* (Fading) Fixed name text flickering or staying at full alpha after switching specs
+* (Fading) Fixed range checking not updating after changing talents
+* (Missing Buff) Fixed missing buff indicator incorrectly showing on NPC followers in follower dungeons
+* (API) Fixed external API functions not returning arena frames — `GetFrameForUnit()`, `GetAllFrames()`, and `IterateFrames()` now work correctly inside arenas
+* (Side Menu) Improved hiding of Blizzard's raid/party side menu when disabled in settings
 
 ## [4.0.13] - 2026-03-08
 
@@ -23,8 +36,8 @@ DF.CHANGELOG_TEXT = [===[
 * (Debug Console) Export now respects current severity and category filters
 * (Aura Designer) Increased all X/Y offset slider ranges to -150 to 150
 * (Aura Designer) Grouped layout spacing slider now allows negative values for overlapping indicators
-* (Aura Designer) Added "Reset to Global" button in the editing banner when editing auto layout overrides
-* (Aura Designer) Editing banner now properly offsets page content instead of overlapping controls
+* (Aura Designer) Added "Reset to Global" button when editing auto layout overrides
+* (Aura Designer) Editing banner no longer overlaps page controls
 
 ## [4.0.12] - 2026-03-06
 
