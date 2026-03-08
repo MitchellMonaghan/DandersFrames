@@ -4445,7 +4445,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 280)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, "Settings"), 40)
         settingsGroup:AddWidget(GUI:CreateLabel(self.child, "Shows icon when party members are missing raid buffs.", 250), 30)
-        settingsGroup:AddWidget(GUI:CreateWarningBox(self.child, "|cffff6666NOTE:|r Only works OUT OF COMBAT. Does NOT work in Mythic+ keystones.", 250, 55), 60)
+        settingsGroup:AddWidget(GUI:CreateWarningBox(self.child, "|cffff6666NOTE:|r Does NOT work in Mythic+ keystones. In combat, results may be slightly delayed.", 250, 55), 60)
         settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Missing Buff Icon", db, "missingBuffIconEnabled", function()
             self:RefreshStates()
             if DF.UpdateAllMissingBuffIcons then DF:UpdateAllMissingBuffIcons() end

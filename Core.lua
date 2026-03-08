@@ -4317,6 +4317,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end
         
+        -- Clear pre-combat aura snapshot now that live data is readable again
+        if DF.ClearPreCombatSnapshot then
+            DF:ClearPreCombatSnapshot()
+        end
         -- Update missing buff icons now that we're out of combat
         if DF.UpdateAllMissingBuffIcons then
             DF:UpdateAllMissingBuffIcons()
@@ -4472,7 +4476,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if DF.UpdateAuraClickThrough then
             DF:UpdateAuraClickThrough()
         end
-        
+        -- Snapshot raid buff auras before combat lockdown hides spell IDs
+        if DF.SnapshotRaidBuffAuras then
+            DF:SnapshotRaidBuffAuras()
+        end
+
     elseif event == "PLAYER_UPDATE_RESTING" then
         -- Update rested indicator on player frame
         if DF.UpdateRestedIndicator then

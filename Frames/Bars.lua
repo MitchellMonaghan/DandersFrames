@@ -2204,13 +2204,13 @@ end
 -- Raid buff definitions: {spellID or {spellID, spellID2, ...}, configKey, name, class}
 -- Some buffs have multiple spell IDs (e.g., cast spell vs applied buff)
 DF.RaidBuffs = {
-    {1459, "missingBuffCheckIntellect", "Arcane Intellect", "MAGE"},
+    {{1459, 432778}, "missingBuffCheckIntellect", "Arcane Intellect", "MAGE"},
     {21562, "missingBuffCheckStamina", "Power Word: Fortitude", "PRIEST"},
     {6673, "missingBuffCheckAttackPower", "Battle Shout", "WARRIOR"},
-    {1126, "missingBuffCheckVersatility", "Mark of the Wild", "DRUID"},
+    {{1126, 432661}, "missingBuffCheckVersatility", "Mark of the Wild", "DRUID"},
     {462854, "missingBuffCheckSkyfury", "Skyfury", "SHAMAN"},
-    -- Blessing of the Bronze: 364342 is the ability, 381748 is the buff that appears on players
-    {{381748, 364342}, "missingBuffCheckBronze", "Blessing of the Bronze", "EVOKER"},
+    -- Blessing of the Bronze: 13 variant buff IDs from different Evoker augment specs
+    {{381732, 381741, 381746, 381748, 381749, 381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758}, "missingBuffCheckBronze", "Blessing of the Bronze", "EVOKER"},
 }
 
 -- Map player class to their raid buff config key
@@ -2237,6 +2237,25 @@ function DF:GetRaidBuffSpellIDs()
         end
     end
     return spellIDs
+end
+
+-- Non-secret raid buff spell IDs (Blizzard-whitelisted, remain readable in combat)
+-- Source: Ellesmere whitelist, cross-referenced with our RaidBuffs
+DF.NonSecretRaidBuffIDs = {}
+do
+    local WHITELISTED = {
+        [1126]=true, [432661]=true, [1459]=true, [432778]=true,
+        [21562]=true, [6673]=true, [462854]=true,
+        [381732]=true, [381741]=true, [381746]=true, [381748]=true, [381749]=true,
+        [381750]=true, [381751]=true, [381752]=true, [381753]=true, [381754]=true,
+        [381756]=true, [381757]=true, [381758]=true,
+    }
+    for _, buffInfo in ipairs(DF.RaidBuffs) do
+        local ids = type(buffInfo[1]) == "table" and buffInfo[1] or {buffInfo[1]}
+        for _, id in ipairs(ids) do
+            if WHITELISTED[id] then DF.NonSecretRaidBuffIDs[id] = true end
+        end
+    end
 end
 
 -- Get raid buff icons for fallback filtering (when spellId is secret)

@@ -18,6 +18,8 @@ local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local UnitIsConnected = UnitIsConnected
 local UnitExists = UnitExists
 local InCombatLockdown = InCombatLockdown
+local GetPlayerAuraBySpellID = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+local GetUnitAuraBySpellID = C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
 
 -- ============================================================
 -- MISSING BUFF CACHING (cached lookup optimization)
@@ -411,6 +413,53 @@ function DF:GetRaidBuffNames()
 end
 
 -- ============================================================
+-- PRE-COMBAT AURA SNAPSHOT
+-- Captures raid buff state on entering combat for fallback
+-- when spell IDs become secret during combat lockdown
+-- ============================================================
+
+-- Snapshot: preCombatAuraSnapshot[unit][spellID] = true
+local preCombatAuraSnapshot = {}
+
+function DF:SnapshotRaidBuffAuras()
+    wipe(preCombatAuraSnapshot)
+    local raidBuffs = DF.RaidBuffs
+    if not raidBuffs then return end
+
+    local function snapshotUnit(frame)
+        local unit = frame and frame.unit
+        if not unit or not UnitExists(unit) then return end
+        if preCombatAuraSnapshot[unit] then return end  -- already snapshotted
+        local unitSnap = {}
+        for i = 1, #raidBuffs do
+            local buffInfo = raidBuffs[i]
+            local spellIDOrTable = buffInfo[1]
+            local spellIDs = type(spellIDOrTable) == "table" and spellIDOrTable or {spellIDOrTable}
+            for j = 1, #spellIDs do
+                local id = spellIDs[j]
+                local aura
+                if unit == "player" and GetPlayerAuraBySpellID then
+                    aura = GetPlayerAuraBySpellID(id)
+                elseif GetUnitAuraBySpellID then
+                    aura = GetUnitAuraBySpellID(unit, id)
+                end
+                if aura then
+                    unitSnap[id] = true
+                end
+            end
+        end
+        preCombatAuraSnapshot[unit] = unitSnap
+    end
+
+    if DF.IteratePartyFrames then DF:IteratePartyFrames(snapshotUnit) end
+    if DF.IterateRaidFrames then DF:IterateRaidFrames(snapshotUnit) end
+end
+
+function DF:ClearPreCombatSnapshot()
+    wipe(preCombatAuraSnapshot)
+end
+
+-- ============================================================
 -- PERFORMANCE FIX: Module-level state for UnitHasBuff
 -- Avoids creating closures every call which caused memory leaks
 -- OLD CODE preserved in comments below for rollback if needed
@@ -471,14 +520,18 @@ local function CheckAuraSpellId_ByIndex()
 end
 
 -- Helper function to check if a unit has a specific buff
+-- Detection flow (Ellesmere-style 4-method approach):
+--   1. Direct spell ID lookup (O(1), works in combat for whitelisted IDs)
+--   2. Pre-combat snapshot fallback (for non-whitelisted IDs during combat)
+--   3. Name-based lookup (AuraUtil.FindAuraByName)
+--   4. Iteration fallback (ForEachAura / GetAuraDataByIndex with issecretvalue guards)
 function DF:UnitHasBuff(unit, spellIDOrTable, spellName)
     if not unit or not UnitExists(unit) then return false end
-    
+
     local db = DF:GetDB()
     local debug = db and db.missingBuffIconDebug
-    
-    -- PERFORMANCE FIX: Reuse single-element table instead of creating {spellIDOrTable} every call
-    -- OLD: local spellIDs = type(spellIDOrTable) == "table" and spellIDOrTable or {spellIDOrTable}
+
+    -- Build spell ID list (reuse single-element table to avoid allocation)
     local spellIDs
     if type(spellIDOrTable) == "table" then
         spellIDs = spellIDOrTable
@@ -487,20 +540,58 @@ function DF:UnitHasBuff(unit, spellIDOrTable, spellName)
         singleSpellIDTable[1] = spellIDOrTable
         spellIDs = singleSpellIDTable
     end
-    
-    -- Store in shared state for module-level helper functions
-    UnitHasBuffState.spellIDs = spellIDs
-    UnitHasBuffState.found = false
-    UnitHasBuffState.matched = false
-    
+
     if debug then
         local idStr = type(spellIDOrTable) == "table" and table.concat(spellIDOrTable, ", ") or tostring(spellIDOrTable)
         print("|cff00ff00DF:|r Checking " .. unit .. " for " .. (spellName or "unknown") .. " (IDs: " .. idStr .. ")")
     end
-    
-    -- Method 1: Try name-based lookup first (most reliable for party members)
-    -- Spell names are typically not protected like spell IDs can be
-    -- Wrap in pcall because FindAuraByName may call APIs that don't exist in Edit Mode
+
+    -- Method 1: Direct spell ID lookup (O(1), works in combat for whitelisted IDs)
+    local nonSecretIDs = DF.NonSecretRaidBuffIDs
+    local allWhitelisted = true
+    local directLookupAPI = (unit == "player") and GetPlayerAuraBySpellID or GetUnitAuraBySpellID
+
+    if directLookupAPI and nonSecretIDs then
+        for i = 1, #spellIDs do
+            local id = spellIDs[i]
+            if nonSecretIDs[id] then
+                local aura
+                if unit == "player" then
+                    aura = directLookupAPI(id)
+                else
+                    aura = directLookupAPI(unit, id)
+                end
+                if aura then
+                    if debug then print("|cff00ff00DF:|r   -> Found via direct API lookup (spell " .. id .. ")") end
+                    return true
+                end
+            else
+                allWhitelisted = false
+            end
+        end
+        -- If all IDs are whitelisted and none returned a hit, the buff is genuinely absent
+        if allWhitelisted then
+            if debug then print("|cff00ff00DF:|r   -> NOT FOUND (all IDs whitelisted, direct API authoritative)") end
+            return false
+        end
+    end
+
+    -- Method 2: Pre-combat snapshot fallback (for non-whitelisted IDs during combat)
+    if InCombatLockdown() then
+        local unitSnap = preCombatAuraSnapshot[unit]
+        if unitSnap then
+            for i = 1, #spellIDs do
+                if unitSnap[spellIDs[i]] then
+                    if debug then print("|cff00ff00DF:|r   -> Found via pre-combat snapshot") end
+                    return true
+                end
+            end
+            if debug then print("|cff00ff00DF:|r   -> NOT FOUND (snapshot fallback, in combat)") end
+            return false
+        end
+    end
+
+    -- Method 3: Name-based lookup (works out of combat, spell names not protected)
     if spellName and AuraUtil and AuraUtil.FindAuraByName then
         local success, auraData = pcall(AuraUtil.FindAuraByName, spellName, unit, "HELPFUL")
         if success and auraData then
@@ -508,76 +599,26 @@ function DF:UnitHasBuff(unit, spellIDOrTable, spellName)
             return true
         end
     end
-    
-    -- Method 2: Use AuraUtil.ForEachAura with spell ID (works well for player)
-    -- PERFORMANCE FIX: Use module-level callback instead of inline closure
-    -- OLD CODE:
-    --[[
-    if AuraUtil and AuraUtil.ForEachAura then
-        local found = false
-        AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(auraData)
-            -- Wrap in pcall since spellId might be secret
-            pcall(function()
-                if auraData and auraData.spellId then
-                    for _, spellID in ipairs(spellIDs) do
-                        if auraData.spellId == spellID then
-                            found = true
-                            break
-                        end
-                    end
-                end
-            end)
-            if found then return true end  -- Stop iteration
-        end, true)  -- usePackedAura = true
-        if found then 
-            if debug then print("|cff00ff00DF:|r   -> Found via ForEachAura") end
-            return true 
-        end
-    end
-    --]]
+
+    -- Method 4: Iteration fallback (ForEachAura / GetAuraDataByIndex with issecretvalue guards)
+    -- Store in shared state for module-level helper functions
+    UnitHasBuffState.spellIDs = spellIDs
+    UnitHasBuffState.found = false
+    UnitHasBuffState.matched = false
+
     if AuraUtil and AuraUtil.ForEachAura then
         UnitHasBuffState.found = false
-        -- PERF: Direct call - comparison inside callback is safe (doesn't error on secret values)
         AuraUtil.ForEachAura(unit, "HELPFUL", nil, ForEachAuraCallback, true)
-        if UnitHasBuffState.found then 
+        if UnitHasBuffState.found then
             if debug then print("|cff00ff00DF:|r   -> Found via ForEachAura") end
-            return true 
+            return true
         end
     end
-    
-    -- Method 3: Direct iteration with C_UnitAuras.GetAuraDataByIndex
-    -- PERFORMANCE FIX: Use module-level function instead of inline closure
-    -- OLD CODE:
-    --[[
+
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         for i = 1, 40 do
-            local success, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
-            if not success or not auraData then break end
-            -- Wrap comparison in pcall since spellId might be secret
-            local matched = false
-            pcall(function()
-                if auraData.spellId then
-                    for _, spellID in ipairs(spellIDs) do
-                        if auraData.spellId == spellID then
-                            matched = true
-                            break
-                        end
-                    end
-                end
-            end)
-            if matched then
-                if debug then print("|cff00ff00DF:|r   -> Found via GetAuraDataByIndex at slot " .. i) end
-                return true
-            end
-        end
-    end
-    --]]
-    if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        for i = 1, 40 do
-            -- PERF: Direct call without pcall - API returns nil on no aura, doesn't error
             local auraData = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
             if not auraData then break end
-            -- PERF: Direct comparison without per-aura pcall
             UnitHasBuffState.currentAuraData = auraData
             UnitHasBuffState.matched = false
             CheckAuraSpellId_ByIndex()
@@ -587,7 +628,7 @@ function DF:UnitHasBuff(unit, spellIDOrTable, spellName)
             end
         end
     end
-    
+
     if debug then print("|cff00ff00DF:|r   -> NOT FOUND") end
     return false
 end
