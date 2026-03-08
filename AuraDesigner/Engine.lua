@@ -19,6 +19,9 @@ local GetTime = GetTime
 local debugLastLog = 0
 local DEBUG_INTERVAL = 3  -- seconds between debug dumps
 
+-- Track which spec aura tables have been sanitized this session
+local sanitizedSpecAuras = {}
+
 DF.AuraDesigner = DF.AuraDesigner or {}
 
 local Engine = {}
@@ -163,6 +166,23 @@ function Engine:UpdateFrame(frame)
     -- Spec-scoped aura configs
     local specAuras = adDB.auras and adDB.auras[spec]
 
+    -- One-time cleanup: remove non-table entries (e.g. stray nextIndicatorID)
+    if specAuras and not sanitizedSpecAuras[specAuras] then
+        local toRemove
+        for k, v in pairs(specAuras) do
+            if type(v) ~= "table" then
+                if not toRemove then toRemove = {} end
+                toRemove[#toRemove + 1] = k
+            end
+        end
+        if toRemove then
+            for _, k in ipairs(toRemove) do
+                specAuras[k] = nil
+            end
+        end
+        sanitizedSpecAuras[specAuras] = true
+    end
+
     if shouldLog then
         debugLastLog = now
         -- Count active auras from adapter
@@ -173,12 +193,14 @@ function Engine:UpdateFrame(frame)
         local configIndicators = 0
         if specAuras then
             for auraName, auraCfg in pairs(specAuras) do
-                configCount = configCount + 1
-                if auraCfg.indicators then
-                    configIndicators = configIndicators + #auraCfg.indicators
-                end
-                for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
-                    if auraCfg[typeDef.key] then configIndicators = configIndicators + 1 end
+                if type(auraCfg) == "table" then
+                    configCount = configCount + 1
+                    if auraCfg.indicators then
+                        configIndicators = configIndicators + #auraCfg.indicators
+                    end
+                    for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
+                        if auraCfg[typeDef.key] then configIndicators = configIndicators + 1 end
+                    end
                 end
             end
         end
@@ -191,23 +213,25 @@ function Engine:UpdateFrame(frame)
         -- Log configured auras with their indicators
         if specAuras then
             for auraName, auraCfg in pairs(specAuras) do
-                local types = {}
-                if auraCfg.indicators then
-                    for _, ind in ipairs(auraCfg.indicators) do
-                        types[#types+1] = ind.type .. "#" .. ind.id
-                    end
-                end
-                for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
-                    local typeCfg = auraCfg[typeDef.key]
-                    if typeCfg then
-                        local trigStr = typeDef.key
-                        if typeCfg.triggers and #typeCfg.triggers > 1 then
-                            trigStr = trigStr .. "(triggers:" .. table.concat(typeCfg.triggers, ",") .. ")"
+                if type(auraCfg) == "table" then
+                    local types = {}
+                    if auraCfg.indicators then
+                        for _, ind in ipairs(auraCfg.indicators) do
+                            types[#types+1] = ind.type .. "#" .. ind.id
                         end
-                        types[#types+1] = trigStr
                     end
+                    for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
+                        local typeCfg = auraCfg[typeDef.key]
+                        if typeCfg then
+                            local trigStr = typeDef.key
+                            if typeCfg.triggers and #typeCfg.triggers > 1 then
+                                trigStr = trigStr .. "(triggers:" .. table.concat(typeCfg.triggers, ",") .. ")"
+                            end
+                            types[#types+1] = trigStr
+                        end
+                    end
+                    DF:Debug("AD", "  config: %s -> %s", auraName, #types > 0 and table.concat(types, ", ") or "(no indicators)")
                 end
-                DF:Debug("AD", "  config: %s -> %s", auraName, #types > 0 and table.concat(types, ", ") or "(no indicators)")
             end
         end
     end
@@ -217,6 +241,7 @@ function Engine:UpdateFrame(frame)
     local auras = specAuras
     if auras then
         for auraName, auraCfg in pairs(auras) do
+          if type(auraCfg) == "table" then
             local auraData = activeAuras[auraName]
             if auraData then
                 -- Skip blacklisted auras
@@ -291,6 +316,7 @@ function Engine:UpdateFrame(frame)
                     end
                 end
             end
+          end
         end
     end
 
@@ -304,6 +330,7 @@ function Engine:UpdateFrame(frame)
     wipe(frame.dfAD_activeInstanceIDs)
     if auras then
         for auraName, auraCfg in pairs(auras) do
+          if type(auraCfg) == "table" then
             local auraData = activeAuras[auraName]
             if auraData and auraData.auraInstanceID then
                 local hasIndicator = auraCfg.indicators and #auraCfg.indicators > 0
@@ -331,6 +358,7 @@ function Engine:UpdateFrame(frame)
                     end
                 end
             end
+          end
         end
     end
 

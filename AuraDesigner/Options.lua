@@ -314,7 +314,11 @@ local function ResolveSpec()
     return adDB.spec
 end
 
+-- Track which spec aura tables have already been sanitized this session
+local sanitizedSpecAuras = {}
+
 -- Returns the spec-scoped auras sub-table, creating it if needed
+-- Also sanitizes corrupted entries (non-table values like stray nextIndicatorID)
 local function GetSpecAuras(spec)
     local adDB = GetAuraDesignerDB()
     if not adDB then return {} end
@@ -322,7 +326,25 @@ local function GetSpecAuras(spec)
     spec = spec or ResolveSpec()
     if not spec then return {} end
     if not adDB.auras[spec] then adDB.auras[spec] = {} end
-    return adDB.auras[spec]
+    local specAuras = adDB.auras[spec]
+    -- One-time cleanup: remove non-table entries that ended up at the wrong level
+    if not sanitizedSpecAuras[specAuras] then
+        local toRemove
+        for k, v in pairs(specAuras) do
+            if type(v) ~= "table" then
+                if not toRemove then toRemove = {} end
+                toRemove[#toRemove + 1] = k
+            end
+        end
+        if toRemove then
+            for _, k in ipairs(toRemove) do
+                specAuras[k] = nil
+            end
+            DF:DebugWarn("AD", "Cleaned %d corrupted entries from spec auras table", #toRemove)
+        end
+        sanitizedSpecAuras[specAuras] = true
+    end
+    return specAuras
 end
 
 -- Returns the spec-scoped layout groups array, creating it if needed
@@ -915,7 +937,7 @@ local function GetUngroupedIndicators()
         end
     end
     for auraName, auraCfg in pairs(GetSpecAuras(spec)) do
-        if auraCfg.indicators then
+        if type(auraCfg) == "table" and auraCfg.indicators then
             for _, ind in ipairs(auraCfg.indicators) do
                 local key = auraName .. "#" .. ind.id
                 if not grouped[key] then
@@ -1163,7 +1185,7 @@ local function CollectAllEffects()
 
     for auraName, auraCfg in pairs(GetSpecAuras(spec)) do
         -- Only show effects for auras belonging to the current spec
-        if displayNames[auraName] then
+        if type(auraCfg) == "table" and displayNames[auraName] then
             -- Placed indicators
             if auraCfg.indicators then
                 for _, indicator in ipairs(auraCfg.indicators) do
@@ -1591,7 +1613,7 @@ local function RefreshPlacedIndicators()
     -- Iterate all configured auras, find placed indicator instances
     for auraName, auraCfg in pairs(GetSpecAuras(spec)) do
         local info = infoLookup[auraName]
-        if info and auraCfg.indicators then
+        if type(auraCfg) == "table" and info and auraCfg.indicators then
             for _, indicator in ipairs(auraCfg.indicators) do
                 local instanceKey = auraName .. "#" .. indicator.id
                 local capturedAura = auraName
@@ -1762,6 +1784,8 @@ local function RefreshPreviewEffects()
     -- (new UI has no single selectedAura — preview shows all effects)
 
     for _, auraCfg in pairs(GetSpecAuras()) do
+    if type(auraCfg) ~= "table" then -- skip corrupted entries
+    else
 
     -- Border effect (uses highlight system for all 6 styles)
     if auraCfg.border and framePreview.borderOverlay and DF.ApplyHighlightStyle then
@@ -1809,6 +1833,7 @@ local function RefreshPreviewEffects()
         mockFrame:SetAlpha(auraCfg.framealpha.alpha or 0.5)
     end
 
+    end  -- else (type guard)
     end  -- for _, auraCfg
 end
 
@@ -1860,7 +1885,7 @@ RefreshPreviewLightweight = function()
 
     -- Re-apply placed indicator instances using current settings
     for auraName, auraCfg in pairs(GetSpecAuras()) do
-        if auraCfg.indicators then
+        if type(auraCfg) == "table" and auraCfg.indicators then
             for _, indicator in ipairs(auraCfg.indicators) do
                 local instanceKey = auraName .. "#" .. indicator.id
 
@@ -2012,7 +2037,7 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
 
             local sources = {}
             for srcAura, auraCfg in pairs(GetSpecAuras()) do
-                if auraCfg.indicators then
+                if type(auraCfg) == "table" and auraCfg.indicators then
                     for _, ind in ipairs(auraCfg.indicators) do
                         if ind.type == capturedTypeKey then
                             -- Skip self
