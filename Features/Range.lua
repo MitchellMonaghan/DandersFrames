@@ -547,12 +547,22 @@ function DF:UpdateRange(frame)
 
     -- Player is always in range — skip all checks and cache logic
     if UnitIsUnit(unit, "player") then
-        frame.dfInRange = true
+        if not frame.dfInRange then
+            frame.dfInRange = true
+            if DF.UpdateRangeAppearance then
+                DF:UpdateRangeAppearance(frame)
+            end
+        end
         return
     end
 
     if not IsInGroup() and not IsInRaid() then
-        frame.dfInRange = true
+        if not frame.dfInRange then
+            frame.dfInRange = true
+            if DF.UpdateRangeAppearance then
+                DF:UpdateRangeAppearance(frame)
+            end
+        end
         return
     end
 
@@ -666,6 +676,114 @@ local function UpdatePetForOwner(ownerUnit)
 end
 
 -- ============================================================
+-- RANGE UPDATE TIMER
+-- Safety-net polling that runs alongside UNIT_IN_RANGE_UPDATE.
+-- The event gives instant response for Blizzard's ~38yd range,
+-- but doesn't cover spell-based ranges or all edge cases.
+-- Both Grid2 and ElvUI use polling; we keep both for reliability.
+-- ============================================================
+
+local rangeAnimFrame = CreateFrame("Frame")
+local rangeAnimGroup = rangeAnimFrame:CreateAnimationGroup()
+local rangeAnim = rangeAnimGroup:CreateAnimation()
+rangeAnim:SetDuration(0.5)  -- Default 0.5s. Configurable via options.
+rangeAnimGroup:SetLooping("REPEAT")
+
+-- Hoisted callback - avoids creating a new closure every tick
+local function RangeCheckFrame(frame)
+    if frame and frame:IsShown() then
+        DF:UpdateRange(frame)
+        if DF.UpdateHealthFade then
+            DF:UpdateHealthFade(frame)
+        end
+    end
+end
+
+rangeAnimGroup:SetScript("OnLoop", function()
+    if DF.PerfTest and not DF.PerfTest.enableRange then return end
+    if not DF.partyHeader then return end
+
+    local contentType = DF:GetContentType()
+
+    if contentType == "arena" then
+        -- Arena: only arena frames, no pets, no highlights
+        if DF.IterateArenaFrames then
+            DF:IterateArenaFrames(RangeCheckFrame)
+        end
+    elseif contentType then
+        -- Raid content (battleground/mythic/instanced/openWorld): raid frames + raid pets
+        DF:IterateRaidFrames(RangeCheckFrame)
+
+        -- Raid pinned frames (only if initialized for raid mode and header is shown/enabled)
+        if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.currentMode == "raid" then
+            for setIndex = 1, 2 do
+                local header = DF.PinnedFrames.headers[setIndex]
+                if header and header:IsShown() then
+                    for i = 1, 40 do
+                        local child = header:GetAttribute("child" .. i)
+                        if child then
+                            RangeCheckFrame(child)
+                        end
+                    end
+                end
+            end
+        end
+
+        if DF.raidPetFrames then
+            for i = 1, 40 do
+                local frame = DF.raidPetFrames[i]
+                if frame and not frame.dfPetHidden then
+                    DF:UpdatePetRange(frame)
+                    if DF.UpdatePetHealthFade then
+                        DF:UpdatePetHealthFade(frame)
+                    end
+                end
+            end
+        end
+    else
+        -- Party/solo: party frames + player pet + party pets
+        DF:IteratePartyFrames(RangeCheckFrame)
+
+        -- Party pinned frames (only if initialized for party mode and header is shown/enabled)
+        if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.currentMode == "party" then
+            for setIndex = 1, 2 do
+                local header = DF.PinnedFrames.headers[setIndex]
+                if header and header:IsShown() then
+                    for i = 1, 5 do
+                        local child = header:GetAttribute("child" .. i)
+                        if child then
+                            RangeCheckFrame(child)
+                        end
+                    end
+                end
+            end
+        end
+
+        if DF.petFrames and DF.petFrames.player then
+            local petFrame = DF.petFrames.player
+            if not petFrame.dfPetHidden then
+                DF:UpdatePetRange(petFrame)
+                if DF.UpdatePetHealthFade then
+                    DF:UpdatePetHealthFade(petFrame)
+                end
+            end
+        end
+
+        if DF.partyPetFrames then
+            for i = 1, 4 do
+                local frame = DF.partyPetFrames[i]
+                if frame and not frame.dfPetHidden then
+                    DF:UpdatePetRange(frame)
+                    if DF.UpdatePetHealthFade then
+                        DF:UpdatePetHealthFade(frame)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ============================================================
 -- EVENT HANDLERS
 -- ============================================================
 
@@ -741,7 +859,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 -- ============================================================
--- INITIALIZE
+-- START TIMER & INITIALIZE
 -- ============================================================
 
 -- Also initialize immediately in case we loaded late
@@ -750,7 +868,21 @@ UpdateRangeSpell()
 C_Timer.After(1, function()
     -- Re-check after 1 second to ensure spec info is available
     UpdateRangeSpell()
+    -- Apply configured interval from DB (default 0.5s)
+    if DF.db then
+        local db = DF:GetDB()
+        local interval = db and db.rangeUpdateInterval or 0.5
+        rangeAnim:SetDuration(interval)
+    end
+    rangeAnimGroup:Play()
+    DF.RangeTimer = rangeAnimGroup
 end)
+
+-- Called by Options panel when user changes the range update interval slider
+function DF:SetRangeUpdateInterval(interval)
+    interval = interval or 0.5
+    rangeAnim:SetDuration(interval)
+end
 
 -- ============================================================
 -- API FOR OPTIONS UI

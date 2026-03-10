@@ -1446,6 +1446,7 @@ DF.PartyDefaults = {
     rangeCheckEnabled = true,
     rangeCheckSpellID = 0,
     rangeFadeAlpha = 0.40000000596046,
+    rangeUpdateInterval = 0.5,
 
     -- Ready Check Icon
     readyCheckIconAlpha = 1,
@@ -2625,6 +2626,7 @@ DF.RaidDefaults = {
     rangeCheckEnabled = true,
     rangeCheckSpellID = 0,
     rangeFadeAlpha = 0.40000000596046,
+    rangeUpdateInterval = 0.5,
 
     -- Ready Check Icon
     readyCheckIconAlpha = 1,

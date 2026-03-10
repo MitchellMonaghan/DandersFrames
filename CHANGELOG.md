@@ -5,6 +5,8 @@
 ### Bug Fixes
 * (Fading) **Fixed combat stutter when leaving combat**
 * (Fading) **Fixed false out-of-range on units that were actually in range**
+* (Fading) **Fixed everyone always showing as in-range** — re-added polling timer as a safety net alongside event-driven updates
+* (Fading) **Fixed player frame being affected by out-of-range fading**
 * (Aura Designer) **Fixed indicators ignoring their configured alpha**
 * (Pet Frames) Fixed taint error when pet frame style changes during combat
 * (Aura Blacklist) Fixed Harrier's Exhaustion not being filterable
@@ -12,7 +14,7 @@
 * (Aura Designer) Fixed health text showing in indicator preview when disabled
 
 ### New Features
-* (Fading) **Event-driven range updates** — range checking now uses instant events instead of polling, removing the range interval setting
+* (Fading) **Hybrid range checking** — range now uses both instant events and a configurable polling timer for maximum reliability
 * (Fading) **Missing health bar out-of-range alpha** — new element-specific alpha slider for the missing health (damage) portion of the health bar
 
 ## [4.0.14] - 2026-03-08
