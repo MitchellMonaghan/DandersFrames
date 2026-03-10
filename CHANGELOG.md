@@ -1,5 +1,20 @@
 # DandersFrames Changelog
 
+## [4.0.15] - 2026-03-10
+
+### Bug Fixes
+* (Fading) **Fixed combat stutter when leaving combat**
+* (Fading) **Fixed false out-of-range on units that were actually in range**
+* (Aura Designer) **Fixed indicators ignoring their configured alpha**
+* (Pet Frames) Fixed taint error when pet frame style changes during combat
+* (Aura Blacklist) Fixed Harrier's Exhaustion not being filterable
+* (Click Casting) Fixed binding tooltip showing wrong modifier
+* (Aura Designer) Fixed health text showing in indicator preview when disabled
+
+### New Features
+* (Fading) **Event-driven range updates** — range checking now uses instant events instead of polling, removing the range interval setting
+* (Fading) **Missing health bar out-of-range alpha** — new element-specific alpha slider for the missing health (damage) portion of the health bar
+
 ## [4.0.14] - 2026-03-08
 
 ### Bug Fixes
