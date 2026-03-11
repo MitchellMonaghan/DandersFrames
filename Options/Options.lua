@@ -2456,6 +2456,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             return not d.sortEnabled
         end
         
+        local function HideRoleSortOptions(d)
+            return not d.sortEnabled or d.sortByPartyOrder
+        end
+        
         -- Store reference to role widget so we can refresh it
         local roleOrderWidget = nil
         
@@ -2487,7 +2491,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             combatBanner:Show()
             
             local selfPos = db.sortSelfPosition or "SORTED"
-            local hasAdvancedOptions = db.sortSeparateMeleeRanged or db.sortByClass or db.sortAlphabetical
+            local hasAdvancedOptions = (not db.sortByPartyOrder) and (db.sortSeparateMeleeRanged or db.sortByClass or db.sortAlphabetical)
             
             if hasAdvancedOptions then
                 -- All groups limited
@@ -2526,7 +2530,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- ===== SORTING OPTIONS GROUP (Column 1) =====
         local sortOptionsGroup = GUI:CreateSettingsGroup(self.child, 280)
         sortOptionsGroup:AddWidget(GUI:CreateHeader(self.child, "Unit Frame Sorting"), 40)
-        sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "Sort party members by role, class, and name.\n\nSort order: Self Position > Role > Class > Name", 250), 60)
+        sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "Sort party members by role (or keep Blizzard party/raid index order).\n\nWhen sorting by role the order is: Self Position > Role > Class > Name", 250), 60)
         
         local raidSortNote = sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "Raid: Group layout sorts within each group.\nFlat grid layout sorts all players together.", 250), 35)
         raidSortNote.hideOn = function() return GUI.SelectedMode ~= "raid" end
@@ -2536,19 +2540,29 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             UpdateCombatBanner()
         end), 30)
         
-        local sortMeleeRanged = sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Separate Melee & Ranged DPS", db, "sortSeparateMeleeRanged", function()
+        local sortMeleeRanged
+
+        local sortByPartyOrder = sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Use Party/Raid Index Order (ignore role)", db, "sortByPartyOrder", function()
+            TriggerSortForCurrentMode()
+            UpdateCombatBanner()
+            if sortMeleeRanged and sortMeleeRanged.Refresh then sortMeleeRanged:Refresh() end
+            if roleOrderWidget and roleOrderWidget.Refresh then roleOrderWidget.Refresh() end
+        end), 30)
+        sortByPartyOrder.hideOn = HideSortOptions
+
+        sortMeleeRanged = sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Separate Melee & Ranged DPS", db, "sortSeparateMeleeRanged", function()
             TriggerSortForCurrentMode()
             if roleOrderWidget and roleOrderWidget.Refresh then roleOrderWidget.Refresh() end
             UpdateCombatBanner()
         end), 30)
-        sortMeleeRanged.hideOn = HideSortOptions
+        sortMeleeRanged.hideOn = HideRoleSortOptions
         
         local sortByClass = sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Sort by Class (within role)", db, "sortByClass", function()
             TriggerSortForCurrentMode()
             self:RefreshStates()
             UpdateCombatBanner()
         end), 30)
-        sortByClass.hideOn = HideSortOptions
+        sortByClass.hideOn = HideRoleSortOptions
         
         local sortAlphaValues = {
             [false] = "Off",
@@ -2560,7 +2574,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             TriggerSortForCurrentMode()
             UpdateCombatBanner()
         end), 55)
-        sortAlpha.hideOn = HideSortOptions
+        sortAlpha.hideOn = HideRoleSortOptions
         
         Add(sortOptionsGroup, nil, 1)
         
@@ -2591,7 +2605,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             TriggerSortForCurrentMode()
         end, "sortSeparateMeleeRanged")
         rolePriorityGroup:AddWidget(roleOrderWidget, 135)
-        rolePriorityGroup.hideOn = HideSortOptions
+        rolePriorityGroup.hideOn = HideRoleSortOptions
         Add(rolePriorityGroup, nil, 2)
         
         -- ===== CLASS PRIORITY GROUP (Column 2) =====

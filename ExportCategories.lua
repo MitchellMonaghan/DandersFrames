@@ -39,6 +39,7 @@ DF.ExportCategories = {
         
         -- Sorting
         "sortEnabled",
+        "sortByPartyOrder",
         "sortAlphabetical",
         "sortByClass",
         "sortClassOrder",

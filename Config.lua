@@ -1641,7 +1641,10 @@ DF.PartyDefaults = {
         "WARLOCK",
         "WARRIOR",
     },
+    
+    -- Sorting
     sortEnabled = true,
+    sortByPartyOrder = false, -- keep units in their original party/raid index order
     sortRoleOrder = {"TANK", "HEALER", "MELEE", "RANGED"},
     sortSelfPosition = "SORTED",
     sortSeparateMeleeRanged = false,
@@ -2848,7 +2851,10 @@ DF.RaidDefaults = {
         "WARLOCK",
         "WARRIOR",
     },
+    
+    -- Sorting
     sortEnabled = true,
+    sortByPartyOrder = false, -- keep units in their original party/raid index order
     sortRoleOrder = {"TANK", "HEALER", "MELEE", "RANGED"},
     sortSelfPosition = "SORTED",
     sortSeparateMeleeRanged = false,
