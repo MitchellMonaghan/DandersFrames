@@ -515,7 +515,7 @@ end
 
 -- Get the displayed party/raid index for a unit token.
 -- Party mode default: player=1, party1=2 ... party4=5
--- Optional remap mode: party1=1 ... party4=4, player=5
+-- Optional remap mode: party1=1 ... party4=4, player=party size
 -- Raid mode: raid1 ... raid40
 function DF:GetUnitPartyIndex(unit, db)
     if not unit or unit == "" then return nil end
@@ -540,7 +540,7 @@ function DF:GetUnitPartyIndex(unit, db)
 
     if UnitIsUnit(unit, "player") then
         if db and db.partyIndexTextPlayerAtBottom then
-            return 5
+            return (GetNumSubgroupMembers() or 0) + 1
         end
         return 1
     end

@@ -3656,7 +3656,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             DF:RefreshAllVisibleFrames()
             if DF.UpdateAllFrameAppearances then DF:UpdateAllFrameAppearances() end
         end), 30)
-        settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Player Always 5 (Party)", db, "partyIndexTextPlayerAtBottom", function()
+        settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Player Labeled As Party Size", db, "partyIndexTextPlayerAtBottom", function()
             DF:RefreshAllVisibleFrames()
             if DF.UpdateAllFrameAppearances then DF:UpdateAllFrameAppearances() end
         end), 30)
