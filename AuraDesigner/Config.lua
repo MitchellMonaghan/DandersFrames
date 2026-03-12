@@ -114,6 +114,16 @@ DF.AuraDesigner.IconTextures = {
 }
 
 -- ============================================================
+-- TOOLTIP SPELL ID OVERRIDES
+-- Some aura spell IDs are internal/secret and produce wrong tooltips
+-- (e.g. 409895 shows "Upheaval" instead of "Verdant Embrace").
+-- Map aura name → castable spell ID for correct tooltip display.
+-- ============================================================
+DF.AuraDesigner.TooltipSpellIDs = {
+    VerdantEmbrace = 360995,
+}
+
+-- ============================================================
 -- SPELL IDS PER SPEC
 -- Used for runtime aura matching via reverse spell ID lookup
 -- ============================================================

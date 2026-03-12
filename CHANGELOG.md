@@ -6,6 +6,8 @@
 * (Click Casting) **Fixed binding tooltip vanishing when pressing modifier keys** — modifier format mismatch caused all bindings to be filtered out
 * (Pet Frames) Fixed taint error from secret boolean in pet range checking
 * (Fading) **Fixed name and health text alpha resetting to 1.0** on zone change, combat res, vehicle exit, and test mode exit
+* (Aura Designer) **Fixed secret auras not appearing immediately on cast in combat** — inline fingerprint matching eliminates race condition between detection and rendering
+* (Aura Designer) Fixed Verdant Embrace tooltip incorrectly showing Upheaval
 
 ### New Features
 * (Aura Designer) **Secret aura tracking** — tracks auras that WoW hides behind secret spell IDs using signature-based fingerprinting (credit to Harrek for the technique and aura data from Advanced Raid Frames)
@@ -25,6 +27,11 @@
 * (Aura Designer) Spell cards now show WoW spell tooltips on hover
 * (Aura Designer) Secret auras shown in a distinct section with visual styling to differentiate from regular auras
 * (Aura Designer) Added "unsupported spec" message when viewing a non-healer spec
+* (Aura Designer) **Class color border** on preview frame window showing the current spec's class
+* (Aura Designer) **Class-colored spec dropdown** — each spec name colored by class for clarity
+* (Aura Designer) **Customise button** on layout group members — jumps directly to that aura's effects settings
+* (Aura Designer) Fixed page scrolling — only the right settings panel scrolls now, preview stays in view
+* (Raid Frames) **Blizzard raid frames now hidden by default** — existing users will have this enabled on update
 
 ## [4.0.15] - 2026-03-10
 

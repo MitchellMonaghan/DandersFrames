@@ -1196,7 +1196,7 @@ DF.PartyDefaults = {
     -- Blizzard Frame Hiding
     hideBlizzardFrames = true,
     hideBlizzardPartyFrames = true,
-    hideBlizzardRaidFrames = false,
+    hideBlizzardRaidFrames = true,
     hideDefaultPlayerFrame = false,
     hidePlayerFrame = false,
     showBlizzardSideMenu = true,
@@ -2377,7 +2377,7 @@ DF.RaidDefaults = {
     -- Blizzard Frame Hiding
     hideBlizzardFrames = true,
     hideBlizzardPartyFrames = true,
-    hideBlizzardRaidFrames = false,
+    hideBlizzardRaidFrames = true,
     hideDefaultPlayerFrame = false,
     hidePlayerFrame = false,
     showBlizzardSideMenu = true,
