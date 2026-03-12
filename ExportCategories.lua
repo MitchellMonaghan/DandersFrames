@@ -427,6 +427,7 @@ DF.ExportCategories = {
         "directBuffSortOrder",
         "directDebuffShowAll",
         "directDebuffFilterRaid",
+        "directDebuffFilterRaidInCombat",
         "directDebuffFilterCrowdControl",
         "directDebuffFilterImportant",
         "directDebuffSortOrder",

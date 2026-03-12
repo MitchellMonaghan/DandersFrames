@@ -583,7 +583,6 @@ function DF:UpdatePartyIndexText(frame)
         frame.partyIndexText:SetTextColor(c.r, c.g, c.b, c.a or 1)
     end
 end
-
 -- Iterator for all compact unit frames (player, party, raid)
 -- Accepts a callback function OR returns an iterator if no callback provided
 -- Usage with callback: DF:IterateCompactFrames(function(frame) ... end)

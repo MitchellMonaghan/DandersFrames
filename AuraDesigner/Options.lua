@@ -13,6 +13,7 @@ local tinsert = table.insert
 local tremove = table.remove
 local max, min = math.max, math.min
 local sort = table.sort
+local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
 -- Local references set during BuildAuraDesignerPage
 local GUI
@@ -2881,15 +2882,26 @@ local function CreateEnableBanner(parent)
 
     local function UpdateSpecText()
         local adDB = GetAuraDesignerDB()
+        local resolvedSpec
         if adDB.spec == "auto" then
             local autoSpec = Adapter:GetPlayerSpec()
             if autoSpec then
                 specBtn.text:SetText("Auto (" .. Adapter:GetSpecDisplayName(autoSpec) .. ")")
+                resolvedSpec = autoSpec
             else
                 specBtn.text:SetText("Auto (detect)")
             end
         else
             specBtn.text:SetText(Adapter:GetSpecDisplayName(adDB.spec))
+            resolvedSpec = adDB.spec
+        end
+        -- Color the button text by class color
+        local specInfoEntry = resolvedSpec and DF.AuraDesigner.SpecInfo[resolvedSpec]
+        local cc = specInfoEntry and RAID_CLASS_COLORS[specInfoEntry.class]
+        if cc then
+            specBtn.text:SetTextColor(cc.r, cc.g, cc.b)
+        else
+            specBtn.text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         end
     end
 
@@ -2925,10 +2937,24 @@ local function CreateEnableBanner(parent)
             local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             label:SetPoint("LEFT", 4, 0)
             label:SetText(opt[2])
-            label:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
-            btn:SetScript("OnEnter", function() label:SetTextColor(1, 1, 1) end)
-            btn:SetScript("OnLeave", function() label:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b) end)
+            -- Color by class for spec entries, default for "auto"
+            local specInfoEntry = DF.AuraDesigner.SpecInfo[opt[1]]
+            local cc = specInfoEntry and RAID_CLASS_COLORS[specInfoEntry.class]
+            local baseR, baseG, baseB = C_TEXT.r, C_TEXT.g, C_TEXT.b
+            if cc then
+                baseR, baseG, baseB = cc.r, cc.g, cc.b
+            end
+            label:SetTextColor(baseR, baseG, baseB)
+
+            btn:SetScript("OnEnter", function()
+                if cc then
+                    label:SetTextColor(min(baseR + 0.2, 1), min(baseG + 0.2, 1), min(baseB + 0.2, 1))
+                else
+                    label:SetTextColor(1, 1, 1)
+                end
+            end)
+            btn:SetScript("OnLeave", function() label:SetTextColor(baseR, baseG, baseB) end)
             btn:SetScript("OnClick", function()
                 GetAuraDesignerDB().spec = opt[1]
                 specMenu:Hide()
@@ -3341,6 +3367,147 @@ SwitchTab = function(tabKey)
     end
 end
 
+-- ── CREATE SPELL CARD ──
+-- Helper to create a single spell card in the picker grid.
+-- Extracted to avoid duplication between whitelisted and secret sections.
+local function CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, isSecret)
+    local alreadyUsed
+    if spellPickerMode == "placed" then
+        alreadyUsed = IsAuraTypePlaced(auraInfo.name, spellPickerType)
+    else
+        alreadyUsed = HasFrameEffect(auraInfo.name, spellPickerType)
+    end
+
+    local card = CreateFrame("Button", nil, grid, "BackdropTemplate")
+    card:SetSize(CARD_SIZE, CARD_SIZE)
+    card:SetPoint("TOPLEFT", x, y)
+
+    if alreadyUsed then
+        ApplyBackdrop(card, {r = 0.10, g = 0.10, b = 0.10, a = 0.5}, {r = 0.20, g = 0.20, b = 0.20, a = 0.5})
+    elseif isSecret then
+        ApplyBackdrop(card, {r = 0.12, g = 0.12, b = 0.15, a = 1}, {r = 0.25, g = 0.25, b = 0.32, a = 1})
+    else
+        ApplyBackdrop(card, {r = 0.14, g = 0.14, b = 0.14, a = 1}, {r = 0.28, g = 0.28, b = 0.28, a = 1})
+    end
+
+    -- Spell icon
+    local iconTex = GetAuraIcon(spec, auraInfo.name)
+    local icon = card:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(42, 42)
+    icon:SetPoint("TOP", 0, -6)
+    if iconTex then
+        icon:SetTexture(iconTex)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    else
+        icon:SetColorTexture(auraInfo.color[1] * 0.4, auraInfo.color[2] * 0.4, auraInfo.color[3] * 0.4, 1)
+    end
+    if alreadyUsed then icon:SetAlpha(0.35) end
+
+    -- Letter fallback
+    if not iconTex then
+        local letter = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        letter:SetPoint("CENTER", icon, "CENTER", 0, 0)
+        letter:SetText(auraInfo.display:sub(1, 1))
+        letter:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
+        if alreadyUsed then letter:SetAlpha(0.35) end
+    end
+
+    -- Spell name
+    local name = card:CreateFontString(nil, "OVERLAY")
+    name:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    name:SetPoint("BOTTOM", 0, 4)
+    name:SetWidth(CARD_SIZE - 6)
+    name:SetMaxLines(2)
+    name:SetWordWrap(true)
+    name:SetText(auraInfo.display)
+    name:SetTextColor(1, 1, 1)
+    name:SetJustifyH("CENTER")
+    if alreadyUsed then name:SetAlpha(0.35) end
+
+    -- "Placed" / "Active" overlay
+    if alreadyUsed then
+        local usedLabel = card:CreateFontString(nil, "OVERLAY")
+        usedLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        usedLabel:SetPoint("CENTER", icon, "CENTER", 0, 0)
+        usedLabel:SetText(spellPickerMode == "placed" and "Placed" or "Active")
+        usedLabel:SetTextColor(0.6, 0.6, 0.6)
+    end
+
+    -- Spell tooltip on hover (use tooltip override if available)
+    local tooltipOverrides = DF.AuraDesigner.TooltipSpellIDs
+    local spellIDs = DF.AuraDesigner.SpellIDs
+    local spellID = tooltipOverrides and tooltipOverrides[auraInfo.name]
+        or spellIDs and spellIDs[spec] and spellIDs[spec][auraInfo.name]
+
+    if alreadyUsed then
+        -- Used cards still get tooltips but no highlight/click
+        if spellID and spellID > 0 then
+            card:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetSpellByID(spellID)
+                GameTooltip:Show()
+            end)
+            card:SetScript("OnLeave", function(self)
+                GameTooltip:Hide()
+            end)
+        end
+    end
+
+    if not alreadyUsed then
+        local borderR, borderG, borderB = 0.28, 0.28, 0.28
+        if isSecret then borderR, borderG, borderB = 0.25, 0.25, 0.32 end
+        card:SetScript("OnEnter", function(self)
+            local tc = GetThemeColor()
+            self:SetBackdropBorderColor(tc.r, tc.g, tc.b, 1)
+            if spellID and spellID > 0 then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetSpellByID(spellID)
+                GameTooltip:Show()
+            end
+        end)
+        card:SetScript("OnLeave", function(self)
+            self:SetBackdropBorderColor(borderR, borderG, borderB, 1)
+            GameTooltip:Hide()
+        end)
+
+        if spellPickerMode == "placed" then
+            -- Placed indicators: drag-and-drop onto the frame preview
+            local capturedAuraInfo = auraInfo
+            local capturedType = spellPickerType
+            card:RegisterForDrag("LeftButton")
+            card:SetScript("OnDragStart", function()
+                local spec = ResolveSpec()
+                HideSpellPicker()
+                SwitchTab("effects")
+                StartDrag(capturedAuraInfo.name, capturedAuraInfo, spec, capturedType)
+            end)
+            -- Click also works — place at default anchor (CENTER)
+            card:SetScript("OnClick", function()
+                local instance = CreateIndicatorInstance(capturedAuraInfo.name, capturedType)
+                if instance then
+                    local cardKey = "placed:" .. capturedAuraInfo.name .. "#" .. instance.id
+                    expandedCards[cardKey] = true
+                end
+                HideSpellPicker()
+                SwitchTab("effects")
+                RefreshPlacedIndicators()
+                RefreshPreviewEffects()
+            end)
+        else
+            -- Frame-level effects: click to add directly
+            card:SetScript("OnClick", function()
+                EnsureTypeConfig(auraInfo.name, spellPickerType)
+                local cardKey = "frame:" .. spellPickerType .. ":" .. auraInfo.name
+                expandedCards[cardKey] = true
+                HideSpellPicker()
+                SwitchTab("effects")
+                RefreshPlacedIndicators()
+                RefreshPreviewEffects()
+            end)
+        end
+    end
+end
+
 -- ── POPULATE SPELL GRID ──
 PopulateSpellGrid = function()
     if not spellPickerView or not spellPickerView.gridFrame then return end
@@ -3377,123 +3544,82 @@ PopulateSpellGrid = function()
     if gridWidth < 100 then gridWidth = 260 end
     local cols = max(2, math.floor((gridWidth - PADDING * 2 + CARD_GAP) / (CARD_SIZE + CARD_GAP)))
 
-    for i, auraInfo in ipairs(auras) do
-        local row = math.floor((i - 1) / cols)
-        local col = (i - 1) % cols
-        local x = PADDING + col * (CARD_SIZE + CARD_GAP)
-        local y = -(PADDING + row * (CARD_SIZE + CARD_GAP))
-
-        local alreadyUsed
-        if spellPickerMode == "placed" then
-            alreadyUsed = IsAuraTypePlaced(auraInfo.name, spellPickerType)
+    -- Split auras into whitelisted and secret (inferred tracking)
+    local whitelisted = {}
+    local secret = {}
+    for _, auraInfo in ipairs(auras) do
+        if auraInfo.secret then
+            secret[#secret + 1] = auraInfo
         else
-            alreadyUsed = HasFrameEffect(auraInfo.name, spellPickerType)
-        end
-
-        local card = CreateFrame("Button", nil, grid, "BackdropTemplate")
-        card:SetSize(CARD_SIZE, CARD_SIZE)
-        card:SetPoint("TOPLEFT", x, y)
-
-        if alreadyUsed then
-            ApplyBackdrop(card, {r = 0.10, g = 0.10, b = 0.10, a = 0.5}, {r = 0.20, g = 0.20, b = 0.20, a = 0.5})
-        else
-            ApplyBackdrop(card, {r = 0.14, g = 0.14, b = 0.14, a = 1}, {r = 0.28, g = 0.28, b = 0.28, a = 1})
-        end
-
-        -- Spell icon
-        local iconTex = GetAuraIcon(spec, auraInfo.name)
-        local icon = card:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(42, 42)
-        icon:SetPoint("TOP", 0, -6)
-        if iconTex then
-            icon:SetTexture(iconTex)
-            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        else
-            icon:SetColorTexture(auraInfo.color[1] * 0.4, auraInfo.color[2] * 0.4, auraInfo.color[3] * 0.4, 1)
-        end
-        if alreadyUsed then icon:SetAlpha(0.35) end
-
-        -- Letter fallback
-        if not iconTex then
-            local letter = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            letter:SetPoint("CENTER", icon, "CENTER", 0, 0)
-            letter:SetText(auraInfo.display:sub(1, 1))
-            letter:SetTextColor(auraInfo.color[1], auraInfo.color[2], auraInfo.color[3])
-            if alreadyUsed then letter:SetAlpha(0.35) end
-        end
-
-        -- Spell name
-        local name = card:CreateFontString(nil, "OVERLAY")
-        name:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-        name:SetPoint("BOTTOM", 0, 4)
-        name:SetWidth(CARD_SIZE - 6)
-        name:SetMaxLines(2)
-        name:SetWordWrap(true)
-        name:SetText(auraInfo.display)
-        name:SetTextColor(1, 1, 1)
-        name:SetJustifyH("CENTER")
-        if alreadyUsed then name:SetAlpha(0.35) end
-
-        -- "Placed" / "Active" overlay
-        if alreadyUsed then
-            local usedLabel = card:CreateFontString(nil, "OVERLAY")
-            usedLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-            usedLabel:SetPoint("CENTER", icon, "CENTER", 0, 0)
-            usedLabel:SetText(spellPickerMode == "placed" and "Placed" or "Active")
-            usedLabel:SetTextColor(0.6, 0.6, 0.6)
-        end
-
-        -- Interaction behavior
-        if not alreadyUsed then
-            card:SetScript("OnEnter", function(self)
-                local tc = GetThemeColor()
-                self:SetBackdropBorderColor(tc.r, tc.g, tc.b, 1)
-            end)
-            card:SetScript("OnLeave", function(self)
-                self:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
-            end)
-
-            if spellPickerMode == "placed" then
-                -- Placed indicators: drag-and-drop onto the frame preview
-                local capturedAuraInfo = auraInfo
-                local capturedType = spellPickerType
-                card:RegisterForDrag("LeftButton")
-                card:SetScript("OnDragStart", function()
-                    local spec = ResolveSpec()
-                    HideSpellPicker()
-                    SwitchTab("effects")
-                    StartDrag(capturedAuraInfo.name, capturedAuraInfo, spec, capturedType)
-                end)
-                -- Click also works — place at default anchor (CENTER)
-                card:SetScript("OnClick", function()
-                    local instance = CreateIndicatorInstance(capturedAuraInfo.name, capturedType)
-                    if instance then
-                        local cardKey = "placed:" .. capturedAuraInfo.name .. "#" .. instance.id
-                        expandedCards[cardKey] = true
-                    end
-                    HideSpellPicker()
-                    SwitchTab("effects")
-                    RefreshPlacedIndicators()
-                    RefreshPreviewEffects()
-                end)
-            else
-                -- Frame-level effects: click to add directly
-                card:SetScript("OnClick", function()
-                    EnsureTypeConfig(auraInfo.name, spellPickerType)
-                    local cardKey = "frame:" .. spellPickerType .. ":" .. auraInfo.name
-                    expandedCards[cardKey] = true
-                    HideSpellPicker()
-                    SwitchTab("effects")
-                    RefreshPlacedIndicators()
-                    RefreshPreviewEffects()
-                end)
-            end
+            whitelisted[#whitelisted + 1] = auraInfo
         end
     end
 
-    -- Set grid height
-    local totalRows = math.ceil(#auras / cols)
-    grid:SetHeight(PADDING * 2 + totalRows * (CARD_SIZE + CARD_GAP))
+    -- Section header for whitelisted auras
+    local HEADER_HEIGHT = 20
+    local whitelistHeader = grid:CreateFontString(nil, "OVERLAY")
+    whitelistHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    whitelistHeader:SetPoint("TOPLEFT", PADDING, -4)
+    whitelistHeader:SetText("WHITELISTED")
+    whitelistHeader:SetTextColor(0.70, 0.70, 0.70, 1)
+
+    -- Render whitelisted auras
+    local cardIndex = 0
+    for _, auraInfo in ipairs(whitelisted) do
+        local row = math.floor(cardIndex / cols)
+        local col = cardIndex % cols
+        local x = PADDING + col * (CARD_SIZE + CARD_GAP)
+        local y = -(HEADER_HEIGHT + row * (CARD_SIZE + CARD_GAP))
+        CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, false)
+        cardIndex = cardIndex + 1
+    end
+
+    -- Render secret auras with section separator
+    if #secret > 0 then
+        -- Advance to next full row for separator
+        local separatorRow = math.ceil(cardIndex / cols)
+        if cardIndex > 0 and cardIndex % cols == 0 then
+            separatorRow = cardIndex / cols
+        end
+        local separatorY = -(HEADER_HEIGHT + separatorRow * (CARD_SIZE + CARD_GAP))
+
+        -- Section header label
+        local header = grid:CreateFontString(nil, "OVERLAY")
+        header:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        header:SetPoint("TOPLEFT", PADDING, separatorY - 2)
+        header:SetText("INFERRED TRACKING")
+        header:SetTextColor(0.70, 0.70, 0.78, 1)
+
+        -- Subtitle explaining what inferred tracking means
+        local subtitle = grid:CreateFontString(nil, "OVERLAY")
+        subtitle:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+        subtitle:SetPoint("TOPLEFT", PADDING, separatorY - 14)
+        subtitle:SetWidth(gridWidth - PADDING * 2)
+        subtitle:SetJustifyH("LEFT")
+        subtitle:SetText("Uses cast tracking to identify spells WoW marks as secret. Only tracks your own casts.")
+        subtitle:SetTextColor(0.58, 0.58, 0.62, 1)
+
+        -- Start secret cards after separator (separator takes ~30px)
+        local SEPARATOR_HEIGHT = 32
+        local secretStartY = separatorY - SEPARATOR_HEIGHT
+
+        for si, auraInfo in ipairs(secret) do
+            local sRow = math.floor((si - 1) / cols)
+            local sCol = (si - 1) % cols
+            local x = PADDING + sCol * (CARD_SIZE + CARD_GAP)
+            local y = secretStartY - (sRow * (CARD_SIZE + CARD_GAP))
+            CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, true)
+        end
+
+        -- Set grid height: whitelisted rows + separator + secret rows
+        local secretRows = math.ceil(#secret / cols)
+        local totalHeight = HEADER_HEIGHT + separatorRow * (CARD_SIZE + CARD_GAP) + SEPARATOR_HEIGHT + secretRows * (CARD_SIZE + CARD_GAP) + PADDING
+        grid:SetHeight(totalHeight)
+    else
+        -- No secret auras — standard height
+        local totalRows = math.ceil(#whitelisted / cols)
+        grid:SetHeight(HEADER_HEIGHT + PADDING + totalRows * (CARD_SIZE + CARD_GAP))
+    end
 end
 
 -- ── CREATE EFFECT CARD ──
@@ -4487,14 +4613,6 @@ BuildLayoutGroupsTab = function()
                         mBadgeText:SetTextColor(1, 1, 1)
                         mBadge:SetWidth(max(mBadgeText:GetStringWidth() + 12, 32))
 
-                        -- Aura name
-                        local mName = memberRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                        mName:SetPoint("LEFT", mBadge, "RIGHT", 6, 0)
-                        mName:SetPoint("RIGHT", memberRow, "RIGHT", -24, 0)
-                        mName:SetMaxLines(1)
-                        mName:SetText(displayNames[member.auraName] or member.auraName)
-                        mName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
                         -- Remove button (using close icon)
                         local remBtn = CreateFrame("Button", nil, memberRow)
                         remBtn:SetSize(18, 18)
@@ -4519,6 +4637,42 @@ BuildLayoutGroupsTab = function()
                             RefreshPlacedIndicators()
                             RefreshPreviewEffects()
                         end)
+
+                        -- Customise button (navigates to Effects tab for this indicator)
+                        local custBtn = CreateFrame("Button", nil, memberRow, "BackdropTemplate")
+                        custBtn:SetSize(56, 18)
+                        custBtn:SetPoint("RIGHT", remBtn, "LEFT", -4, 0)
+                        local custTC = GetThemeColor()
+                        ApplyBackdrop(custBtn,
+                            {r = custTC.r * 0.15, g = custTC.g * 0.15, b = custTC.b * 0.15, a = 1},
+                            {r = custTC.r * 0.35, g = custTC.g * 0.35, b = custTC.b * 0.35, a = 0.6})
+                        local custText = custBtn:CreateFontString(nil, "OVERLAY")
+                        custText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+                        custText:SetPoint("CENTER", 0, 0)
+                        custText:SetText("Customise")
+                        custText:SetTextColor(custTC.r, custTC.g, custTC.b)
+                        custBtn:SetScript("OnEnter", function() custText:SetTextColor(1, 1, 1) end)
+                        custBtn:SetScript("OnLeave", function()
+                            local tc2 = GetThemeColor()
+                            custText:SetTextColor(tc2.r, tc2.g, tc2.b)
+                        end)
+                        local capturedAuraName = member.auraName
+                        local capturedIndID = member.indicatorID
+                        custBtn:SetScript("OnClick", function()
+                            local cardKey = "placed:" .. capturedAuraName .. "#" .. capturedIndID
+                            wipe(expandedCards)
+                            expandedCards[cardKey] = true
+                            activeTab = "effects"
+                            DF:AuraDesigner_RefreshPage()
+                        end)
+
+                        -- Aura name
+                        local mName = memberRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        mName:SetPoint("LEFT", mBadge, "RIGHT", 6, 0)
+                        mName:SetPoint("RIGHT", custBtn, "LEFT", -4, 0)
+                        mName:SetMaxLines(1)
+                        mName:SetText(displayNames[member.auraName] or member.auraName)
+                        mName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
                         by = by - 38
                     end
@@ -4866,9 +5020,14 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     -- Override RefreshStates: Aura Designer uses its own layout system
     page.RefreshStates = function(self)
         local pageH = self:GetHeight()
-        self.child:SetHeight(math.max(pageH, 600))
+        self.child:SetHeight(pageH)
         if self.child and GUI.contentFrame then
             self.child:SetWidth(GUI.contentFrame:GetWidth() - 30)
+        end
+        -- Keep parent scroll at 0 — only the right panel should scroll
+        local parentScroll = self:GetParent()
+        if parentScroll and parentScroll.SetVerticalScroll then
+            parentScroll:SetVerticalScroll(0)
         end
         DF:AuraDesigner_RefreshPage()
     end
@@ -5172,6 +5331,19 @@ function DF:AuraDesigner_RefreshPage()
     local currentSpec = ResolveSpec()
     if currentSpec ~= selectedSpec then
         selectedSpec = currentSpec
+    end
+
+    -- Update frame preview container border to class color of current spec
+    if framePreview then
+        local resolvedSpec = currentSpec or selectedSpec
+        local specInfoEntry = resolvedSpec and DF.AuraDesigner.SpecInfo[resolvedSpec]
+        local classToken = specInfoEntry and specInfoEntry.class
+        local classColor = classToken and RAID_CLASS_COLORS[classToken]
+        if classColor then
+            framePreview:SetBackdropBorderColor(classColor.r, classColor.g, classColor.b, 1)
+        else
+            framePreview:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
+        end
     end
 
     -- Rebuild the current tab to reflect data changes
