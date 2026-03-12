@@ -31,7 +31,6 @@
 * (Aura Designer) **Class-colored spec dropdown** — each spec name colored by class for clarity
 * (Aura Designer) **Customise button** on layout group members — jumps directly to that aura's effects settings
 * (Aura Designer) Fixed page scrolling — only the right settings panel scrolls now, preview stays in view
-* (Raid Frames) **Blizzard raid frames now hidden by default** — existing users will have this enabled on update
 
 ## [4.0.15] - 2026-03-10
 
