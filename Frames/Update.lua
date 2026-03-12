@@ -797,7 +797,7 @@ function DF:UpdateUnitFrame(frame, source)
     -- ========================================
     -- NAME
     -- ========================================
-    DF:UpdateNameText(frame)
+    DF:UpdateName(frame)
     
     -- ========================================
     -- PARTY INDEX
