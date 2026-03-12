@@ -3699,6 +3699,25 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end
 
+        -- One-time: force hideBlizzardRaidFrames = true for existing users
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb and not modeDb._hideBlizzRaidV407 then
+                modeDb.hideBlizzardRaidFrames = true
+                modeDb._hideBlizzRaidV407 = true
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] and not profile[mode]._hideBlizzRaidV407 then
+                        profile[mode].hideBlizzardRaidFrames = true
+                        profile[mode]._hideBlizzRaidV407 = true
+                    end
+                end
+            end
+        end
+
         -- Wrap DF.db with overlay proxy (must happen AFTER all migrations,
         -- BEFORE anything that reads through the proxy)
         DF:WrapDB()

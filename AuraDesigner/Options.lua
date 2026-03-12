@@ -13,6 +13,7 @@ local tinsert = table.insert
 local tremove = table.remove
 local max, min = math.max, math.min
 local sort = table.sort
+local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
 -- Local references set during BuildAuraDesignerPage
 local GUI
@@ -2881,15 +2882,26 @@ local function CreateEnableBanner(parent)
 
     local function UpdateSpecText()
         local adDB = GetAuraDesignerDB()
+        local resolvedSpec
         if adDB.spec == "auto" then
             local autoSpec = Adapter:GetPlayerSpec()
             if autoSpec then
                 specBtn.text:SetText("Auto (" .. Adapter:GetSpecDisplayName(autoSpec) .. ")")
+                resolvedSpec = autoSpec
             else
                 specBtn.text:SetText("Auto (detect)")
             end
         else
             specBtn.text:SetText(Adapter:GetSpecDisplayName(adDB.spec))
+            resolvedSpec = adDB.spec
+        end
+        -- Color the button text by class color
+        local specInfoEntry = resolvedSpec and DF.AuraDesigner.SpecInfo[resolvedSpec]
+        local cc = specInfoEntry and RAID_CLASS_COLORS[specInfoEntry.class]
+        if cc then
+            specBtn.text:SetTextColor(cc.r, cc.g, cc.b)
+        else
+            specBtn.text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         end
     end
 
@@ -2925,10 +2937,24 @@ local function CreateEnableBanner(parent)
             local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             label:SetPoint("LEFT", 4, 0)
             label:SetText(opt[2])
-            label:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
-            btn:SetScript("OnEnter", function() label:SetTextColor(1, 1, 1) end)
-            btn:SetScript("OnLeave", function() label:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b) end)
+            -- Color by class for spec entries, default for "auto"
+            local specInfoEntry = DF.AuraDesigner.SpecInfo[opt[1]]
+            local cc = specInfoEntry and RAID_CLASS_COLORS[specInfoEntry.class]
+            local baseR, baseG, baseB = C_TEXT.r, C_TEXT.g, C_TEXT.b
+            if cc then
+                baseR, baseG, baseB = cc.r, cc.g, cc.b
+            end
+            label:SetTextColor(baseR, baseG, baseB)
+
+            btn:SetScript("OnEnter", function()
+                if cc then
+                    label:SetTextColor(min(baseR + 0.2, 1), min(baseG + 0.2, 1), min(baseB + 0.2, 1))
+                else
+                    label:SetTextColor(1, 1, 1)
+                end
+            end)
+            btn:SetScript("OnLeave", function() label:SetTextColor(baseR, baseG, baseB) end)
             btn:SetScript("OnClick", function()
                 GetAuraDesignerDB().spec = opt[1]
                 specMenu:Hide()
@@ -3407,9 +3433,11 @@ local function CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, isSecret)
         usedLabel:SetTextColor(0.6, 0.6, 0.6)
     end
 
-    -- Spell tooltip on hover
+    -- Spell tooltip on hover (use tooltip override if available)
+    local tooltipOverrides = DF.AuraDesigner.TooltipSpellIDs
     local spellIDs = DF.AuraDesigner.SpellIDs
-    local spellID = spellIDs and spellIDs[spec] and spellIDs[spec][auraInfo.name]
+    local spellID = tooltipOverrides and tooltipOverrides[auraInfo.name]
+        or spellIDs and spellIDs[spec] and spellIDs[spec][auraInfo.name]
 
     if alreadyUsed then
         -- Used cards still get tooltips but no highlight/click
@@ -4585,14 +4613,6 @@ BuildLayoutGroupsTab = function()
                         mBadgeText:SetTextColor(1, 1, 1)
                         mBadge:SetWidth(max(mBadgeText:GetStringWidth() + 12, 32))
 
-                        -- Aura name
-                        local mName = memberRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                        mName:SetPoint("LEFT", mBadge, "RIGHT", 6, 0)
-                        mName:SetPoint("RIGHT", memberRow, "RIGHT", -24, 0)
-                        mName:SetMaxLines(1)
-                        mName:SetText(displayNames[member.auraName] or member.auraName)
-                        mName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-
                         -- Remove button (using close icon)
                         local remBtn = CreateFrame("Button", nil, memberRow)
                         remBtn:SetSize(18, 18)
@@ -4617,6 +4637,42 @@ BuildLayoutGroupsTab = function()
                             RefreshPlacedIndicators()
                             RefreshPreviewEffects()
                         end)
+
+                        -- Customise button (navigates to Effects tab for this indicator)
+                        local custBtn = CreateFrame("Button", nil, memberRow, "BackdropTemplate")
+                        custBtn:SetSize(56, 18)
+                        custBtn:SetPoint("RIGHT", remBtn, "LEFT", -4, 0)
+                        local custTC = GetThemeColor()
+                        ApplyBackdrop(custBtn,
+                            {r = custTC.r * 0.15, g = custTC.g * 0.15, b = custTC.b * 0.15, a = 1},
+                            {r = custTC.r * 0.35, g = custTC.g * 0.35, b = custTC.b * 0.35, a = 0.6})
+                        local custText = custBtn:CreateFontString(nil, "OVERLAY")
+                        custText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+                        custText:SetPoint("CENTER", 0, 0)
+                        custText:SetText("Customise")
+                        custText:SetTextColor(custTC.r, custTC.g, custTC.b)
+                        custBtn:SetScript("OnEnter", function() custText:SetTextColor(1, 1, 1) end)
+                        custBtn:SetScript("OnLeave", function()
+                            local tc2 = GetThemeColor()
+                            custText:SetTextColor(tc2.r, tc2.g, tc2.b)
+                        end)
+                        local capturedAuraName = member.auraName
+                        local capturedIndID = member.indicatorID
+                        custBtn:SetScript("OnClick", function()
+                            local cardKey = "placed:" .. capturedAuraName .. "#" .. capturedIndID
+                            wipe(expandedCards)
+                            expandedCards[cardKey] = true
+                            activeTab = "effects"
+                            DF:AuraDesigner_RefreshPage()
+                        end)
+
+                        -- Aura name
+                        local mName = memberRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        mName:SetPoint("LEFT", mBadge, "RIGHT", 6, 0)
+                        mName:SetPoint("RIGHT", custBtn, "LEFT", -4, 0)
+                        mName:SetMaxLines(1)
+                        mName:SetText(displayNames[member.auraName] or member.auraName)
+                        mName:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
                         by = by - 38
                     end
@@ -4964,9 +5020,14 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     -- Override RefreshStates: Aura Designer uses its own layout system
     page.RefreshStates = function(self)
         local pageH = self:GetHeight()
-        self.child:SetHeight(math.max(pageH, 600))
+        self.child:SetHeight(pageH)
         if self.child and GUI.contentFrame then
             self.child:SetWidth(GUI.contentFrame:GetWidth() - 30)
+        end
+        -- Keep parent scroll at 0 — only the right panel should scroll
+        local parentScroll = self:GetParent()
+        if parentScroll and parentScroll.SetVerticalScroll then
+            parentScroll:SetVerticalScroll(0)
         end
         DF:AuraDesigner_RefreshPage()
     end
@@ -5270,6 +5331,19 @@ function DF:AuraDesigner_RefreshPage()
     local currentSpec = ResolveSpec()
     if currentSpec ~= selectedSpec then
         selectedSpec = currentSpec
+    end
+
+    -- Update frame preview container border to class color of current spec
+    if framePreview then
+        local resolvedSpec = currentSpec or selectedSpec
+        local specInfoEntry = resolvedSpec and DF.AuraDesigner.SpecInfo[resolvedSpec]
+        local classToken = specInfoEntry and specInfoEntry.class
+        local classColor = classToken and RAID_CLASS_COLORS[classToken]
+        if classColor then
+            framePreview:SetBackdropBorderColor(classColor.r, classColor.g, classColor.b, 1)
+        else
+            framePreview:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
+        end
     end
 
     -- Rebuild the current tab to reflect data changes

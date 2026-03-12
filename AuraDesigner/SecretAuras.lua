@@ -387,3 +387,26 @@ function SecretAuras:GetUnitAuras(unit, spec)
 
     return result
 end
+
+--- Match a single aura against known secret signatures for the given spec.
+-- Exposed for inline use by AuraAdapter during its scan loop so that
+-- secret aura detection and indicator rendering happen on the same tick.
+-- @param unit  Unit token (e.g. "party1")
+-- @param auraData  AuraData table from C_UnitAuras (must have .auraInstanceID)
+-- @param spec  Spec key (e.g. "RestorationDruid")
+-- @return auraName String name of matched aura, or nil
+function SecretAuras:MatchAura(unit, auraData, spec)
+    return MatchAuraSignature(unit, auraData, spec)
+end
+
+--- Record an inline-matched aura into the state cache.
+-- Called by AuraAdapter after a successful inline match so that the
+-- disambiguation engines (e.g. VerdantEmbrace/Lifebind) and state
+-- cleanup (removedAuraInstanceIDs) continue to work correctly.
+-- @param unit  Unit token
+-- @param auraInstanceID  Blizzard aura instance ID
+-- @param auraName  Matched aura name
+function SecretAuras:RecordMatch(unit, auraInstanceID, auraName)
+    if not state.auras[unit] then state.auras[unit] = {} end
+    state.auras[unit][auraInstanceID] = auraName
+end
