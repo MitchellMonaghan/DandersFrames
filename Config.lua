@@ -866,6 +866,7 @@ DF.PartyDefaults = {
     -- Direct Mode: Debuff Filters
     directDebuffShowAll = false,              -- Show all debuffs (ignores sub-filters)
     directDebuffFilterRaid = true,            -- RAID filter
+    directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
     directDebuffSortOrder = "DEFAULT",        -- "DEFAULT" / "TIME" / "NAME"
@@ -1196,7 +1197,7 @@ DF.PartyDefaults = {
     -- Blizzard Frame Hiding
     hideBlizzardFrames = true,
     hideBlizzardPartyFrames = true,
-    hideBlizzardRaidFrames = false,
+    hideBlizzardRaidFrames = true,
     hideDefaultPlayerFrame = false,
     hidePlayerFrame = false,
     showBlizzardSideMenu = true,
@@ -2050,6 +2051,7 @@ DF.RaidDefaults = {
     -- Direct Mode: Debuff Filters
     directDebuffShowAll = false,              -- Show all debuffs (ignores sub-filters)
     directDebuffFilterRaid = true,            -- RAID filter
+    directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
     directDebuffSortOrder = "DEFAULT",        -- "DEFAULT" / "TIME" / "NAME"
@@ -2380,7 +2382,7 @@ DF.RaidDefaults = {
     -- Blizzard Frame Hiding
     hideBlizzardFrames = true,
     hideBlizzardPartyFrames = true,
-    hideBlizzardRaidFrames = false,
+    hideBlizzardRaidFrames = true,
     hideDefaultPlayerFrame = false,
     hidePlayerFrame = false,
     showBlizzardSideMenu = true,

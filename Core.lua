@@ -3243,7 +3243,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
         if not DF.db.auraBlacklist.buffs then DF.db.auraBlacklist.buffs = {} end
         if not DF.db.auraBlacklist.debuffs then DF.db.auraBlacklist.debuffs = {} end
-        
+
+        -- Migrate legacy blacklist entries: true → { combat = true, ooc = true }
+        for _, key in ipairs({"buffs", "debuffs"}) do
+            for spellId, val in pairs(DF.db.auraBlacklist[key]) do
+                if val == true then
+                    DF.db.auraBlacklist[key][spellId] = { combat = true, ooc = true }
+                end
+            end
+        end
+
         -- Migrate any missing settings from defaults
         for key, value in pairs(DF.PartyDefaults) do
             if DF.db.party[key] == nil then
@@ -3663,6 +3672,25 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         for _, auraName in ipairs(removedAuras) do
                             ad.auras[auraName] = nil
                         end
+                    end
+                end
+            end
+        end
+
+        -- One-time: force hideBlizzardRaidFrames = true for existing users
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb and not modeDb._hideBlizzRaidV407 then
+                modeDb.hideBlizzardRaidFrames = true
+                modeDb._hideBlizzRaidV407 = true
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] and not profile[mode]._hideBlizzRaidV407 then
+                        profile[mode].hideBlizzardRaidFrames = true
+                        profile[mode]._hideBlizzRaidV407 = true
                     end
                 end
             end
@@ -4479,6 +4507,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Snapshot raid buff auras before combat lockdown hides spell IDs
         if DF.SnapshotRaidBuffAuras then
             DF:SnapshotRaidBuffAuras()
+        end
+        -- Refresh auras so combat-aware blacklist filters apply immediately
+        if DF.RefreshAllVisibleFrames then
+            DF:RefreshAllVisibleFrames()
         end
 
     elseif event == "PLAYER_UPDATE_RESTING" then

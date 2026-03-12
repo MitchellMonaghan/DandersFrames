@@ -108,10 +108,31 @@ function Provider:GetUnitAuras(unit, spec)
                     scannedCount = scannedCount + 1
                     local sid = auraData.spellId
 
-                    -- Skip auras with secret spellIds — they are not
-                    -- on Blizzard's whitelist so they are not ours.
+                    -- Handle secret vs whitelisted auras
                     if not sid or issecretvalue(sid) then
-                        -- not a trackable aura, skip
+                        -- Secret aura — try inline fingerprint matching
+                        -- (same tick as indicator rendering, avoids race condition)
+                        local SecretModule = DF.AuraDesigner.SecretAuras
+                        if SecretModule and auraData.auraInstanceID then
+                            local matchedName = SecretModule:MatchAura(unit, auraData, spec)
+                            if matchedName then
+                                local knownSpellId = forwardLookup and forwardLookup[matchedName]
+                                local iconTex = DF.AuraDesigner.IconTextures and DF.AuraDesigner.IconTextures[matchedName]
+                                result[matchedName] = {
+                                    spellId = knownSpellId or 0,
+                                    icon = iconTex or auraData.icon,
+                                    duration = auraData.duration,
+                                    expirationTime = auraData.expirationTime,
+                                    stacks = auraData.applications,
+                                    caster = auraData.sourceUnit,
+                                    auraInstanceID = auraData.auraInstanceID,
+                                    secret = true,
+                                }
+                                matchedCount = matchedCount + 1
+                                -- Update state cache for disambiguation engines
+                                SecretModule:RecordMatch(unit, auraData.auraInstanceID, matchedName)
+                            end
+                        end
                     else
                         local auraName = lookup[sid]
                         if auraName then
@@ -127,6 +148,21 @@ function Provider:GetUnitAuras(unit, spec)
                             }
                         end
                     end
+                end
+            end
+        end
+    end
+
+    -- Merge disambiguation overrides from SecretAuras state cache
+    -- (e.g. VerdantEmbrace → Lifebind reclassification after 0.1s timer)
+    local SecretAurasModule = DF.AuraDesigner.SecretAuras
+    if SecretAurasModule then
+        local secretResult = SecretAurasModule:GetUnitAuras(unit, spec)
+        if secretResult then
+            for auraName, auraData in pairs(secretResult) do
+                if not result[auraName] then
+                    result[auraName] = auraData
+                    matchedCount = matchedCount + 1
                 end
             end
         end
