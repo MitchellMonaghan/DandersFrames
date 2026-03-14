@@ -1,6 +1,6 @@
 # DandersFrames Changelog
 
-## [4.0.17] - 2026-03-14
+## [4.1.0] - 2026-03-14
 
 ### New Features
 * (Position) **Permanent Mover handle** — a small always-visible drag handle on frames for repositioning without unlocking, with customizable position, size, offset, colors, show-on-hover with fade animation, hide-in-combat option, and red combat indicator
