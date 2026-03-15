@@ -364,7 +364,7 @@ function DF:CreatePermanentMover(container, mode)
 
     local handle = CreateFrame("Button", handleName, UIParent, "BackdropTemplate")
     handle:SetSize(db.permanentMoverWidth or 20, db.permanentMoverHeight or 20)
-    handle:SetFrameStrata("HIGH")
+    handle:SetFrameStrata("MEDIUM")
     handle:SetFrameLevel(100)
     handle:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",

@@ -1,5 +1,15 @@
 # DandersFrames Changelog
 
+## [4.1.1] - 2026-03-15
+
+### Bug Fixes
+* (Position) Lowered permanent mover frame strata from HIGH to MEDIUM so it no longer covers other UI elements
+* (Defensive Icons) Fixed double-scaled positioning offsets causing defensive icons to stack vertically instead of horizontally
+* (Defensive Icons) Reduced raid frame defensive icon defaults (size 20, scale 1.0, max 3) to fit narrower raid frames
+* (Pinned Frames) Fixed aura designer indicators (borders, defensives, dispels) leaking onto disabled pinned frame sets
+* (Aura Designer) Fixed border indicator pandemic state using the regular border alpha instead of the configured expiring alpha
+* (Aura Designer) Declassified Beacon of Virtue as non-secret — spell ID 200025 is on Blizzard's whitelist and readable via standard API
+
 ## [4.1.0] - 2026-03-14
 
 ### New Features
