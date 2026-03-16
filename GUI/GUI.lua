@@ -5417,10 +5417,22 @@ function DF:CreateGUI()
     
     -- PayPal link
     local paypalColor = { r = 0.35, g = 0.65, b = 0.45 }
-    local donateBtn = CreateFooterLink(footer, "Support development", paypalColor,
+    local donateBtn = CreateFooterLink(footer, "Support with PayPal", paypalColor,
         "https://paypal.me/dandersframesaddon", "Support DandersFrames Development")
     donateBtn:SetPoint("LEFT", sep, "RIGHT", 8, 0)
-    
+
+    -- Separator 2
+    local sep2 = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sep2:SetPoint("LEFT", donateBtn, "RIGHT", 8, 0)
+    sep2:SetText("|")
+    sep2:SetTextColor(C_BORDER.r, C_BORDER.g, C_BORDER.b)
+
+    -- Patreon link
+    local patreonColor = { r = 0.90, g = 0.35, b = 0.30 }
+    local patreonBtn = CreateFooterLink(footer, "Support with Patreon", patreonColor,
+        "https://www.patreon.com/DandersFrames", "Support DandersFrames on Patreon")
+    patreonBtn:SetPoint("LEFT", sep2, "RIGHT", 8, 0)
+
     -- Version on the right
     local versionText = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     versionText:SetPoint("RIGHT", footer, "RIGHT", -2, 0)

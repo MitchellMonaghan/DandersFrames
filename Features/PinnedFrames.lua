@@ -379,7 +379,8 @@ function PinnedFrames:CreateSetFrames(setIndex)
     
     mover:SetScript("OnDragStop", function(self)
         self:SetScript("OnUpdate", nil)
-        
+        if not startMouseX then return end
+
         -- Get final position from mouse delta
         local uiScale = UIParent:GetEffectiveScale()
         local mx, my = GetCursorPosition()

@@ -3586,6 +3586,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         }
         formatGroup:AddWidget(GUI:CreateDropdown(self.child, "Health Format", formatOptions, db, "healthTextFormat", function() DF:RefreshAllVisibleFrames() end), 55)
         formatGroup:AddWidget(GUI:CreateCheckbox(self.child, "Abbreviate (K/M)", db, "healthTextAbbreviate", function() DF:RefreshAllVisibleFrames() end), 30)
+        formatGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide % Symbol", db, "healthTextHidePercent", function() DF:RefreshAllVisibleFrames() end), 30)
         Add(formatGroup, nil, 1)
         
         -- ===== POSITION GROUP (Column 2) =====

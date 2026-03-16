@@ -591,8 +591,9 @@ function DF:UpdateTestFrame(frame, index, applyLayout)
         return tostring(val)
     end
     
+    local pctFmt = db.healthTextHidePercent and "%.0f" or "%.0f%%"
     if format == "PERCENT" then
-        frame.healthText:SetFormattedText("%.0f%%", healthValue * 100)
+        frame.healthText:SetFormattedText(pctFmt, healthValue * 100)
     elseif format == "CURRENT" then
         frame.healthText:SetText(FormatValue(currentHealth))
     elseif format == "CURRENTMAX" then
@@ -606,7 +607,7 @@ function DF:UpdateTestFrame(frame, index, applyLayout)
     elseif format == "NONE" then
         frame.healthText:SetText("")
     else
-        frame.healthText:SetFormattedText("%.0f%%", healthValue * 100)
+        frame.healthText:SetFormattedText(pctFmt, healthValue * 100)
     end
     
     -- Update name

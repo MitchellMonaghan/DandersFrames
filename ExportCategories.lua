@@ -484,6 +484,7 @@ DF.ExportCategories = {
         "healthTextUseClassColor",
         "healthTextOutline",
         "healthTextFormat",
+        "healthTextHidePercent",
         "healthTextAbbreviate",
         
         -- Group Labels (Raid)

@@ -184,19 +184,35 @@ local function GetOrCreateDefensiveBarIcon(frame, index)
     icon.unitFrame = frame
     icon.auraType = "DEFENSIVE"
 
-    -- Tooltip handling
+    -- Tooltip handling (matches primary defensive icon in Create.lua)
     icon:SetScript("OnEnter", function(self)
         if not self:IsShown() then return end
-        if self.auraData and self.auraData.auraInstanceID and self.unitFrame then
-            local unit = self.unitFrame.unit
+        local anchorFrame = self.unitFrame
+        if not anchorFrame then return end
+        local iconDb = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        if not iconDb.tooltipDefensiveEnabled then return end
+        if iconDb.tooltipDefensiveDisableInCombat and InCombatLockdown() then return end
+        if self.auraData and self.auraData.auraInstanceID then
+            local unit = anchorFrame.unit
             if unit then
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                local anchorType = iconDb.tooltipDefensiveAnchor or "CURSOR"
+                if anchorType == "CURSOR" then
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                elseif anchorType == "FRAME" then
+                    local anchorPos = iconDb.tooltipDefensiveAnchorPos or "BOTTOMRIGHT"
+                    local offsetX = iconDb.tooltipDefensiveX or 0
+                    local offsetY = iconDb.tooltipDefensiveY or 0
+                    GameTooltip:SetOwner(self, "ANCHOR_NONE")
+                    GameTooltip:SetPoint(anchorPos, self, anchorPos, offsetX, offsetY)
+                else
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                end
                 GameTooltip:SetUnitAuraByAuraInstanceID(unit, self.auraData.auraInstanceID)
                 GameTooltip:Show()
             end
         end
     end)
-    icon:SetScript("OnLeave", function()
+    icon:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
 
@@ -1446,7 +1462,30 @@ function DF:UpdateAuraClickThrough()
                 end
             end
         end
-        
+
+        -- Update defensive bar icons (2nd+ icons in the defensive bar)
+        if frame.defensiveBarIcons then
+            local disableMouse = db.defensiveIconDisableMouse
+            for _, icon in pairs(frame.defensiveBarIcons) do
+                if icon then
+                    if disableMouse then
+                        icon:EnableMouse(false)
+                    else
+                        icon:EnableMouse(true)
+                        if icon.SetPropagateMouseMotion then
+                            icon:SetPropagateMouseMotion(true)
+                        end
+                        if icon.SetPropagateMouseClicks then
+                            icon:SetPropagateMouseClicks(true)
+                        end
+                        if icon.SetMouseClickEnabled then
+                            icon:SetMouseClickEnabled(false)
+                        end
+                    end
+                end
+            end
+        end
+
         -- Update targeted spell icons
         if frame.targetedSpellIcons then
             local disableMouse = db.targetedSpellDisableMouse

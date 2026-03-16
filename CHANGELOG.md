@@ -1,5 +1,18 @@
 # DandersFrames Changelog
 
+## [4.1.2] - 2026-03-16
+
+### New Features
+* (Health Text) **Hide % Symbol** — new checkbox to remove the percent sign from health percentage text
+
+### Bug Fixes
+* (Auras) Fixed buff/debuff borders staying visible even when disabled — operator precedence bug caused the buff border check to fire regardless of aura type
+* (Aura Designer) Fixed stack count text bleeding onto adjacent icons when auras reorder in a layout group
+* (Defensive Icons) Fixed 2nd+ defensive bar icons always showing tooltip and ignoring tooltip settings, anchor position, and click-through configuration
+* (Resource Bar) Fixed resource bar being 2px too wide when "Match Width" is enabled and a frame border is active
+* (Status Icons) Fixed leader icon not hiding in combat when "Hide in Combat" is enabled
+* (Pinned Frames) Fixed error when OnDragStop fires without a matching OnDragStart on pinned frame movers
+
 ## [4.1.1] - 2026-03-15
 
 ### Bug Fixes

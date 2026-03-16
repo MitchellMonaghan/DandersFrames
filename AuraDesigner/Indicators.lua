@@ -1701,6 +1701,9 @@ function Indicators:HideUnusedIcons(frame, activeMap)
             if icon.cooldown then
                 icon.cooldown:Hide()
             end
+            if icon.count then
+                icon.count:SetText("")
+            end
         end
     end
 end
@@ -2203,6 +2206,9 @@ function Indicators:HideUnusedSquares(frame, activeMap)
             -- Clear stale cooldown (matches bar cleanup pattern)
             if sq.cooldown then
                 sq.cooldown:Hide()
+            end
+            if sq.count then
+                sq.count:SetText("")
             end
         end
     end

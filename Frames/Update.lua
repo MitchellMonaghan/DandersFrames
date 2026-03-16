@@ -784,7 +784,8 @@ function DF:UpdateUnitFrame(frame, source)
         else
             if format == "PERCENT" then
                 local pct = DF.GetSafeHealthPercent(unit)
-                frame.healthText:SetFormattedText("%.0f%%", pct)
+                local pctFmt = db.healthTextHidePercent and "%.0f" or "%.0f%%"
+                frame.healthText:SetFormattedText(pctFmt, pct)
             elseif format == "CURRENT" then
                 local curr = UnitHealth(unit, true)
                 if curr then
@@ -1041,7 +1042,8 @@ function DF:UpdateHealthFast(frame)
         else
             if fmt == "PERCENT" then
                 local pct = DF.GetSafeHealthPercent(unit)
-                frame.healthText:SetFormattedText("%.0f%%", pct)
+                local pctFmt = db.healthTextHidePercent and "%.0f" or "%.0f%%"
+                frame.healthText:SetFormattedText(pctFmt, pct)
             elseif fmt == "CURRENT" then
                 local curr = UnitHealth(unit, true)
                 if curr then
@@ -1263,7 +1265,8 @@ function DF:UpdateHealth(frame)
         -- Health text formatting
         if format == "PERCENT" then
             local p = DF.GetSafeHealthPercent(unit)
-            frame.healthText:SetFormattedText("%.0f%%", p)
+            local pctFmt = db.healthTextHidePercent and "%.0f" or "%.0f%%"
+            frame.healthText:SetFormattedText(pctFmt, p)
         elseif format == "DEFICIT" then
             local miss = UnitHealthMissing(unit, true)
             

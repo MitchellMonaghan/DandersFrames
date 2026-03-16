@@ -123,6 +123,12 @@ function DF:ApplyResourceBarLayout(frame)
         local healthBarWidth = frameWidth - (2 * padding)
         local healthBarHeight = frameHeight - (2 * padding)
 
+        -- Account for frame border inset (matches other bar calculations)
+        local borderInset = 0
+        if db.showFrameBorder ~= false then
+            borderInset = db.borderSize or 1
+        end
+
         if isVertical then
             -- SWAP: "Width" Value applies to Height (Length), "Height" value applies to Width (Thickness)
             bar:SetWidth(ppThickness)
@@ -130,7 +136,7 @@ function DF:ApplyResourceBarLayout(frame)
 
             if db.resourceBarMatchWidth then
                 if healthBarHeight > 1 then
-                    bar:SetHeight(healthBarHeight)
+                    bar:SetHeight(healthBarHeight - (borderInset * 2))
                 end
             end
         else
@@ -140,7 +146,7 @@ function DF:ApplyResourceBarLayout(frame)
 
             if db.resourceBarMatchWidth then
                 if healthBarWidth > 1 then
-                    bar:SetWidth(healthBarWidth)
+                    bar:SetWidth(healthBarWidth - (borderInset * 2))
                 end
             end
         end
@@ -1812,6 +1818,7 @@ function DF:UpdateAllRoleIcons()
     local function updateFrame(frame)
         if frame and frame:IsShown() then
             DF:UpdateRoleIcon(frame, "UpdateAllRoleIcons")
+            DF:UpdateLeaderIcon(frame)
         end
     end
     

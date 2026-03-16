@@ -1519,7 +1519,7 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
             local unitDeadOrOffline = UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)
             
             -- Set border color (normal border, not expiring) - only if we control borders
-            local borderEnabled = auraType == "DEBUFF" and db.debuffBorderEnabled ~= false or db.buffBorderEnabled ~= false
+            local borderEnabled = (auraType == "DEBUFF" and db.debuffBorderEnabled ~= false) or (auraType ~= "DEBUFF" and db.buffBorderEnabled ~= false)
             if borderEnabled and not masqueBorderControl then
                 if auraType == "DEBUFF" and not unitDeadOrOffline then
                     -- Use custom dispel type colors if enabled, via color curve API
@@ -1749,7 +1749,7 @@ function DF:UpdateAuraIconsDirect(frame, icons, auraType, maxAuras)
     local masqueBorderControl = db.masqueBorderControl and DF.Masque and masqueActive
 
     -- Pre-fetch: border enabled (once per call)
-    local borderEnabled = auraType == "DEBUFF" and db.debuffBorderEnabled ~= false or db.buffBorderEnabled ~= false
+    local borderEnabled = (auraType == "DEBUFF" and db.debuffBorderEnabled ~= false) or (auraType ~= "DEBUFF" and db.buffBorderEnabled ~= false)
 
     -- Pre-fetch: dead/offline state (once per call, not per icon)
     local unitDeadOrOffline = UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)
