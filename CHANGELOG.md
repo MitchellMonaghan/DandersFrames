@@ -1,5 +1,21 @@
 # DandersFrames Changelog
 
+## [4.1.3] - 2026-03-17
+
+### New Features
+* (Aura Designer) **Show When Missing** — per-indicator toggle that inverts visibility: shows the indicator when the aura is absent, hides when present. Supports all indicator types except bars. Icons support a "Desaturate When Missing" sub-option.
+* (Aura Designer) **Show When Missing + Expiring** — when both are enabled, the indicator stays hidden while the buff is active, appears during the expiring window, then shows with normal appearance once the buff drops off
+* (Auras) **Growth Direction Control** — replaced the single growth dropdown with a three-part control (Orientation, Wrap, Direction) for clearer configuration
+
+### Bug Fixes
+* (Aura Designer) Fixed indicators appearing on disabled pinned frames
+* (Aura Designer) Fixed Show When Missing icons being overridden by out-of-range alpha restore
+* (Aura Designer) Fixed frame alpha becoming fully transparent when using Show When Missing with expiring alpha override
+* (Aura Designer) Fixed stale duration text ("1") persisting on missing-state icons
+* (Aura Designer) Fixed pulsate animation not stopping when transitioning from expiring to missing state
+* (Aura Designer) Fixed Show When Missing indicators not appearing in test mode
+* (Sorting) Fixed secret string taint in cross-realm name caching
+
 ## [4.1.2] - 2026-03-16
 
 ### New Features

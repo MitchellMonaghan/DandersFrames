@@ -11,7 +11,8 @@ local format = string.format
 local wipe = wipe
 local tinsert = table.insert
 local tremove = table.remove
-local max, min = math.max, math.min
+local max, min, floor = math.max, math.min, math.floor
+local strsplit = strsplit
 local sort = table.sort
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
@@ -477,6 +478,7 @@ local function EnsureTypeConfig(auraName, typeKey)
                 expiringEnabled = false, expiringThreshold = 30, expiringThresholdMode = "PERCENT",
                 expiringColor = {r = 1, g = 0.2, b = 0.2, a = 1},
                 expiringPulsate = false,
+                showWhenMissing = false,
             }
         elseif typeKey == "healthbar" then
             auraCfg[typeKey] = {
@@ -484,24 +486,28 @@ local function EnsureTypeConfig(auraName, typeKey)
                 expiringEnabled = false, expiringThreshold = 30, expiringThresholdMode = "PERCENT",
                 expiringColor = {r = 1, g = 0.2, b = 0.2, a = 1},
                 expiringPulsate = false,
+                showWhenMissing = false,
             }
         elseif typeKey == "nametext" then
             auraCfg[typeKey] = {
                 color = {r = 1, g = 1, b = 1, a = 1},
                 expiringEnabled = false, expiringThreshold = 30, expiringThresholdMode = "PERCENT",
                 expiringColor = {r = 1, g = 0.2, b = 0.2, a = 1},
+                showWhenMissing = false,
             }
         elseif typeKey == "healthtext" then
             auraCfg[typeKey] = {
                 color = {r = 1, g = 1, b = 1, a = 1},
                 expiringEnabled = false, expiringThreshold = 30, expiringThresholdMode = "PERCENT",
                 expiringColor = {r = 1, g = 0.2, b = 0.2, a = 1},
+                showWhenMissing = false,
             }
         elseif typeKey == "framealpha" then
             auraCfg[typeKey] = {
                 alpha = 0.5,
                 expiringEnabled = false, expiringThreshold = 30, expiringThresholdMode = "PERCENT",
                 expiringAlpha = 1.0,
+                showWhenMissing = false,
             }
         end
     end
@@ -531,6 +537,7 @@ local TYPE_DEFAULTS = {
         expiringPulsate = false,
         expiringWholeAlphaPulse = false, expiringBounce = false,
         frameLevel = 30, frameStrata = "INHERIT",
+        showWhenMissing = false, missingDesaturate = false,
     },
     square = {
         anchor = "TOPLEFT", offsetX = 0, offsetY = 0,
@@ -554,6 +561,7 @@ local TYPE_DEFAULTS = {
         expiringPulsate = false,
         expiringWholeAlphaPulse = false, expiringBounce = false,
         frameLevel = 30, frameStrata = "INHERIT",
+        showWhenMissing = false,
     },
     bar = {
         anchor = "BOTTOM", offsetX = 0, offsetY = 0,
@@ -991,7 +999,8 @@ local function CreateLayoutGroup(name)
         anchor = "TOPLEFT",
         offsetX = 0,
         offsetY = 0,
-        growDirection = "RIGHT",
+        growDirection = "RIGHT_DOWN",
+        iconsPerRow = 8,
         spacing = 2,
         members = {},
     }
@@ -1613,16 +1622,41 @@ local function RefreshPlacedIndicators()
                     local scale = (indCfg and indCfg.scale) or (adDB.defaults and adDB.defaults.iconScale) or 1.0
                     local step = (size * scale) + (group.spacing or 2)
 
-                    local oX, oY = group.offsetX or 0, group.offsetY or 0
-                    local dir = group.growDirection or "RIGHT"
-                    if dir == "RIGHT" then
-                        oX = oX + (activeIdx * step)
-                    elseif dir == "LEFT" then
-                        oX = oX - (activeIdx * step)
-                    elseif dir == "DOWN" then
-                        oY = oY - (activeIdx * step)
-                    elseif dir == "UP" then
-                        oY = oY + (activeIdx * step)
+                    local growth = group.growDirection or "RIGHT"
+                    local primary, secondary = strsplit("_", growth)
+                    if not secondary then
+                        secondary = (primary == "RIGHT" or primary == "LEFT") and "DOWN" or "RIGHT"
+                    end
+                    local wrap = group.iconsPerRow or 1
+                    if wrap <= 0 then wrap = 1 end
+                    local totalCount = #group.members
+                    local col = activeIdx % wrap
+                    local row = floor(activeIdx / wrap)
+                    local function gOff(d, s)
+                        if d == "LEFT" then return -s, 0 elseif d == "RIGHT" then return s, 0
+                        elseif d == "UP" then return 0, s elseif d == "DOWN" then return 0, -s end
+                        return 0, 0
+                    end
+                    local sX, sY = gOff(secondary, step)
+                    local oX, oY
+                    if primary == "CENTER" then
+                        local iconsInRow = wrap
+                        local lastRow = floor((totalCount - 1) / wrap)
+                        if row == lastRow then
+                            iconsInRow = ((totalCount - 1) % wrap) + 1
+                        end
+                        local centerOff = -((iconsInRow - 1) * step) / 2
+                        if sX ~= 0 then
+                            oX = (group.offsetX or 0) + (row * sX)
+                            oY = (group.offsetY or 0) + centerOff + (col * step)
+                        else
+                            oX = (group.offsetX or 0) + centerOff + (col * step)
+                            oY = (group.offsetY or 0) + (row * sY)
+                        end
+                    else
+                        local pX, pY = gOff(primary, step)
+                        oX = (group.offsetX or 0) + (col * pX) + (row * sX)
+                        oY = (group.offsetY or 0) + (col * pY) + (row * sY)
                     end
                     groupPositions[key] = {
                         anchor = group.anchor or "TOPLEFT",
@@ -2333,6 +2367,21 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             g:AddWidget(GUI:CreateCheckbox(parent, "Hide Cooldown Swipe", proxy, "hideSwipe"), 28)
             g:AddWidget(GUI:CreateCheckbox(parent, "Hide Icon (Text Only)", proxy, "hideIcon"), 28)
         end)
+        -- Show When Missing
+        AddGroup("Show When Missing", function(g)
+            local desatCb
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                if desatCb then
+                    if proxy.showWhenMissing then desatCb:Show() else desatCb:Hide() end
+                end
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
+            desatCb = GUI:CreateCheckbox(parent, "Desaturate When Missing", proxy, "missingDesaturate", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end)
+            g:AddWidget(desatCb, 28)
+            if not proxy.showWhenMissing then desatCb:Hide() end
+        end)
         -- Border
         AddGroup("Border", function(g)
             g:AddWidget(GUI:CreateCheckbox(parent, "Show Border", proxy, "borderEnabled"), 28)
@@ -2399,6 +2448,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             g:AddWidget(GUI:CreateDropdown(parent, "Frame Strata", FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
             g:AddWidget(GUI:CreateCheckbox(parent, "Hide Cooldown Swipe", proxy, "hideSwipe"), 28)
             g:AddWidget(GUI:CreateCheckbox(parent, "Hide Icon (Text Only)", proxy, "hideIcon"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Border
         AddGroup("Border", function(g)
@@ -2517,6 +2569,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
             g:AddWidget(GUI:CreateSlider(parent, "Thickness", 1, 8, 1, proxy, "thickness"), 54)
             g:AddWidget(GUI:CreateSlider(parent, "Inset", 0, 8, 1, proxy, "inset"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Expiring
         AddGroup("Expiring", function(g)
@@ -2542,6 +2597,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             blendSlider = GUI:CreateSlider(parent, "Blend %", 0, 1, 0.05, proxy, "blend")
             g:AddWidget(blendSlider, 54)
             if (proxy.mode or "Replace") == "Replace" then blendSlider:Hide() end
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Expiring
         AddGroup("Expiring", function(g)
@@ -2557,6 +2615,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         -- Appearance
         AddGroup("Appearance", function(g)
             g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Expiring
         AddGroup("Expiring", function(g)
@@ -2571,6 +2632,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         -- Appearance
         AddGroup("Appearance", function(g)
             g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Expiring
         AddGroup("Expiring", function(g)
@@ -2585,6 +2649,9 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         -- Appearance
         AddGroup("Appearance", function(g)
             g:AddWidget(GUI:CreateSlider(parent, "Alpha", 0, 1, 0.05, proxy, "alpha"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+                DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+            end), 28)
         end)
         -- Expiring
         AddGroup("Expiring", function(g)
@@ -5134,12 +5201,29 @@ BuildLayoutGroupsTab = function()
                 growLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 by = by - 18
 
-                local dirDrop = GUI:CreateDropdown(body, "Grow Direction", GROW_DIRECTIONS, group, "growDirection", function()
+                -- Auto-migrate legacy single-direction values to new format
+                local gd = group.growDirection or "RIGHT"
+                if not gd:find("_") then
+                    local LEGACY_MAP = { RIGHT = "RIGHT_DOWN", LEFT = "LEFT_DOWN", UP = "UP_RIGHT", DOWN = "DOWN_RIGHT" }
+                    group.growDirection = LEGACY_MAP[gd] or "RIGHT_DOWN"
+                end
+
+                local growthControl = GUI:CreateGrowthControl(body, group, "growDirection", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end)
-                dirDrop:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
-                if dirDrop.SetWidth then dirDrop:SetWidth(bodyWidth - 10) end
+                growthControl:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if growthControl.SetWidth then growthControl:SetWidth(bodyWidth - 10) end
+                by = by - 158
+
+                local iprSlider = GUI:CreateSlider(body, "Icons Per Row", 1, 20, 1, group, "iconsPerRow", function()
+                    RefreshPlacedIndicators()
+                    DF.AuraDesigner.Engine:ForceRefreshAllFrames()
+                end, function()
+                    RefreshPlacedIndicators()
+                end)
+                iprSlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(-by))
+                if iprSlider.SetWidth then iprSlider:SetWidth(bodyWidth - 10) end
                 by = by - 54
 
                 local spacingSlider = GUI:CreateSlider(body, "Spacing", -5, 20, 1, group, "spacing", function()

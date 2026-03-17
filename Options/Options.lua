@@ -4071,20 +4071,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             CENTER = "Center", TOP = "Top", BOTTOM = "Bottom", LEFT = "Left", RIGHT = "Right",
             TOPLEFT = "Top Left", TOPRIGHT = "Top Right", BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right",
         }
-        local growthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
         local outlineOptions = { NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline", SHADOW = "Shadow" }
-        
+
         -- ===== LAYOUT SECTION =====
         local layoutSection = Add(GUI:CreateCollapsibleSection(self.child, "Layout", true), 36, "both")
         currentSection = layoutSection
-        
+
         -- Settings Group (col1)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 260)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, "Settings"), 40)
@@ -4112,7 +4104,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         positionGroup:AddWidget(GUI:CreateHeader(self.child, "Position"), 40)
         local buffAnchor = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Anchor", anchorOptions, db, "buffAnchor", nil), 55)
         buffAnchor.disableOn = function(d) return not d.showBuffs end
-        local buffGrowth = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth", growthOptions, db, "buffGrowth", nil), 55)
+        local buffGrowth = positionGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "buffGrowth", nil), 155)
         buffGrowth.disableOn = function(d) return not d.showBuffs end
         local buffOffsetX = positionGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -50, 50, 1, db, "buffOffsetX", nil, function() DF:LightweightUpdateAuraPosition("buff") end, true), 55)
         buffOffsetX.disableOn = function(d) return not d.showBuffs end
@@ -4289,20 +4281,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             CENTER = "Center", TOP = "Top", BOTTOM = "Bottom", LEFT = "Left", RIGHT = "Right",
             TOPLEFT = "Top Left", TOPRIGHT = "Top Right", BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right",
         }
-        local growthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
         local outlineOptions = { NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline", SHADOW = "Shadow" }
-        
+
         -- ===== LAYOUT SECTION =====
         local layoutSection = Add(GUI:CreateCollapsibleSection(self.child, "Layout", true), 36, "both")
         currentSection = layoutSection
-        
+
         -- Settings Group (col1)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 260)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, "Settings"), 40)
@@ -4327,7 +4311,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         positionGroup:AddWidget(GUI:CreateHeader(self.child, "Position"), 40)
         local debuffAnchor = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Anchor", anchorOptions, db, "debuffAnchor", nil), 55)
         debuffAnchor.disableOn = function(d) return not d.showDebuffs end
-        local debuffGrowth = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth", growthOptions, db, "debuffGrowth", nil), 55)
+        local debuffGrowth = positionGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "debuffGrowth", nil), 155)
         debuffGrowth.disableOn = function(d) return not d.showDebuffs end
         local debuffOffsetX = positionGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -50, 50, 1, db, "debuffOffsetX", nil, function() DF:LightweightUpdateAuraPosition("debuff") end, true), 55)
         debuffOffsetX.disableOn = function(d) return not d.showDebuffs end
@@ -4895,17 +4879,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         layoutGroup:AddWidget(GUI:CreateHeader(self.child, "Layout (Direct Mode)"), 40)
         layoutGroup:AddWidget(GUI:CreateLabel(self.child, "Controls how multiple defensive icons are arranged when using Direct aura mode.", 250), 45)
 
-        local defGrowthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
-        local defGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth Direction", defGrowthOptions, db, "defensiveBarGrowth", function()
+        local defGrowth = layoutGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "defensiveBarGrowth", function()
             if DF.UpdateAllDefensiveBars then DF:UpdateAllDefensiveBars() end
-        end), 55)
+        end), 155)
         defGrowth.hideOn = HideDefensiveIconOptions
 
         local defMax = layoutGroup:AddWidget(GUI:CreateSlider(self.child, "Max Icons", 1, 5, 1, db, "defensiveBarMax", function()

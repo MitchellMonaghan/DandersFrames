@@ -2169,11 +2169,7 @@ end
 
 -- Get unit name in format suitable for caching (handles cross-realm)
 local function GetCacheableName(unit)
-    local name, realm = UnitName(unit)
-    if not name then return nil end
-    if realm and realm ~= "" then
-        return name .. "-" .. realm
-    end
+    local name = GetUnitName(unit, true)  -- returns "Name-Realm" directly, avoids secret string taint
     return name
 end
 

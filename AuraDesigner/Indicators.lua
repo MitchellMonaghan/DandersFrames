@@ -157,8 +157,18 @@ end
 -- ============================================================
 
 local expiringRegistry = {}
+local pendingHideWhenNotExpiring = false  -- Set by Apply before dispatch, read by RegisterExpiring
+local pendingUseShowHide = false          -- When true, ticker uses Show/Hide instead of SetAlpha
+local pendingHiddenAlpha = nil            -- Alpha to use when "not expiring" (nil = 0 for borders, savedAlpha for framealpha)
 
 local function RegisterExpiring(element, entryData)
+    -- Propagate Show When Missing visibility flag
+    if pendingHideWhenNotExpiring then
+        entryData.hideWhenNotExpiring = true
+        entryData.visibleAlpha = entryData.originalAlpha or 1
+        entryData.useShowHide = pendingUseShowHide or false
+        entryData.hiddenAlpha = pendingHiddenAlpha  -- nil = use 0, number = use that alpha
+    end
     expiringRegistry[element] = entryData
 
     -- Evaluate immediately so the Apply function ends with the correct
@@ -197,6 +207,9 @@ local function RegisterExpiring(element, entryData)
             if entryData.applyManual then
                 entryData.applyManual(element, isExpiring, entryData)
             end
+        elseif entryData.applyManual then
+            -- duration=0 means permanent or synthetic (missing) aura — not expiring
+            entryData.applyManual(element, false, entryData)
         end
     end
 end
@@ -402,6 +415,37 @@ expiringFrame:SetScript("OnUpdate", function(_, elapsed)
                     if entry.applyManual then
                         entry.applyManual(element, isExpiring, entry)
                     end
+                elseif entry.applyManual then
+                    -- duration=0 means permanent or synthetic (missing) aura — not expiring
+                    entry.applyManual(element, false, entry)
+                end
+            end
+
+            -- Show When Missing: toggle visibility based on expiring state.
+            -- Icons/squares use Hide()/Show() so OOR alpha restore won't undo us.
+            -- Borders use SetAlpha() since they're not in the OOR icon/square loop.
+            if entry.hideWhenNotExpiring then
+                local dur = entry.duration
+                local exp = entry.expirationTime
+                local isExp = false
+                if dur and exp and not issecretvalue(dur) and not issecretvalue(exp) and dur > 0 then
+                    local rem = max(0, exp - GetTime())
+                    if entry.thresholdMode == "SECONDS" then
+                        isExp = rem <= (entry.threshold or 10)
+                    else
+                        isExp = (rem / dur) <= ((entry.threshold or 30) / 100)
+                    end
+                end
+                if entry.useShowHide then
+                    if isExp then
+                        element:Show()
+                        element:SetAlpha(entry.visibleAlpha or 1)
+                    else
+                        element:Hide()
+                    end
+                else
+                    local notExpAlpha = entry.hiddenAlpha or 0
+                    element:SetAlpha(isExp and (entry.visibleAlpha or 1) or notExpAlpha)
                 end
             end
         end
@@ -461,6 +505,13 @@ end
 -- ============================================================
 
 function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, priority)
+    -- Show When Missing + aura is present: hide unless expiring
+    local hideUntilExpiring = config.showWhenMissing and auraData and not auraData.isMissingAura
+    if hideUntilExpiring and not config.expiringEnabled then
+        -- No expiring configured; nothing to show when aura is present
+        return
+    end
+
     -- Validate aura still exists and matches expectations before rendering.
     -- Mirrors the defensive bar post-validation pattern (commit 7b141a8).
     local unit = frame.unit
@@ -483,6 +534,18 @@ function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, 
         end
     end
 
+    -- Set module flags so RegisterExpiring (called inside Apply*) picks them up
+    pendingHideWhenNotExpiring = hideUntilExpiring or false
+    -- Icons and squares use Show/Hide to avoid OOR alpha restore undoing the hide
+    pendingUseShowHide = (typeKey == "icon" or typeKey == "square") and hideUntilExpiring or false
+    -- Frame alpha reverts to saved alpha instead of 0 when "not expiring"
+    if typeKey == "framealpha" and hideUntilExpiring then
+        local state = frame.dfAD
+        pendingHiddenAlpha = state and state.savedAlpha or 1.0
+    else
+        pendingHiddenAlpha = nil
+    end
+
     if typeKey == "border" then
         self:ApplyBorder(frame, config, auraData, auraName)
     elseif typeKey == "healthbar" then
@@ -499,6 +562,36 @@ function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, 
         self:ApplySquare(frame, config, auraData, defaults, auraName, priority)
     elseif typeKey == "bar" then
         self:ApplyBar(frame, config, auraData, defaults, auraName, priority)
+    end
+
+    pendingHideWhenNotExpiring = false  -- Reset
+    pendingUseShowHide = false
+    pendingHiddenAlpha = nil
+
+    -- After rendering, hide the indicator if we're in "present but hide until expiring" mode.
+    -- The expiring ticker (3 FPS) will toggle visibility when the threshold is met.
+    -- Use Hide() for icons/squares so OOR alpha restore (UpdateAuraDesignerAppearance)
+    -- won't undo our visibility override. Borders keep SetAlpha since they're not in
+    -- the OOR icon/square loop.
+    if hideUntilExpiring then
+        if typeKey == "icon" then
+            local icon = frame.dfAD_icons and frame.dfAD_icons[auraName]
+            if icon then icon:Hide() end
+        elseif typeKey == "square" then
+            local sq = frame.dfAD_squares and frame.dfAD_squares[auraName]
+            if sq then sq:Hide() end
+        elseif typeKey == "border" then
+            local ch = frame.dfAD_border
+            if config.borderMode == "custom" and frame.dfAD_customBorders then
+                ch = frame.dfAD_customBorders[auraName]
+            end
+            if ch then ch:SetAlpha(0) end
+        elseif typeKey == "framealpha" then
+            -- Revert to normal alpha — don't make the frame transparent
+            local state = frame.dfAD
+            local savedAlpha = state and state.savedAlpha or 1.0
+            frame:SetAlpha(savedAlpha)
+        end
     end
 end
 
@@ -1284,6 +1377,12 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         if icon.texture then icon.texture:Hide() end
     end
 
+    -- Desaturation for Show When Missing mode
+    if icon.texture then
+        local desaturate = config.missingDesaturate and auraData.isMissingAura
+        icon.texture:SetDesaturated(desaturate and true or false)
+    end
+
     -- Cooldown — uses Duration object pipeline (secret-safe)
     local hideSwipe = config.hideSwipe; if hideSwipe == nil then hideSwipe = defaults and defaults.hideSwipe end
     local hasDuration = HasAuraDuration(auraData, frame.unit)
@@ -1294,6 +1393,11 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     else
         icon.cooldown:SetDrawSwipe(false)
         icon.cooldown:Hide()
+        -- Clear stale countdown text (may persist if reparented to durationHideWrapper)
+        if icon.nativeCooldownText then
+            icon.nativeCooldownText:SetText("")
+            icon.nativeCooldownText:Hide()
+        end
     end
 
     -- ========================================
@@ -1535,6 +1639,10 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
             end
 
             -- Register wrapper for ongoing hide-above alpha updates via the shared ticker
+            -- Temporarily suppress hideWhenNotExpiring so the wrapper doesn't get it
+            -- (wrapper has its own threshold logic, not the expiring threshold)
+            local savedHWNE = pendingHideWhenNotExpiring
+            pendingHideWhenNotExpiring = false
             if durationHideAboveEnabled and hasDuration and icon.durationHideWrapper then
                 local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
                 if hideCurve then
@@ -1561,6 +1669,7 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
                     icon.durationHideWrapper:SetAlpha(1)
                 end
             end
+            pendingHideWhenNotExpiring = savedHWNE  -- Restore for main registration
         else
             icon.nativeCooldownText:Hide()
         end
@@ -2056,6 +2165,9 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
             end
 
             -- Register wrapper for ongoing hide-above alpha updates via the shared ticker
+            -- Temporarily suppress hideWhenNotExpiring so the wrapper doesn't get it
+            local savedHWNE2 = pendingHideWhenNotExpiring
+            pendingHideWhenNotExpiring = false
             if durationHideAboveEnabled and sq.durationHideWrapper then
                 local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
                 if hideCurve then
@@ -2082,6 +2194,7 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
                     sq.durationHideWrapper:SetAlpha(1)
                 end
             end
+            pendingHideWhenNotExpiring = savedHWNE2  -- Restore for main registration
         else
             sq.nativeCooldownText:Hide()
         end

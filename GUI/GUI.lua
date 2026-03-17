@@ -1902,6 +1902,255 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
 end
 
 -- ============================================================
+-- GROWTH DIRECTION CONTROL
+-- Three linked dropdowns (Orientation, Wrap, Direction) that
+-- compose into a single growth value like "LEFT_UP"
+-- ============================================================
+
+-- Decompose "LEFT_UP" into {orientation, wrap, direction}
+local function DecomposeGrowth(growth)
+    local primary, secondary = strsplit("_", growth)
+    if primary == "CENTER" then
+        if secondary == "UP" or secondary == "DOWN" then
+            return "HORIZONTAL", secondary, "CENTER"
+        else
+            return "VERTICAL", secondary, "CENTER"
+        end
+    elseif primary == "LEFT" or primary == "RIGHT" then
+        return "HORIZONTAL", secondary, primary
+    else
+        return "VERTICAL", secondary, primary
+    end
+end
+
+-- Compose {orientation, wrap, direction} back into "LEFT_UP"
+local function ComposeGrowth(orientation, wrap, direction)
+    if direction == "CENTER" then
+        return "CENTER_" .. wrap
+    else
+        return direction .. "_" .. wrap
+    end
+end
+
+-- Map values when switching orientation so the selection stays sensible
+local ORIENTATION_MAP = {
+    UP = "LEFT", DOWN = "RIGHT", LEFT = "UP", RIGHT = "DOWN",
+}
+
+function GUI:CreateGrowthControl(parent, db, dbKey, callback)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(260, 155)
+
+    -- Read current decomposed state
+    local curOrientation, curWrap, curDirection = DecomposeGrowth(db[dbKey] or "LEFT_UP")
+
+    -- Option tables per orientation
+    local ORIENT_OPTIONS = {
+        HORIZONTAL = "Horizontal",
+        VERTICAL = "Vertical",
+        _order = {"HORIZONTAL", "VERTICAL"},
+    }
+    local WRAP_OPTIONS = {
+        HORIZONTAL = { UP = "Up", DOWN = "Down", _order = {"UP", "DOWN"} },
+        VERTICAL = { LEFT = "Left", RIGHT = "Right", _order = {"LEFT", "RIGHT"} },
+    }
+    local DIR_OPTIONS = {
+        HORIZONTAL = { LEFT = "Left", CENTER = "Center", RIGHT = "Right", _order = {"LEFT", "CENTER", "RIGHT"} },
+        VERTICAL = { UP = "Up", CENTER = "Center", DOWN = "Down", _order = {"UP", "CENTER", "DOWN"} },
+    }
+
+    -- Shared write-back: recompose and save
+    local function WriteBack()
+        db[dbKey] = ComposeGrowth(curOrientation, curWrap, curDirection)
+        DF:UpdateAll()
+        if callback then callback() end
+        if parent.RefreshStates then parent:RefreshStates() end
+    end
+
+    -- Sub-dropdown builder (simplified version of CreateDropdown, no override indicators)
+    local function BuildMiniDropdown(yOffset, label, options, getValue, setValue)
+        local frame = CreateFrame("Frame", nil, container)
+        frame:SetPoint("TOPLEFT", 0, yOffset)
+        frame:SetPoint("TOPRIGHT", 0, yOffset)
+        frame:SetHeight(50)
+
+        local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("TOPLEFT", 0, 0)
+        lbl:SetText(label)
+        lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+        local btn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        btn:SetPoint("TOPLEFT", 0, -16)
+        btn:SetPoint("TOPRIGHT", 0, -16)
+        btn:SetHeight(24)
+        CreateElementBackdrop(btn)
+
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.Text:SetPoint("LEFT", 8, 0)
+        btn.Text:SetPoint("RIGHT", -20, 0)
+        btn.Text:SetJustifyH("LEFT")
+        btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetPoint("RIGHT", -8, 0)
+        arrow:SetSize(12, 12)
+        arrow:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+        arrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+        local menuFrame = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+        menuFrame:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
+        menuFrame:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -2)
+        menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        menuFrame:SetClampedToScreen(true)
+        CreateElementBackdrop(menuFrame)
+        menuFrame:SetBackdropColor(C_PANEL.r, C_PANEL.g, C_PANEL.b, 0.98)
+        menuFrame:Hide()
+
+        menuFrame:SetScript("OnHide", function()
+            if currentOpenDropdown == menuFrame then
+                currentOpenDropdown = nil
+            end
+        end)
+
+        local menuButtons = {}
+
+        -- Rebuild populates menu items from current options
+        frame.Rebuild = function(self, newOptions)
+            for _, mb in ipairs(menuButtons) do mb:Hide() end
+            wipe(menuButtons)
+
+            local sorted = {}
+            if newOptions._order then
+                for _, k in ipairs(newOptions._order) do
+                    if newOptions[k] then
+                        sorted[#sorted + 1] = { key = k, value = newOptions[k] }
+                    end
+                end
+            else
+                for k, v in pairs(newOptions) do
+                    if k ~= "_order" then
+                        sorted[#sorted + 1] = { key = k, value = v }
+                    end
+                end
+                table.sort(sorted, function(a, b) return a.value < b.value end)
+            end
+
+            local menuHeight = 0
+            for i, opt in ipairs(sorted) do
+                local menuBtn = CreateFrame("Button", nil, menuFrame)
+                menuBtn:SetPoint("TOPLEFT", 2, -2 - (i - 1) * 22)
+                menuBtn:SetPoint("TOPRIGHT", -2, -2 - (i - 1) * 22)
+                menuBtn:SetHeight(22)
+
+                menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                menuBtn.Text:SetPoint("LEFT", 8, 0)
+                menuBtn.Text:SetText(opt.value)
+                menuBtn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                menuBtn.Highlight = menuBtn:CreateTexture(nil, "HIGHLIGHT")
+                menuBtn.Highlight:SetAllPoints()
+                local c = GetThemeColor()
+                menuBtn.Highlight:SetColorTexture(c.r, c.g, c.b, 0.3)
+
+                menuBtn:SetScript("OnClick", function()
+                    setValue(opt.key)
+                    WriteBack()
+                    btn.Text:SetText(opt.value)
+                    menuFrame:Hide()
+                end)
+
+                menuButtons[#menuButtons + 1] = menuBtn
+                menuHeight = menuHeight + 22
+            end
+            menuFrame:SetHeight(menuHeight + 4)
+
+            -- Update displayed text
+            local curVal = getValue()
+            btn.Text:SetText(newOptions[curVal] or tostring(curVal) or "Select...")
+        end
+
+        btn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+        end)
+
+        btn:SetScript("OnClick", function(self)
+            if menuFrame:IsShown() then
+                menuFrame:Hide()
+                currentOpenDropdown = nil
+            else
+                CloseOpenDropdown()
+                -- Highlight current selection
+                local curVal = getValue()
+                local curDisplay = options[curVal]
+                for _, mb in ipairs(menuButtons) do
+                    if mb.Text:GetText() == curDisplay then
+                        mb.Text:SetTextColor(GetThemeColor().r, GetThemeColor().g, GetThemeColor().b)
+                    else
+                        mb.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+                    end
+                end
+                menuFrame:Show()
+                currentOpenDropdown = menuFrame
+            end
+        end)
+
+        -- Expose btn for external enable/disable
+        frame.btn = btn
+        frame:Rebuild(options)
+        return frame
+    end
+
+    -- Build the three dropdowns (forward-declare wrap/dir so orientation callback can reference them)
+    local wrapDD, dirDD
+    local orientDD = BuildMiniDropdown(0, "Orientation", ORIENT_OPTIONS,
+        function() return curOrientation end,
+        function(val)
+            if val ~= curOrientation then
+                -- Map wrap and direction to the new orientation
+                curWrap = ORIENTATION_MAP[curWrap] or curWrap
+                curDirection = (curDirection == "CENTER") and "CENTER" or (ORIENTATION_MAP[curDirection] or curDirection)
+                curOrientation = val
+                -- Rebuild dependent dropdowns with new options
+                wrapDD:Rebuild(WRAP_OPTIONS[curOrientation])
+                dirDD:Rebuild(DIR_OPTIONS[curOrientation])
+            end
+        end
+    )
+
+    wrapDD = BuildMiniDropdown(-50, "Wrap", WRAP_OPTIONS[curOrientation],
+        function() return curWrap end,
+        function(val) curWrap = val end
+    )
+
+    dirDD = BuildMiniDropdown(-100, "Direction", DIR_OPTIONS[curOrientation],
+        function() return curDirection end,
+        function(val) curDirection = val end
+    )
+
+    -- SetEnabled support for disableOn (disable the actual clickable buttons)
+    container.SetEnabled = function(self, enabled)
+        local alpha = enabled and 1.0 or 0.4
+        self:SetAlpha(alpha)
+        orientDD.btn:SetEnabled(enabled)
+        wrapDD.btn:SetEnabled(enabled)
+        dirDD.btn:SetEnabled(enabled)
+    end
+
+    -- Refresh from db (e.g., after profile switch)
+    container.refreshContent = function(self)
+        curOrientation, curWrap, curDirection = DecomposeGrowth(db[dbKey] or "LEFT_UP")
+        orientDD:Rebuild(ORIENT_OPTIONS)
+        wrapDD:Rebuild(WRAP_OPTIONS[curOrientation])
+        dirDD:Rebuild(DIR_OPTIONS[curOrientation])
+    end
+
+    return container
+end
+
+-- ============================================================
 -- TEXTURE DROPDOWN WITH PREVIEW
 -- ============================================================
 
