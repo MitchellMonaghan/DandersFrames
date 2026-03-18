@@ -1834,14 +1834,39 @@ end
 -- for the currently selected aura on the mock frame
 -- ============================================================
 
+local function GetOrCreatePreviewCustomBorder(mockFrame, key)
+    if not mockFrame.dfPreviewCustomBorders then
+        mockFrame.dfPreviewCustomBorders = {}
+    end
+    local pool = mockFrame.dfPreviewCustomBorders
+    if pool[key] then return pool[key] end
+
+    local ch = CreateFrame("Frame", nil, mockFrame)
+    ch:SetAllPoints()
+    ch:SetFrameLevel(mockFrame:GetFrameLevel() + 4) -- Below shared border (+5)
+    ch:Hide()
+    ch.topLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.bottomLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.leftLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.rightLine = ch:CreateTexture(nil, "OVERLAY")
+    pool[key] = ch
+    return ch
+end
+
 local function RefreshPreviewEffects()
     if not framePreview then return end
     local mockFrame = framePreview.mockFrame
     if not mockFrame then return end
 
-    -- Reset to defaults
+    -- Reset shared border overlay
     if framePreview.borderOverlay and DF.ApplyHighlightStyle then
         DF.ApplyHighlightStyle(framePreview.borderOverlay, "NONE", 2, 0, 1, 1, 1, 1)
+    end
+    -- Reset custom border overlays
+    if mockFrame.dfPreviewCustomBorders then
+        for _, ch in pairs(mockFrame.dfPreviewCustomBorders) do
+            DF.ApplyHighlightStyle(ch, "NONE", 2, 0, 1, 1, 1, 1)
+        end
     end
     if framePreview.healthFill then
         framePreview.healthFill:SetVertexColor(0.18, 0.80, 0.44, 0.85)
@@ -1856,13 +1881,16 @@ local function RefreshPreviewEffects()
 
     -- Show frame-level effects from all configured auras
     -- (new UI has no single selectedAura — preview shows all effects)
+    local sharedBorderClaimed = false
 
-    for _, auraCfg in pairs(GetSpecAuras()) do
+    for auraName, auraCfg in pairs(GetSpecAuras()) do
     if type(auraCfg) ~= "table" then -- skip corrupted entries
     else
 
     -- Border effect (uses highlight system for all 6 styles)
-    if auraCfg.border and framePreview.borderOverlay and DF.ApplyHighlightStyle then
+    -- Mirrors live frame logic: shared borders use single overlay (first claim wins),
+    -- custom borders get independent per-aura overlays so multiple borders can stack.
+    if auraCfg.border and DF.ApplyHighlightStyle then
         local clr = auraCfg.border.color or {r = 1, g = 1, b = 1, a = 1}
         local thickness = auraCfg.border.thickness or 2
         local inset = auraCfg.border.inset or 0
@@ -1871,8 +1899,18 @@ local function RefreshPreviewEffects()
         if style == "Solid" then style = "SOLID"
         elseif style == "Glow" then style = "GLOW"
         elseif style == "Pulse" then style = "SOLID" end
-        DF.ApplyHighlightStyle(framePreview.borderOverlay, style, thickness, inset,
-            clr.r or 1, clr.g or 1, clr.b or 1, clr.a or 1)
+
+        if auraCfg.border.borderMode == "custom" then
+            -- Custom border: independent overlay per aura (can stack with shared + other custom)
+            local ch = GetOrCreatePreviewCustomBorder(mockFrame, auraName)
+            DF.ApplyHighlightStyle(ch, style, thickness, inset,
+                clr.r or 1, clr.g or 1, clr.b or 1, clr.a or 1)
+        elseif not sharedBorderClaimed and framePreview.borderOverlay then
+            -- Shared border: first claim wins (matches live frame priority system)
+            sharedBorderClaimed = true
+            DF.ApplyHighlightStyle(framePreview.borderOverlay, style, thickness, inset,
+                clr.r or 1, clr.g or 1, clr.b or 1, clr.a or 1)
+        end
     end
 
     -- Health bar color

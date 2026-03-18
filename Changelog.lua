@@ -17,6 +17,7 @@ DF.CHANGELOG_TEXT = [===[
 * (Raid Frames) Fixed redundant double-reposition in grouped raid mode when roster changes — ApplyRaidGroupSorting already triggers positioning internally
 * (Flat Raid Frames) Fixed flat raid frames flickering between party and raid settings — child frames now have their `isRaidFrame` flag synced when the flat layout enables or refreshes
 * (Position) Fixed permanent mover handles for both party and raid staying visible after switching group type — mover visibility now re-evaluates during party/raid transitions
+* (Aura Designer) Fixed custom border indicators not showing on the frame preview — preview now supports independent per-aura custom border overlays matching live frame behavior
 * (Sound Alerts) Fixed sound engine failing to find raid frames when using flat layout — now uses GetAllRaidFrames() instead of non-existent raidHeader
 * (Auto Layouts) Fixed duplicate raid frames appearing when switching between flat and grouped layouts via auto profiles
 * (Auto Layouts) Fixed hidden groups reappearing after combat when using auto layout switching
