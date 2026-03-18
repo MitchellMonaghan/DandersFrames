@@ -13,6 +13,8 @@
 * (Raid Frames) Fixed redundant double-reposition in grouped raid mode when roster changes — ApplyRaidGroupSorting already triggers positioning internally
 * (Flat Raid Frames) Fixed flat raid frames flickering between party and raid settings — child frames now have their `isRaidFrame` flag synced when the flat layout enables or refreshes
 * (Position) Fixed permanent mover handles for both party and raid staying visible after switching group type — mover visibility now re-evaluates during party/raid transitions
+* (Party Frames) Fixed party frames jumping positions when someone joins or leaves a group — OnShow hook was calling ApplyFrameLayout (SetSize) on header children, triggering SecureGroupHeader repositioning cascade
+* (Flat Raid Frames) Fixed flat raid frames permanently using party settings after a party-to-raid transition — isRaidFrame flag is now structurally set to true instead of relying on IsInRaid() which returns false during transitional states
 * (Aura Designer) Fixed custom border indicators not showing on the frame preview — preview now supports independent per-aura custom border overlays matching live frame behavior
 * (Sound Alerts) Fixed sound engine failing to find raid frames when using flat layout — now uses GetAllRaidFrames() instead of non-existent raidHeader
 * (Auto Layouts) Fixed duplicate raid frames appearing when switching between flat and grouped layouts via auto profiles

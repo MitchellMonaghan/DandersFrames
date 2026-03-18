@@ -683,12 +683,12 @@ function FlatRaidFrames:ApplyLayoutSettings(skipRefresh)
         header:SetAttribute("nameList", "")
         
         -- Step 2: Clear all child positions and sync isRaidFrame flag
-        local isRaid = IsInRaid()
+        -- Always true: these are structurally raid children regardless of IsInRaid() state
         for i = 1, 40 do
             local child = header:GetAttribute("child" .. i)
             if child then
                 child:ClearAllPoints()
-                child.isRaidFrame = isRaid
+                child.isRaidFrame = true
             end
         end
         
@@ -1037,12 +1037,12 @@ function FlatRaidFrames:SetEnabled(enabled)
         local db = GetRaidDB()
         local frameWidth = db and db.frameWidth or 80
         local frameHeight = db and db.frameHeight or 40
-        local isRaid = IsInRaid()
+        -- Always true: these are structurally raid children regardless of IsInRaid() state
         for i = 1, 40 do
             local child = header:GetAttribute("child" .. i)
             if child then
                 child:SetSize(frameWidth, frameHeight)
-                child.isRaidFrame = isRaid
+                child.isRaidFrame = true
             end
         end
         

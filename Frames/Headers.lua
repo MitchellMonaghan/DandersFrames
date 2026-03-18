@@ -812,9 +812,10 @@ function DF:InitializeHeaderChild(frame)
         C_Timer.After(0.05, function()
             if self and self.unit and self:IsVisible() then
                 -- Apply layout in case settings changed while hidden
-                -- SKIP for raid combined children - SetSize triggers SecureGroupHeader_Update
-                -- which causes position flickering on roster changes
-                if DF.ApplyFrameLayout and not self.dfIsRaidCombinedChild then
+                -- SKIP for ALL header children - SetSize triggers SecureGroupHeader_Update
+                -- which repositions every sibling, causing visible frame jumping on roster changes.
+                -- Header children get sized explicitly by ApplyHeaderSettings / FlatRaidFrames.
+                if DF.ApplyFrameLayout and not self.dfIsHeaderChild then
                     DF:ApplyFrameLayout(self)
                 end
                 -- Core frame update
