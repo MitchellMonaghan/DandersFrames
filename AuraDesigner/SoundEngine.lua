@@ -20,7 +20,6 @@ local UnitExists = UnitExists
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
 local UnitIsConnected = UnitIsConnected
 local IsInGroup = IsInGroup
-local IsInRaid = IsInRaid
 local tonumber = tonumber
 
 DF.AuraDesigner = DF.AuraDesigner or {}
@@ -141,6 +140,15 @@ end
 -- ============================================================
 
 function SoundEngine:Evaluate(auraName, soundCfg, isMissing, inCombat)
+    -- Volume zero: skip entirely (treat as disabled)
+    if (soundCfg.volume or 0.8) <= 0 then
+        local s = soundStates[auraName]
+        if s and s.state ~= STATE_IDLE then
+            self:TransitionTo(auraName, STATE_IDLE)
+        end
+        return
+    end
+
     -- Combat mode filter
     local combatMode = soundCfg.combatMode or "ALWAYS"
     if combatMode == "IN_COMBAT" and not inCombat then
