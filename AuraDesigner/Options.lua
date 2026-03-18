@@ -2700,7 +2700,7 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             g:AddWidget(GUI:CreateEditBox(parent, "Custom Sound Path", proxy, "soundFile", nil, 280), 44)
 
             -- Preview button
-            local previewBtn = GUI:CreateButton(parent, "Preview Sound", function()
+            local previewBtn = GUI:CreateButton(parent, "Preview Sound", 120, 22, function()
                 local soundFile = DF:GetSoundPath(proxy.soundLSMKey) or proxy.soundFile
                 local volume = proxy.volume or 0.8
                 if soundFile and DF.AuraDesigner.SoundEngine then
