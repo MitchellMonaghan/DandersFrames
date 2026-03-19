@@ -87,6 +87,13 @@ local function QueueRosterUpdate()
                     end
                 end
             end
+            -- Safety: always reveal raid container after settle, even if combat
+            -- prevented ProcessRosterUpdate from running (it will run on combat end).
+            if DF._raidContainerHiddenForSettle and DF.raidContainer then
+                DF.raidContainer:SetAlpha(1)
+                DF._raidContainerHiddenForSettle = nil
+                DF:Debug("VISIBILITY", "Raid container revealed (settle timer safety)")
+            end
         end)
         return
     end
@@ -3977,6 +3984,14 @@ function DF:ApplyRaidGroupSorting(skipReposition)
             local showGroup = db.raidGroupVisible and db.raidGroupVisible[i]
             if showGroup == nil then showGroup = true end
 
+            -- Suppress SecureGroupHeader_Update during bulk attribute changes.
+            -- Without _ignore, each SetAttribute fires a full rebuild (6-8 per header).
+            -- We batch them and trigger ONE update at the end.
+            local wasVisible = header:IsShown()
+            if wasVisible then
+                header:SetAttribute("_ignore", "attributeChanges")
+            end
+
             -- All groups get sorting attributes set (so they're ready if made visible later)
             header:SetAttribute("showPlayer", true)
             header:SetAttribute("showRaid", true)
@@ -4047,16 +4062,27 @@ function DF:ApplyRaidGroupSorting(skipReposition)
                 end
             end
 
-            -- Force SecureGroupHeaderTemplate to re-evaluate sorting attributes
-            -- by hiding and re-showing. Only re-show if the group should be visible
-            -- per user settings — this prevents hidden groups from reappearing on
-            -- roster changes (the root cause of the positioning/visibility desync).
-            header:Hide()
+            -- Re-enable attribute responses and trigger exactly ONE update.
+            -- Uses Blizzard's _ignore mechanism to avoid Hide/Show visual flash.
+            if wasVisible then
+                header:SetAttribute("_ignore", nil)
+            end
+
             if showGroup then
-                header:Show()
-                DF:SetHeaderChildrenEventsEnabled(header, true)
+                if wasVisible then
+                    -- Already visible: trigger one clean update via dummy attribute
+                    header:SetAttribute("_dfForceUpdate", GetTime())
+                    DF:SetHeaderChildrenEventsEnabled(header, true)
+                else
+                    -- Was hidden, needs to become visible: Show triggers OnShow → update
+                    header:Show()
+                    DF:SetHeaderChildrenEventsEnabled(header, true)
+                end
             else
-                -- Group is hidden per user settings — keep it hidden
+                -- Group is hidden per user settings — hide it (or keep hidden)
+                if wasVisible then
+                    header:Hide()
+                end
                 -- Set count to 0 so positioning handler skips this group (no gap)
                 if DF.raidPositionHandler then
                     DF.raidPositionHandler:SetAttribute("group" .. i .. "count", 0)
@@ -4083,6 +4109,13 @@ function DF:ApplyRaidGroupSorting(skipReposition)
             DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
         end
         DF:TriggerRaidPosition()
+        -- Reveal raid container now that headers are in correct positions.
+        -- It was hidden at PEW to mask intermediate attribute/anchor churn.
+        if DF._raidContainerHiddenForSettle and DF.raidContainer then
+            DF.raidContainer:SetAlpha(1)
+            DF._raidContainerHiddenForSettle = nil
+            DF:Debug("VISIBILITY", "Raid container revealed after authoritative reposition")
+        end
     else
         DF:Debug("ROSTER", "ApplyRaidGroupSorting: leaving suppress ON (settle timer will reposition)")
     end
@@ -7589,6 +7622,13 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         local isInstanceEntry = IsInRaid() or (IsInGroup() and IsInInstance())
         if isInstanceEntry then
             DF._rosterSettleMode = true
+            -- Hide raid container during instance entry so all intermediate
+            -- attribute changes, ClearAllPoints, and re-anchoring are invisible.
+            -- The container is shown after the authoritative reposition fires.
+            if IsInRaid() and DF.raidContainer and not InCombatLockdown() then
+                DF.raidContainer:SetAlpha(0)
+                DF._raidContainerHiddenForSettle = true
+            end
             DF:Debug("ROSTER", "PEW: enabling roster settle mode for instance entry")
         end
         DF:UpdateHeaderVisibility(isInstanceEntry)  -- skip reposition when entering instances
@@ -7686,6 +7726,12 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
                             DF:TriggerRaidPosition()
                         end
                     end
+                end
+                -- Safety: always reveal raid container if still hidden
+                if DF._raidContainerHiddenForSettle and DF.raidContainer then
+                    DF.raidContainer:SetAlpha(1)
+                    DF._raidContainerHiddenForSettle = nil
+                    DF:Debug("VISIBILITY", "Raid container revealed (2s safety net)")
                 end
                 DF:RebuildUnitFrameMap()
                 if DF.RefreshLiveFrames then
