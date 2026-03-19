@@ -28,6 +28,11 @@
 * (Auto Layouts) Fixed raid layout not updating after combat when settings changed mid-fight
 * (Auto Layouts) Fixed flat raid container resize being silently skipped if combat started within 100ms of layout switch
 * (Raid Frames) Fixed raid group frames jumping/shifting position during roster changes — repositioning now batches all group count updates before a single reposition
+* (Raid Frames) **Major fix** for raid frame jumping on roster changes — suppress was not set before `UpdateRaidHeaderLayoutAttributes` ran inside `ApplyRaidGroupSorting`, allowing `ClearAllPoints`/`SetAttribute("point")` to trigger N unsuppressed child repositions before the authoritative reposition
+* (Flat Raid Frames) Fixed flat raid ProcessRosterUpdate calling `UpdateHeaderVisibility` without skipReposition, causing a redundant grouped-raid TriggerRaidPosition that flat raids don't use
+* (Aura Designer) Fixed grouped layout preview breaking after growth direction overhaul — `RefreshPreviewLightweight` still used old 4-direction code that didn't handle compound directions like `RIGHT_DOWN`, causing all grouped indicators to stack at position (0,0)
+* (Aura Designer) Fixed `iconsPerRow` default mismatch between preview (1) and engine (8) — legacy groups with nil `iconsPerRow` now render consistently
+* (Aura Designer) Added `sound` type to Engine.lua's `INDICATOR_TYPES` so sound-only auras participate in instance ID tracking for dedup
 * (Aura Designer) Fixed indicators appearing on disabled pinned frames
 * (Aura Designer) Fixed Show When Missing icons being overridden by out-of-range alpha restore
 * (Aura Designer) Fixed frame alpha becoming fully transparent when using Show When Missing with expiring alpha override

@@ -112,6 +112,7 @@ local INDICATOR_TYPES = {
     { key = "nametext",   placed = false },
     { key = "healthtext", placed = false },
     { key = "framealpha", placed = false },
+    { key = "sound",      placed = false },
 }
 
 -- Frame-level types only (for gathering loop — placed types come from indicators array)

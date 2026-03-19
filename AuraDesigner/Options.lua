@@ -1641,7 +1641,7 @@ local function RefreshPlacedIndicators()
                     if not secondary then
                         secondary = (primary == "RIGHT" or primary == "LEFT") and "DOWN" or "RIGHT"
                     end
-                    local wrap = group.iconsPerRow or 1
+                    local wrap = group.iconsPerRow or 8
                     if wrap <= 0 then wrap = 1 end
                     local totalCount = #group.members
                     local col = activeIdx % wrap
@@ -1984,12 +1984,43 @@ RefreshPreviewLightweight = function()
                 local size = (indCfg and indCfg.size) or (adDB.defaults and adDB.defaults.iconSize) or 24
                 local scale = (indCfg and indCfg.scale) or (adDB.defaults and adDB.defaults.iconScale) or 1.0
                 local step = (size * scale) + (group.spacing or 2)
-                local oX, oY = group.offsetX or 0, group.offsetY or 0
-                local dir = group.growDirection or "RIGHT"
-                if dir == "RIGHT" then oX = oX + (activeIdx * step)
-                elseif dir == "LEFT" then oX = oX - (activeIdx * step)
-                elseif dir == "DOWN" then oY = oY - (activeIdx * step)
-                elseif dir == "UP" then oY = oY + (activeIdx * step) end
+                -- Grid-aware layout matching RefreshPlacedIndicators / ComputeGroupOffset
+                local growth = group.growDirection or "RIGHT"
+                local primary, secondary = strsplit("_", growth)
+                if not secondary then
+                    secondary = (primary == "RIGHT" or primary == "LEFT") and "DOWN" or "RIGHT"
+                end
+                local wrap = group.iconsPerRow or 8
+                if wrap <= 0 then wrap = 1 end
+                local totalCount = #group.members
+                local col = activeIdx % wrap
+                local row = floor(activeIdx / wrap)
+                local function gOff(d, s)
+                    if d == "LEFT" then return -s, 0 elseif d == "RIGHT" then return s, 0
+                    elseif d == "UP" then return 0, s elseif d == "DOWN" then return 0, -s end
+                    return 0, 0
+                end
+                local sX, sY = gOff(secondary, step)
+                local oX, oY
+                if primary == "CENTER" then
+                    local iconsInRow = wrap
+                    local lastRow = floor((totalCount - 1) / wrap)
+                    if row == lastRow then
+                        iconsInRow = ((totalCount - 1) % wrap) + 1
+                    end
+                    local centerOff = -((iconsInRow - 1) * step) / 2
+                    if sX ~= 0 then
+                        oX = (group.offsetX or 0) + (row * sX)
+                        oY = (group.offsetY or 0) + centerOff + (col * step)
+                    else
+                        oX = (group.offsetX or 0) + centerOff + (col * step)
+                        oY = (group.offsetY or 0) + (row * sY)
+                    end
+                else
+                    local pX, pY = gOff(primary, step)
+                    oX = (group.offsetX or 0) + (col * pX) + (row * sX)
+                    oY = (group.offsetY or 0) + (col * pY) + (row * sY)
+                end
                 groupPositions[key] = { anchor = group.anchor or "TOPLEFT", offsetX = oX, offsetY = oY }
             end
         end

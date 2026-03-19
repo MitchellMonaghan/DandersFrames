@@ -3858,9 +3858,14 @@ function DF:ApplyRaidGroupSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
 
-    -- Re-apply child layout attributes (point, xOffset, yOffset) from the DB
-    -- so that Hide/Show below rebuilds children with the correct spacing. (#269)
-    DF:UpdateRaidHeaderLayoutAttributes()
+    -- Suppress repositioning FIRST, before any attribute changes that could
+    -- trigger SecureGroupHeader child re-anchoring → OnShow → position snippet.
+    -- Without this, UpdateRaidHeaderLayoutAttributes (called by UpdateRaidPositionAttributes
+    -- below) fires unsuppressed repositions via ClearAllPoints/SetAttribute on headers.
+    DF:Debug("ROSTER", "ApplyRaidGroupSorting: suppressing reposition, configuring 8 groups")
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("suppressreposition", 1)
+    end
 
     -- Cache raid roster info once (avoids 320+ GetRaidRosterInfo calls)
     CacheRaidRosterInfo()
@@ -3916,15 +3921,6 @@ function DF:ApplyRaidGroupSorting()
     end
     local roleOrderString = table.concat(groupingOrder, ",")
     
-    -- Suppress repositioning during the Hide/Show loop to prevent multiple
-    -- partial repositions with stale group counts. A single authoritative
-    -- reposition fires via UpdateRaidPositionAttributes after all groups
-    -- are processed.
-    DF:Debug("ROSTER", "ApplyRaidGroupSorting: suppressing reposition, configuring 8 groups")
-    if DF.raidPositionHandler then
-        DF.raidPositionHandler:SetAttribute("suppressreposition", 1)
-    end
-
     -- Configure each group header (SORTING ONLY - positioning handled by secure handler)
     for i = 1, 8 do
         local header = DF.raidSeparatedHeaders[i]
@@ -7703,8 +7699,8 @@ function DF:ProcessRosterUpdate()
             return
         end
 
-        -- TEST 1: Visibility update - OK
-        DF:UpdateHeaderVisibility()
+        -- Visibility update — skip grouped-raid reposition (flat raids don't use it)
+        DF:UpdateHeaderVisibility(true)
 
         -- TEST 2: HasRosterMembershipChanged check - OK
         if not HasRosterMembershipChanged() then
