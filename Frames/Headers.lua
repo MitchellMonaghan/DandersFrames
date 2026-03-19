@@ -820,10 +820,11 @@ function DF:InitializeHeaderChild(frame)
                 DF:Debug("LAYOUT", "OnShow refresh: %s (headerChild=%s isRaid=%s)",
                     self.unit or "?", tostring(self.dfIsHeaderChild), tostring(self.isRaidFrame))
                 -- Apply layout in case settings changed while hidden
-                -- SKIP for ALL header children - SetSize triggers SecureGroupHeader_Update
+                -- SKIP for raid combined (grouped) children — SetSize triggers SecureGroupHeader_Update
                 -- which repositions every sibling, causing visible frame jumping on roster changes.
-                -- Header children get sized explicitly by ApplyHeaderSettings / FlatRaidFrames.
-                if DF.ApplyFrameLayout and not self.dfIsHeaderChild then
+                -- Raid combined children get sized explicitly by ApplyHeaderSettings.
+                -- Party and flat raid children need this to stay correctly sized.
+                if DF.ApplyFrameLayout and not self.dfIsRaidCombinedChild then
                     DF:ApplyFrameLayout(self)
                 end
                 -- Core frame update
@@ -4832,7 +4833,7 @@ function DF:UpdateHeaderVisibility(skipRaidReposition)
     local inParty = IsInGroup() and not IsInRaid()
 
     DF:Debug("VISIBILITY", "UpdateHeaderVisibility: content=%s inRaid=%s inParty=%s skipRaidRepos=%s",
-        contentType, tostring(inRaid), tostring(inParty), tostring(skipRaidReposition))
+        tostring(contentType), tostring(inRaid), tostring(inParty), tostring(skipRaidReposition))
 
     -- ARENA DEBUG: Log the visibility decision
     local inInst, instType = IsInInstance()
@@ -5089,18 +5090,19 @@ function DF:UpdateRaidHeaderVisibility(skipReposition)
 
     DF._updatingRaidHeaderVisibility = nil
 
-    -- Clear suppress flag and do a single authoritative reposition
-    -- Skip when called from ProcessRosterUpdate — sorting will follow and trigger
-    -- its own reposition with correct group counts. Firing here with stale counts
-    -- causes visible frame jumping.
-    if DF.raidPositionHandler then
-        DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
-    end
+    -- Reposition handling:
+    -- When skipReposition=true (called from ProcessRosterUpdate before sorting),
+    -- leave suppressreposition=1 so secure-side OnShow/OnAttributeChanged hooks
+    -- can't fire stale repositions in the gap before ApplyRaidGroupSorting starts.
+    -- The sorting function will unsuppress and fire the authoritative reposition.
     if not skipReposition then
+        if DF.raidPositionHandler then
+            DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
+        end
         DF:Debug("VISIBILITY", "  Triggering raid reposition (authoritative)")
         DF:TriggerRaidPosition()
     else
-        DF:Debug("VISIBILITY", "  Skipping raid reposition (sorting will handle it)")
+        DF:Debug("VISIBILITY", "  Leaving suppressreposition=1 (sorting will unsuppress)")
     end
 end
 

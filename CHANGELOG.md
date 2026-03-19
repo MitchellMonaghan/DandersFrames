@@ -13,9 +13,11 @@
 * (Raid Frames) Fixed redundant double-reposition in grouped raid mode when roster changes — ApplyRaidGroupSorting already triggers positioning internally
 * (Flat Raid Frames) Fixed flat raid frames flickering between party and raid settings — child frames now have their `isRaidFrame` flag synced when the flat layout enables or refreshes
 * (Position) Fixed permanent mover handles for both party and raid staying visible after switching group type — mover visibility now re-evaluates during party/raid transitions
-* (Raid Frames) Fixed raid frames visually jumping positions when someone joins or leaves — UpdateRaidHeaderVisibility was triggering a full reposition with stale group counts before sorting applied, causing a double-reposition flash
-* (Flat Raid Frames) Fixed flat raid frames jumping on roster changes — SetEnabled(true) ran the full Hide/Show + UpdateNameList setup even when already visible, causing a redundant second cycle when ApplyRaidFlatSorting followed
+* (Raid Frames) Fixed raid frames visually jumping positions when someone joins or leaves — suppressreposition now stays armed until sorting completes, preventing secure-side hooks from firing stale repositions in the gap between visibility updates and sorting
+* (Flat Raid Frames) Fixed flat raid frames breaking position after alpha.5 — OnShow guard was too aggressive (blocked all header children from ApplyFrameLayout), now correctly only skips raid combined children while allowing flat raid and party children to size normally
+* (Flat Raid Frames) Fixed flat raid SetEnabled early-return skipping child sizing — when already visible, now refreshes child frame sizes and isRaidFrame flag instead of returning empty-handed
 * (Flat Raid Frames) Fixed flat raid frames permanently using party settings after a party-to-raid transition — isRaidFrame flag is now structurally set to true instead of relying on IsInRaid() which returns false during transitional states
+* (Debug) Fixed format error in VISIBILITY debug logs — contentType not wrapped in tostring() causing string.format to throw when nil
 * (Aura Designer) Fixed custom border indicators not showing on the frame preview — preview now supports independent per-aura custom border overlays matching live frame behavior
 * (Sound Alerts) Fixed sound engine failing to find raid frames when using flat layout — now uses GetAllRaidFrames() instead of non-existent raidHeader
 * (Auto Layouts) Fixed duplicate raid frames appearing when switching between flat and grouped layouts via auto profiles

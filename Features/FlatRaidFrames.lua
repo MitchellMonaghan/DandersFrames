@@ -1019,13 +1019,21 @@ function FlatRaidFrames:SetEnabled(enabled)
     local header = self.header
 
     if enabled then
-        -- EARLY-RETURN: If already enabled and visible, skip the full setup.
-        -- ProcessRosterUpdate calls UpdateHeaderVisibility (which calls SetEnabled)
-        -- AND then ApplyRaidFlatSorting (which calls UpdateNameList). Without this
-        -- guard, the full Hide/Show + UpdateNameList runs twice per roster change,
-        -- causing visible frame jumping.
+        -- When already visible, only refresh child sizes and isRaidFrame flag
+        -- (skip the heavy Hide/Show + UpdateNameList cycle to avoid double-work
+        -- since ApplyRaidFlatSorting will follow from ProcessRosterUpdate).
         if header:IsShown() and self.innerContainer and self.innerContainer:IsShown() then
-            DF:Debug("FLATRAID", "SetEnabled(true): already visible, skipping full setup")
+            DF:Debug("FLATRAID", "SetEnabled(true): already visible, refreshing child sizes only")
+            local db = GetRaidDB()
+            local frameWidth = db and db.frameWidth or 80
+            local frameHeight = db and db.frameHeight or 40
+            for i = 1, 40 do
+                local child = header:GetAttribute("child" .. i)
+                if child then
+                    child:SetSize(frameWidth, frameHeight)
+                    child.isRaidFrame = true
+                end
+            end
             return
         end
 
