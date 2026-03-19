@@ -508,16 +508,19 @@ function DF:InitializeHeaderChild(frame)
         isArena = parentName:find("Arena") ~= nil
         isPinned = parentName:find("Pinned") ~= nil
         isRaid = parentName:find("Raid") ~= nil and not isArena and not isPinned
-        isRaidCombined = parentName:find("RaidCombined") ~= nil
+        -- Match ALL grouped raid header children: DandersRaidGroup1Header..8Header
+        -- AND legacy RaidCombined (if any). Flat raid uses DandersFlatRaidHeader
+        -- which does NOT match here — flat children need ApplyFrameLayout on OnShow.
+        isRaidCombined = (parentName:find("RaidGroup") ~= nil) or (parentName:find("RaidCombined") ~= nil)
     end
-    
+
     -- PINNED FRAMES: Use current group status to determine raid vs party
     -- Pinned frames can show either party or raid members, so they should
     -- use the appropriate settings based on whether we're in a raid
     if isPinned then
         isRaid = IsInRaid()
     end
-    
+
     frame.isRaidFrame = isRaid
     frame.isArenaFrame = isArena  -- Arena uses party settings but raid units
     frame.isPinnedFrame = isPinned
@@ -4019,16 +4022,20 @@ function DF:ApplyRaidGroupSorting()
         end
     end
     
-    -- Clear suppress flag — next TriggerRaidPosition will fire the full reposition
-    -- with all group counts now accurately synced
+    -- Update layout attributes and position handler settings WHILE suppress is still on.
+    -- UpdateRaidHeaderLayoutAttributes clears child anchor points, which causes
+    -- SecureGroupHeaderTemplate to re-anchor children (firing OnShow). If suppress
+    -- were already off, each child OnShow would independently fire the position snippet,
+    -- creating N redundant repositions. By keeping suppress on, those OnShow hooks
+    -- are no-ops, and we fire ONE authoritative reposition after unsuppressing.
+    DF:UpdateRaidPositionAttributes()
+
+    -- NOW unsuppress and fire the single authoritative reposition
     DF:Debug("ROSTER", "ApplyRaidGroupSorting: unsuppressing, triggering authoritative reposition")
     if DF.raidPositionHandler then
         DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
     end
-
-    -- Trigger positioning after sorting attributes are set
-    -- This does both secure attribute updates AND Lua positioning
-    DF:UpdateRaidPositionAttributes()
+    DF:TriggerRaidPosition()
     
     -- Clear the roster cache (no longer needed until next update)
     ClearRaidRosterCache()
@@ -4832,8 +4839,9 @@ function DF:UpdateHeaderVisibility(skipRaidReposition)
     local inRaid = IsInRaid() and not inArena  -- Raid but NOT arena
     local inParty = IsInGroup() and not IsInRaid()
 
-    DF:Debug("VISIBILITY", "UpdateHeaderVisibility: content=%s inRaid=%s inParty=%s skipRaidRepos=%s",
-        tostring(contentType), tostring(inRaid), tostring(inParty), tostring(skipRaidReposition))
+    DF:Debug("VISIBILITY", "UpdateHeaderVisibility: content=%s inRaid=%s inParty=%s skipRaidRepos=%s caller=%s",
+        tostring(contentType), tostring(inRaid), tostring(inParty), tostring(skipRaidReposition),
+        debugstack(2, 1, 0) or "?")
 
     -- ARENA DEBUG: Log the visibility decision
     local inInst, instType = IsInInstance()
@@ -7749,9 +7757,11 @@ function DF:ProcessRosterUpdate()
         -- FIX: Rebuild unitFrameMap in case it was wiped (e.g., by PLAYER_ENTERING_WORLD)
         -- but OnAttributeChanged didn't fire because unit assignments are unchanged.
         DF:RebuildUnitFrameMap()
-        -- Position handler still needs a poke for grow-from-center
-        if IsInRaid() and not inArena and DF.raidPositionHandler and DF.raidSeparatedHeaders then
-            DF:TriggerRaidPosition()
+        -- Clear suppressreposition that was set by UpdateHeaderVisibility(true) above.
+        -- Without this, suppress leaks and blocks all future repositioning until
+        -- the next roster change that passes HasRosterMembershipChanged().
+        if DF.raidPositionHandler then
+            DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
         end
         return
     end
