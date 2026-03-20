@@ -274,7 +274,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end), 30)
         hidePlayer.hideOn = function() return GUI.SelectedMode == "raid" end
         hidePlayer.tooltip = "Removes your player frame from the DandersFrames party display."
-        
+
         Add(frameDisplayGroup, nil, 1)
         
         -- ===== BLIZZARD FRAMES GROUP (Column 2) =====
@@ -1104,7 +1104,94 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         appearanceGroup:AddWidget(GUI:CreateCheckbox(self.child, "Pixel-Perfect Scaling", db, "pixelPerfect", UpdateFrames), 30)
         appearanceGroup:AddWidget(GUI:CreateLabel(self.child, "Snaps sizes and borders to exact pixels for crisp rendering.", 250), 30)
         Add(appearanceGroup, nil, 2)
-        
+
+        -- ===== PERMANENT MOVER GROUP (Column 2) =====
+        local permMoverGroup = GUI:CreateSettingsGroup(self.child, 280)
+        permMoverGroup:AddWidget(GUI:CreateHeader(self.child, "Permanent Mover"), 40)
+
+        permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Permanent Mover", db, "permanentMover", function()
+            DF:UpdatePermanentMoverVisibility()
+        end), 30)
+
+        local moverAnchorValues = {
+            TOPLEFT = "Top Left", TOP = "Top", TOPRIGHT = "Top Right",
+            LEFT = "Left", RIGHT = "Right",
+            BOTTOMLEFT = "Bottom Left", BOTTOM = "Bottom", BOTTOMRIGHT = "Bottom Right",
+        }
+        local permMoverAnchor = permMoverGroup:AddWidget(
+            GUI:CreateDropdown(self.child, "Handle Position", moverAnchorValues, db, "permanentMoverAnchor", function()
+                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
+            end), 55)
+        permMoverAnchor.disableOn = function(d) return not d.permanentMover end
+
+        local attachValues = { CONTAINER = "Container", FIRST = "First Unit", LAST = "Last Unit" }
+        local permAttach = permMoverGroup:AddWidget(
+            GUI:CreateDropdown(self.child, "Attach To", attachValues, db, "permanentMoverAttachTo", function()
+                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
+            end), 55)
+        permAttach.disableOn = function(d) return not d.permanentMover end
+        permAttach.tooltip = "Attach the handle to the container, the first visible unit, or the last visible unit."
+
+        local function PermMoverAnchorUpdate() DF:UpdatePermanentMoverAnchor(GUI.SelectedMode) end
+        local function PermMoverSizeUpdate() DF:UpdatePermanentMoverSize(GUI.SelectedMode) end
+
+        local permOffsetX = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -500, 500, 1, db, "permanentMoverOffsetX", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
+        permOffsetX.disableOn = function(d) return not d.permanentMover end
+
+        local permOffsetY = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset Y", -500, 500, 1, db, "permanentMoverOffsetY", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
+        permOffsetY.disableOn = function(d) return not d.permanentMover end
+
+        local permWidth = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Width", 5, 500, 1, db, "permanentMoverWidth", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
+        permWidth.disableOn = function(d) return not d.permanentMover end
+
+        local permHeight = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Height", 5, 500, 1, db, "permanentMoverHeight", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
+        permHeight.disableOn = function(d) return not d.permanentMover end
+
+        local permHover = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Show on Hover Only", db, "permanentMoverShowOnHover", function()
+            DF:UpdatePermanentMoverVisibility()
+        end), 30)
+        permHover.disableOn = function(d) return not d.permanentMover end
+        permHover.tooltip = "Handle is invisible until you hover over it. Fades in and out smoothly."
+
+        local permCombat = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide in Combat", db, "permanentMoverHideInCombat", function()
+            DF:UpdatePermanentMoverCombatState()
+        end), 30)
+        permCombat.disableOn = function(d) return not d.permanentMover end
+        permCombat.tooltip = "Hides the handle during combat. If disabled, the handle changes color to indicate it is locked."
+
+        local permColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Handle Color", db, "permanentMoverColor", false, function()
+            DF:UpdatePermanentMoverColor(GUI.SelectedMode)
+        end), 35)
+        permColor.disableOn = function(d) return not d.permanentMover end
+
+        local permCombatColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Combat Color", db, "permanentMoverCombatColor", false, nil), 35)
+        permCombatColor.disableOn = function(d) return not d.permanentMover end
+        permCombatColor.tooltip = "Color shown when in combat to indicate the handle is locked."
+
+        -- Quick action dropdowns
+        local actionValues = {}
+        for id, data in pairs(DF.PERM_MOVER_ACTIONS) do
+            actionValues[id] = data.label
+        end
+
+        local permActionLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Left Click", actionValues, db, "permanentMoverActionLeft"), 55)
+        permActionLeft.disableOn = function(d) return not d.permanentMover end
+
+        local permActionRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Right Click", actionValues, db, "permanentMoverActionRight"), 55)
+        permActionRight.disableOn = function(d) return not d.permanentMover end
+
+        local permActionShiftLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Left Click", actionValues, db, "permanentMoverActionShiftLeft"), 55)
+        permActionShiftLeft.disableOn = function(d) return not d.permanentMover end
+
+        local permActionShiftRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Right Click", actionValues, db, "permanentMoverActionShiftRight"), 55)
+        permActionShiftRight.disableOn = function(d) return not d.permanentMover end
+
+        local permPullTimer = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Pull Timer Duration", 3, 30, 1, db, "permanentMoverPullTimerDuration"), 55)
+        permPullTimer.disableOn = function(d) return not d.permanentMover end
+        permPullTimer.tooltip = "Duration in seconds for the Pull Timer quick action."
+
+        Add(permMoverGroup, nil, 2)
+
         -- ===== LAYOUT DIRECTION GROUP (Column 1) =====
         local layoutGroup = GUI:CreateSettingsGroup(self.child, 280)
         layoutGroup:AddWidget(GUI:CreateHeader(self.child, "Layout Direction"), 40)
@@ -2159,7 +2246,39 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         settingsGroup:AddWidget(CreateRefreshableCheckbox(self.child, "Show Label", "showLabel", function()
             if DF.PinnedFrames then DF.PinnedFrames:SetShowLabel(activeHighlightTab, GetCurrentSet().showLabel) end
         end), 28)
-        
+
+        -- Reset Position button
+        local resetPosBtn = CreateFrame("Button", nil, self.child, "BackdropTemplate")
+        resetPosBtn:SetSize(130, 22)
+        resetPosBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        resetPosBtn:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+        resetPosBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        local resetPosText = resetPosBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        resetPosText:SetPoint("CENTER")
+        resetPosText:SetText("Reset Position")
+        resetPosBtn:SetScript("OnClick", function()
+            local set = GetCurrentSet()
+            if set and DF.PinnedFrames then
+                local container = DF.PinnedFrames.containers[activeHighlightTab]
+                if container then
+                    -- Reset to screen center using CENTER anchor, then let layout convert
+                    container:ClearAllPoints()
+                    container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+                    -- Save with the current growth anchor using the converted position
+                    set.position = { point = "CENTER", x = 0, y = 0 }
+                    -- Now apply layout which will convert CENTER to the growth anchor
+                    DF.PinnedFrames:ApplyLayoutSettings(activeHighlightTab)
+                end
+            end
+        end)
+        resetPosBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.25, 0.25, 0.25, 0.9)
+        end)
+        resetPosBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+        end)
+        settingsGroup:AddWidget(resetPosBtn, 28)
+
         -- Label name input
         local nameInputContainer = CreateFrame("Frame", nil, self.child)
         nameInputContainer:SetSize(250, 44)
@@ -2197,10 +2316,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local directionOptions = { HORIZONTAL = "Horizontal", VERTICAL = "Vertical" }
         layoutGroup:AddWidget(CreateRefreshableDropdown(self.child, "Direction", directionOptions, "growDirection", UpdateHighlightLayout), 55)
         
-        local frameAnchorOptions = { START = "Start (Left/Top)", END = "End (Right/Bottom)" }
+        local frameAnchorOptions = { START = "Start (Left/Top)", CENTER = "Center", END = "End (Right/Bottom)" }
         layoutGroup:AddWidget(CreateRefreshableDropdown(self.child, "Frame Growth", frameAnchorOptions, "frameAnchor", UpdateHighlightLayout), 55)
-        
-        local columnAnchorOptions = { START = "Start (Left/Top)", END = "End (Right/Bottom)" }
+
+        local columnAnchorOptions = { START = "Start (Left/Top)", CENTER = "Center", END = "End (Right/Bottom)" }
         layoutGroup:AddWidget(CreateRefreshableDropdown(self.child, "Column Growth", columnAnchorOptions, "columnAnchor", UpdateHighlightLayout), 55)
         
         layoutGroup:AddWidget(CreateRefreshableSlider(self.child, "Units Per Row", 1, 10, 1, "unitsPerRow", UpdateHighlightLayout), 55)
@@ -3514,6 +3633,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         }
         formatGroup:AddWidget(GUI:CreateDropdown(self.child, "Health Format", formatOptions, db, "healthTextFormat", function() DF:RefreshAllVisibleFrames() end), 55)
         formatGroup:AddWidget(GUI:CreateCheckbox(self.child, "Abbreviate (K/M)", db, "healthTextAbbreviate", function() DF:RefreshAllVisibleFrames() end), 30)
+        formatGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide % Symbol", db, "healthTextHidePercent", function() DF:RefreshAllVisibleFrames() end), 30)
         Add(formatGroup, nil, 1)
         
         -- ===== POSITION GROUP (Column 2) =====
@@ -4016,20 +4136,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             CENTER = "Center", TOP = "Top", BOTTOM = "Bottom", LEFT = "Left", RIGHT = "Right",
             TOPLEFT = "Top Left", TOPRIGHT = "Top Right", BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right",
         }
-        local growthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
         local outlineOptions = { NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline", SHADOW = "Shadow" }
-        
+
         -- ===== LAYOUT SECTION =====
         local layoutSection = Add(GUI:CreateCollapsibleSection(self.child, "Layout", true), 36, "both")
         currentSection = layoutSection
-        
+
         -- Settings Group (col1)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 260)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, "Settings"), 40)
@@ -4057,7 +4169,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         positionGroup:AddWidget(GUI:CreateHeader(self.child, "Position"), 40)
         local buffAnchor = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Anchor", anchorOptions, db, "buffAnchor", nil), 55)
         buffAnchor.disableOn = function(d) return not d.showBuffs end
-        local buffGrowth = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth", growthOptions, db, "buffGrowth", nil), 55)
+        local buffGrowth = positionGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "buffGrowth", nil), 155)
         buffGrowth.disableOn = function(d) return not d.showBuffs end
         local buffOffsetX = positionGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -50, 50, 1, db, "buffOffsetX", nil, function() DF:LightweightUpdateAuraPosition("buff") end, true), 55)
         buffOffsetX.disableOn = function(d) return not d.showBuffs end
@@ -4137,8 +4249,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         durY.disableOn = function(d) return not d.buffShowDuration end
         local durColor = durationGroup:AddWidget(GUI:CreateCheckbox(self.child, "Color by Time Remaining", db, "buffDurationColorByTime", function() DF:RefreshDurationColorSettings() end), 30)
         durColor.disableOn = function(d) return not d.buffShowDuration end
+        local durHideAbove = durationGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide Above Threshold", db, "buffDurationHideAboveEnabled", function() DF:RefreshDurationColorSettings() end), 30)
+        durHideAbove.disableOn = function(d) return not d.buffShowDuration end
+        local durHideAboveSlider = durationGroup:AddWidget(GUI:CreateSlider(self.child, "Hide Above (seconds)", 1, 60, 1, db, "buffDurationHideAboveThreshold", nil, function() DF:RefreshDurationColorSettings() end), 55)
+        durHideAboveSlider.disableOn = function(d) return not d.buffShowDuration or not d.buffDurationHideAboveEnabled end
         AddToSection(durationGroup, nil, 2)
-        
+
         -- Expiring Indicator Group (col2)
         local expiringGroup = GUI:CreateSettingsGroup(self.child, 260)
         expiringGroup:AddWidget(GUI:CreateHeader(self.child, "Expiring Indicator"), 40)
@@ -4147,9 +4263,30 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             DF:UpdateAllFrames()
         end), 30)
         local function HideExpiring(d) return not d.buffExpiringEnabled end
-        local thresholdSlider = expiringGroup:AddWidget(GUI:CreateSlider(self.child, "Expiring Threshold (%)", 5, 95, 5, db, "buffExpiringThreshold", nil), 55)
+        local isSeconds = db.buffExpiringThresholdMode == "SECONDS"
+        local thresholdLabel = isSeconds and "Expiring Threshold (seconds)" or "Expiring Threshold (%)"
+        local thresholdMin = isSeconds and 1 or 5
+        local thresholdMax = isSeconds and 60 or 95
+        local thresholdStep = isSeconds and 1 or 5
+        local thresholdSlider = expiringGroup:AddWidget(GUI:CreateSlider(self.child, thresholdLabel, thresholdMin, thresholdMax, thresholdStep, db, "buffExpiringThreshold", nil), 55)
         thresholdSlider.disableOn = HideExpiring
-        local borderEnabled = expiringGroup:AddWidget(GUI:CreateCheckbox(self.child, "Show Expiring Border", db, "buffExpiringBorderEnabled", function() 
+        local modeBtn = expiringGroup:AddWidget(GUI:CreateCheckbox(self.child, "Use Seconds Instead of Percent", nil, nil,
+            nil,
+            function() return db.buffExpiringThresholdMode == "SECONDS" end,
+            function(val)
+                if val then
+                    db.buffExpiringThresholdMode = "SECONDS"
+                    db.buffExpiringThreshold = 10
+                else
+                    db.buffExpiringThresholdMode = "PERCENT"
+                    db.buffExpiringThreshold = 30
+                end
+                DF:UpdateAllFrames()
+                self:Refresh()
+            end,
+            "buffExpiringThresholdMode"), 30)
+        modeBtn.disableOn = HideExpiring
+        local borderEnabled = expiringGroup:AddWidget(GUI:CreateCheckbox(self.child, "Show Expiring Border", db, "buffExpiringBorderEnabled", function()
             self:RefreshStates()
             DF:UpdateAllFrames() 
         end), 30)
@@ -4209,20 +4346,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             CENTER = "Center", TOP = "Top", BOTTOM = "Bottom", LEFT = "Left", RIGHT = "Right",
             TOPLEFT = "Top Left", TOPRIGHT = "Top Right", BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right",
         }
-        local growthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
         local outlineOptions = { NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline", SHADOW = "Shadow" }
-        
+
         -- ===== LAYOUT SECTION =====
         local layoutSection = Add(GUI:CreateCollapsibleSection(self.child, "Layout", true), 36, "both")
         currentSection = layoutSection
-        
+
         -- Settings Group (col1)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 260)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, "Settings"), 40)
@@ -4247,7 +4376,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         positionGroup:AddWidget(GUI:CreateHeader(self.child, "Position"), 40)
         local debuffAnchor = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Anchor", anchorOptions, db, "debuffAnchor", nil), 55)
         debuffAnchor.disableOn = function(d) return not d.showDebuffs end
-        local debuffGrowth = positionGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth", growthOptions, db, "debuffGrowth", nil), 55)
+        local debuffGrowth = positionGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "debuffGrowth", nil), 155)
         debuffGrowth.disableOn = function(d) return not d.showDebuffs end
         local debuffOffsetX = positionGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -50, 50, 1, db, "debuffOffsetX", nil, function() DF:LightweightUpdateAuraPosition("debuff") end, true), 55)
         debuffOffsetX.disableOn = function(d) return not d.showDebuffs end
@@ -4364,10 +4493,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         durY.disableOn = function(d) return not d.debuffShowDuration end
         local durColor = durationGroup:AddWidget(GUI:CreateCheckbox(self.child, "Color by Time Remaining", db, "debuffDurationColorByTime", function() DF:RefreshDurationColorSettings() end), 30)
         durColor.disableOn = function(d) return not d.debuffShowDuration end
+        local durHideAbove = durationGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide Above Threshold", db, "debuffDurationHideAboveEnabled", function() DF:RefreshDurationColorSettings() end), 30)
+        durHideAbove.disableOn = function(d) return not d.debuffShowDuration end
+        local durHideAboveSlider = durationGroup:AddWidget(GUI:CreateSlider(self.child, "Hide Above (seconds)", 1, 60, 1, db, "debuffDurationHideAboveThreshold", nil, function() DF:RefreshDurationColorSettings() end), 55)
+        durHideAboveSlider.disableOn = function(d) return not d.debuffShowDuration or not d.debuffDurationHideAboveEnabled end
         AddToSection(durationGroup, nil, 2)
-        
+
         currentSection = nil
-        
+
         -- See Also links
         AddSpace(20, "both")
         Add(GUI:CreateSeeAlso(self.child, {
@@ -4811,17 +4944,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         layoutGroup:AddWidget(GUI:CreateHeader(self.child, "Layout (Direct Mode)"), 40)
         layoutGroup:AddWidget(GUI:CreateLabel(self.child, "Controls how multiple defensive icons are arranged when using Direct aura mode.", 250), 45)
 
-        local defGrowthOptions = {
-            LEFT_UP = "Left, then Up", LEFT_DOWN = "Left, then Down",
-            RIGHT_UP = "Right, then Up", RIGHT_DOWN = "Right, then Down",
-            UP_LEFT = "Up, then Left", UP_RIGHT = "Up, then Right",
-            DOWN_LEFT = "Down, then Left", DOWN_RIGHT = "Down, then Right",
-            CENTER_UP = "Center, then Up", CENTER_DOWN = "Center, then Down",
-            CENTER_LEFT = "Center, then Left", CENTER_RIGHT = "Center, then Right",
-        }
-        local defGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, "Growth Direction", defGrowthOptions, db, "defensiveBarGrowth", function()
+        local defGrowth = layoutGroup:AddWidget(GUI:CreateGrowthControl(self.child, db, "defensiveBarGrowth", function()
             if DF.UpdateAllDefensiveBars then DF:UpdateAllDefensiveBars() end
-        end), 55)
+        end), 155)
         defGrowth.hideOn = HideDefensiveIconOptions
 
         local defMax = layoutGroup:AddWidget(GUI:CreateSlider(self.child, "Max Icons", 1, 5, 1, db, "defensiveBarMax", function()
@@ -5956,6 +6081,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if DF.UpdateAllDispelOverlays then DF:UpdateAllDispelOverlays() end
         end), 30)
         animate.hideOn = HideDispelOptions
+        local nameTextCheck = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Color Name Text", db, "dispelNameText", function()
+            if DF.UpdateAllDispelOverlays then DF:UpdateAllDispelOverlays() end
+        end), 30)
+        nameTextCheck.hideOn = HideDispelOptions
         Add(settingsGroup, nil, 1)
         
         -- ===== ICON GROUP (Column 2) =====
@@ -6970,7 +7099,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         consoleSettingsGroup:AddWidget(logLevelDropdown, 55)
 
         -- Max Log Entries slider
-        local maxLinesSlider = GUI:CreateSlider(self.child, "Max Log Entries", 100, 2000, 100, debugProxy, "maxLines", function()
+        local maxLinesSlider = GUI:CreateSlider(self.child, "Max Log Entries", 100, 10000, 100, debugProxy, "maxLines", function()
             if DF.DebugConsole then
                 DF.DebugConsole:PruneLog()
                 DF.DebugConsole:RefreshDisplay()
@@ -7165,6 +7294,83 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end), 32)
 
         AddToSection(actionsGroup, nil, 1)
+
+        -- Settings Group: Script Runner
+        local scriptGroup = GUI:CreateSettingsGroup(self.child, 280)
+        scriptGroup:AddWidget(GUI:CreateHeader(self.child, "Script Runner"), 40)
+
+        -- Scrollable multiline EditBox for Lua input
+        local scriptScrollContainer = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+        scriptScrollContainer:SetSize(260, 120)
+        scriptScrollContainer:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        scriptScrollContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+        scriptScrollContainer:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+
+        local scriptScroll = CreateFrame("ScrollFrame", nil, scriptScrollContainer, "UIPanelScrollFrameTemplate")
+        scriptScroll:SetPoint("TOPLEFT", 4, -4)
+        scriptScroll:SetPoint("BOTTOMRIGHT", -22, 4)
+
+        local scriptEditBox = CreateFrame("EditBox", nil, scriptScroll)
+        scriptEditBox:SetMultiLine(true)
+        scriptEditBox:SetFontObject(GameFontHighlightSmall)
+        scriptEditBox:SetWidth(230)
+        scriptEditBox:SetHeight(112)
+        scriptEditBox:SetAutoFocus(false)
+        scriptEditBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+        scriptEditBox:SetScript("OnTextChanged", function(s, userInput)
+            if userInput and DandersFramesDB_v2 and DandersFramesDB_v2.debug then
+                DandersFramesDB_v2.debug.lastScript = s:GetText()
+            end
+        end)
+        scriptScroll:SetScrollChild(scriptEditBox)
+
+        -- Restore last script from saved variables
+        if DandersFramesDB_v2 and DandersFramesDB_v2.debug and DandersFramesDB_v2.debug.lastScript then
+            scriptEditBox:SetText(DandersFramesDB_v2.debug.lastScript)
+        end
+
+        scriptScrollContainer:EnableMouse(true)
+        scriptScrollContainer:SetScript("OnMouseDown", function() scriptEditBox:SetFocus() end)
+        scriptScroll:EnableMouse(true)
+        scriptScroll:SetScript("OnMouseDown", function() scriptEditBox:SetFocus() end)
+
+        scriptGroup:AddWidget(scriptScrollContainer, 125)
+
+        -- Status label (shows result or error)
+        local scriptStatusLabel = GUI:CreateLabel(self.child, "", 260)
+        scriptGroup:AddWidget(scriptStatusLabel, 20)
+
+        -- Run button
+        scriptGroup:AddWidget(GUI:CreateButton(self.child, "Run Script", 260, 26, function()
+            local code = scriptEditBox:GetText()
+            if not code or code == "" then
+                scriptStatusLabel:SetText("|cff666666No script to run.|r")
+                return
+            end
+            local fn, err = loadstring(code)
+            if not fn then
+                scriptStatusLabel:SetText("|cffff6666Error: " .. tostring(err) .. "|r")
+                DF:DebugError("SCRIPT", "Compile error: %s", tostring(err))
+                return
+            end
+            local ok, result = pcall(fn)
+            if ok then
+                if result ~= nil then
+                    scriptStatusLabel:SetText("|cff88ccffResult: " .. tostring(result) .. "|r")
+                else
+                    scriptStatusLabel:SetText("|cff88ff88Script executed successfully.|r")
+                end
+            else
+                scriptStatusLabel:SetText("|cffff6666Runtime: " .. tostring(result) .. "|r")
+                DF:DebugError("SCRIPT", "Runtime error: %s", tostring(result))
+            end
+        end), 32)
+
+        AddToSection(scriptGroup, nil, 1)
 
         -- ========================================
         -- COLUMN 2: LOG VIEWER

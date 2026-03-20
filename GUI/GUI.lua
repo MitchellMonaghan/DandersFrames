@@ -1902,6 +1902,255 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
 end
 
 -- ============================================================
+-- GROWTH DIRECTION CONTROL
+-- Three linked dropdowns (Orientation, Wrap, Direction) that
+-- compose into a single growth value like "LEFT_UP"
+-- ============================================================
+
+-- Decompose "LEFT_UP" into {orientation, wrap, direction}
+local function DecomposeGrowth(growth)
+    local primary, secondary = strsplit("_", growth)
+    if primary == "CENTER" then
+        if secondary == "UP" or secondary == "DOWN" then
+            return "HORIZONTAL", secondary, "CENTER"
+        else
+            return "VERTICAL", secondary, "CENTER"
+        end
+    elseif primary == "LEFT" or primary == "RIGHT" then
+        return "HORIZONTAL", secondary, primary
+    else
+        return "VERTICAL", secondary, primary
+    end
+end
+
+-- Compose {orientation, wrap, direction} back into "LEFT_UP"
+local function ComposeGrowth(orientation, wrap, direction)
+    if direction == "CENTER" then
+        return "CENTER_" .. wrap
+    else
+        return direction .. "_" .. wrap
+    end
+end
+
+-- Map values when switching orientation so the selection stays sensible
+local ORIENTATION_MAP = {
+    UP = "LEFT", DOWN = "RIGHT", LEFT = "UP", RIGHT = "DOWN",
+}
+
+function GUI:CreateGrowthControl(parent, db, dbKey, callback)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(260, 155)
+
+    -- Read current decomposed state
+    local curOrientation, curWrap, curDirection = DecomposeGrowth(db[dbKey] or "LEFT_UP")
+
+    -- Option tables per orientation
+    local ORIENT_OPTIONS = {
+        HORIZONTAL = "Horizontal",
+        VERTICAL = "Vertical",
+        _order = {"HORIZONTAL", "VERTICAL"},
+    }
+    local WRAP_OPTIONS = {
+        HORIZONTAL = { UP = "Up", DOWN = "Down", _order = {"UP", "DOWN"} },
+        VERTICAL = { LEFT = "Left", RIGHT = "Right", _order = {"LEFT", "RIGHT"} },
+    }
+    local DIR_OPTIONS = {
+        HORIZONTAL = { LEFT = "Left", CENTER = "Center", RIGHT = "Right", _order = {"LEFT", "CENTER", "RIGHT"} },
+        VERTICAL = { UP = "Up", CENTER = "Center", DOWN = "Down", _order = {"UP", "CENTER", "DOWN"} },
+    }
+
+    -- Shared write-back: recompose and save
+    local function WriteBack()
+        db[dbKey] = ComposeGrowth(curOrientation, curWrap, curDirection)
+        DF:UpdateAll()
+        if callback then callback() end
+        if parent.RefreshStates then parent:RefreshStates() end
+    end
+
+    -- Sub-dropdown builder (simplified version of CreateDropdown, no override indicators)
+    local function BuildMiniDropdown(yOffset, label, options, getValue, setValue)
+        local frame = CreateFrame("Frame", nil, container)
+        frame:SetPoint("TOPLEFT", 0, yOffset)
+        frame:SetPoint("TOPRIGHT", 0, yOffset)
+        frame:SetHeight(50)
+
+        local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("TOPLEFT", 0, 0)
+        lbl:SetText(label)
+        lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+        local btn = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        btn:SetPoint("TOPLEFT", 0, -16)
+        btn:SetPoint("TOPRIGHT", 0, -16)
+        btn:SetHeight(24)
+        CreateElementBackdrop(btn)
+
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.Text:SetPoint("LEFT", 8, 0)
+        btn.Text:SetPoint("RIGHT", -20, 0)
+        btn.Text:SetJustifyH("LEFT")
+        btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+        local arrow = btn:CreateTexture(nil, "OVERLAY")
+        arrow:SetPoint("RIGHT", -8, 0)
+        arrow:SetSize(12, 12)
+        arrow:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+        arrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+        local menuFrame = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+        menuFrame:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
+        menuFrame:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -2)
+        menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        menuFrame:SetClampedToScreen(true)
+        CreateElementBackdrop(menuFrame)
+        menuFrame:SetBackdropColor(C_PANEL.r, C_PANEL.g, C_PANEL.b, 0.98)
+        menuFrame:Hide()
+
+        menuFrame:SetScript("OnHide", function()
+            if currentOpenDropdown == menuFrame then
+                currentOpenDropdown = nil
+            end
+        end)
+
+        local menuButtons = {}
+
+        -- Rebuild populates menu items from current options
+        frame.Rebuild = function(self, newOptions)
+            for _, mb in ipairs(menuButtons) do mb:Hide() end
+            wipe(menuButtons)
+
+            local sorted = {}
+            if newOptions._order then
+                for _, k in ipairs(newOptions._order) do
+                    if newOptions[k] then
+                        sorted[#sorted + 1] = { key = k, value = newOptions[k] }
+                    end
+                end
+            else
+                for k, v in pairs(newOptions) do
+                    if k ~= "_order" then
+                        sorted[#sorted + 1] = { key = k, value = v }
+                    end
+                end
+                table.sort(sorted, function(a, b) return a.value < b.value end)
+            end
+
+            local menuHeight = 0
+            for i, opt in ipairs(sorted) do
+                local menuBtn = CreateFrame("Button", nil, menuFrame)
+                menuBtn:SetPoint("TOPLEFT", 2, -2 - (i - 1) * 22)
+                menuBtn:SetPoint("TOPRIGHT", -2, -2 - (i - 1) * 22)
+                menuBtn:SetHeight(22)
+
+                menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                menuBtn.Text:SetPoint("LEFT", 8, 0)
+                menuBtn.Text:SetText(opt.value)
+                menuBtn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+                menuBtn.Highlight = menuBtn:CreateTexture(nil, "HIGHLIGHT")
+                menuBtn.Highlight:SetAllPoints()
+                local c = GetThemeColor()
+                menuBtn.Highlight:SetColorTexture(c.r, c.g, c.b, 0.3)
+
+                menuBtn:SetScript("OnClick", function()
+                    setValue(opt.key)
+                    WriteBack()
+                    btn.Text:SetText(opt.value)
+                    menuFrame:Hide()
+                end)
+
+                menuButtons[#menuButtons + 1] = menuBtn
+                menuHeight = menuHeight + 22
+            end
+            menuFrame:SetHeight(menuHeight + 4)
+
+            -- Update displayed text
+            local curVal = getValue()
+            btn.Text:SetText(newOptions[curVal] or tostring(curVal) or "Select...")
+        end
+
+        btn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+        end)
+
+        btn:SetScript("OnClick", function(self)
+            if menuFrame:IsShown() then
+                menuFrame:Hide()
+                currentOpenDropdown = nil
+            else
+                CloseOpenDropdown()
+                -- Highlight current selection
+                local curVal = getValue()
+                local curDisplay = options[curVal]
+                for _, mb in ipairs(menuButtons) do
+                    if mb.Text:GetText() == curDisplay then
+                        mb.Text:SetTextColor(GetThemeColor().r, GetThemeColor().g, GetThemeColor().b)
+                    else
+                        mb.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+                    end
+                end
+                menuFrame:Show()
+                currentOpenDropdown = menuFrame
+            end
+        end)
+
+        -- Expose btn for external enable/disable
+        frame.btn = btn
+        frame:Rebuild(options)
+        return frame
+    end
+
+    -- Build the three dropdowns (forward-declare wrap/dir so orientation callback can reference them)
+    local wrapDD, dirDD
+    local orientDD = BuildMiniDropdown(0, "Orientation", ORIENT_OPTIONS,
+        function() return curOrientation end,
+        function(val)
+            if val ~= curOrientation then
+                -- Map wrap and direction to the new orientation
+                curWrap = ORIENTATION_MAP[curWrap] or curWrap
+                curDirection = (curDirection == "CENTER") and "CENTER" or (ORIENTATION_MAP[curDirection] or curDirection)
+                curOrientation = val
+                -- Rebuild dependent dropdowns with new options
+                wrapDD:Rebuild(WRAP_OPTIONS[curOrientation])
+                dirDD:Rebuild(DIR_OPTIONS[curOrientation])
+            end
+        end
+    )
+
+    wrapDD = BuildMiniDropdown(-50, "Wrap", WRAP_OPTIONS[curOrientation],
+        function() return curWrap end,
+        function(val) curWrap = val end
+    )
+
+    dirDD = BuildMiniDropdown(-100, "Direction", DIR_OPTIONS[curOrientation],
+        function() return curDirection end,
+        function(val) curDirection = val end
+    )
+
+    -- SetEnabled support for disableOn (disable the actual clickable buttons)
+    container.SetEnabled = function(self, enabled)
+        local alpha = enabled and 1.0 or 0.4
+        self:SetAlpha(alpha)
+        orientDD.btn:SetEnabled(enabled)
+        wrapDD.btn:SetEnabled(enabled)
+        dirDD.btn:SetEnabled(enabled)
+    end
+
+    -- Refresh from db (e.g., after profile switch)
+    container.refreshContent = function(self)
+        curOrientation, curWrap, curDirection = DecomposeGrowth(db[dbKey] or "LEFT_UP")
+        orientDD:Rebuild(ORIENT_OPTIONS)
+        wrapDD:Rebuild(WRAP_OPTIONS[curOrientation])
+        dirDD:Rebuild(DIR_OPTIONS[curOrientation])
+    end
+
+    return container
+end
+
+-- ============================================================
 -- TEXTURE DROPDOWN WITH PREVIEW
 -- ============================================================
 
@@ -2521,6 +2770,216 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
         container.searchEntry = DF.Search:RegisterDropdown(label, dbKey, DF:GetFontList(), nil)
     end
     
+    return container
+end
+
+-- ============================================================
+-- SOUND DROPDOWN (Searchable, scrollable — mirrors font dropdown)
+-- ============================================================
+
+function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(260, 50)
+
+    -- Label
+    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lbl:SetPoint("TOPLEFT", 0, 0)
+    lbl:SetText(label)
+    lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+    -- Button
+    local btn = CreateFrame("Button", nil, container, "BackdropTemplate")
+    btn:SetPoint("TOPLEFT", 0, -16)
+    btn:SetPoint("TOPRIGHT", 0, -16)
+    btn:SetHeight(24)
+    CreateElementBackdrop(btn)
+
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text:SetPoint("LEFT", 8, 0)
+    btn.Text:SetPoint("RIGHT", -20, 0)
+    btn.Text:SetJustifyH("LEFT")
+    btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+
+    -- Arrow indicator
+    local arrow = btn:CreateTexture(nil, "OVERLAY")
+    arrow:SetPoint("RIGHT", -8, 0)
+    arrow:SetSize(12, 12)
+    arrow:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\expand_more")
+    arrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+    local function UpdateText()
+        if dbTable and dbKey then
+            local val = dbTable[dbKey]
+            btn.Text:SetText(val or "Select...")
+        end
+    end
+
+    -- Menu frame with scroll
+    local menuFrame = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+    menuFrame:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
+    menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    menuFrame:SetClampedToScreen(true)
+    CreateElementBackdrop(menuFrame)
+    menuFrame:SetBackdropColor(C_PANEL.r, C_PANEL.g, C_PANEL.b, 0.98)
+    menuFrame:Hide()
+
+    -- Search box at top of menu
+    local SEARCH_HEIGHT = 26
+    local searchBox = CreateFrame("EditBox", nil, menuFrame, "BackdropTemplate")
+    searchBox:SetPoint("TOPLEFT", 4, -4)
+    searchBox:SetPoint("TOPRIGHT", -4, -4)
+    searchBox:SetHeight(22)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetTextInsets(24, 8, 0, 0)
+    CreateElementBackdrop(searchBox)
+    searchBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
+
+    -- Search icon
+    local searchIcon = searchBox:CreateTexture(nil, "OVERLAY")
+    searchIcon:SetPoint("LEFT", 6, 0)
+    searchIcon:SetSize(12, 12)
+    searchIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\search")
+    searchIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+
+    -- Placeholder text
+    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    searchPlaceholder:SetPoint("LEFT", 24, 0)
+    searchPlaceholder:SetText("Search sounds...")
+    searchPlaceholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
+
+    searchBox:SetScript("OnEditFocusGained", function() searchPlaceholder:Hide() end)
+    searchBox:SetScript("OnEditFocusLost", function()
+        if searchBox:GetText() == "" then searchPlaceholder:Show() end
+    end)
+
+    menuFrame:SetScript("OnHide", function()
+        if currentOpenDropdown == menuFrame then
+            currentOpenDropdown = nil
+        end
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+        searchPlaceholder:Show()
+    end)
+
+    -- Scroll frame
+    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 2, -(SEARCH_HEIGHT + 4))
+    scrollFrame:SetPoint("BOTTOMRIGHT", -20, 2)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetWidth(234)
+    scrollFrame:SetScrollChild(scrollChild)
+
+    local scrollBar = scrollFrame.ScrollBar
+    if scrollBar then
+        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", -16, -16)
+        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", -16, 16)
+    end
+
+    local menuButtons = {}
+    local ITEM_HEIGHT = 22
+    local MAX_VISIBLE = 10
+
+    local function RebuildMenu(filterText)
+        for _, menuBtn in ipairs(menuButtons) do
+            menuBtn:Hide()
+            menuBtn:SetParent(nil)
+        end
+        wipe(menuButtons)
+
+        local options = DF:GetSoundList()
+        local sortedOptions = {}
+
+        filterText = filterText and filterText:lower() or ""
+
+        for k, v in pairs(options) do
+            if filterText == "" or v:lower():find(filterText, 1, true) then
+                table.insert(sortedOptions, {key = k, value = v})
+            end
+        end
+        table.sort(sortedOptions, function(a, b) return a.value < b.value end)
+
+        local menuHeight = math.min(#sortedOptions, MAX_VISIBLE) * ITEM_HEIGHT + SEARCH_HEIGHT + 8
+        menuFrame:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -2)
+        menuFrame:SetHeight(menuHeight)
+        scrollChild:SetHeight(#sortedOptions * ITEM_HEIGHT)
+
+        if scrollBar then
+            if #sortedOptions <= MAX_VISIBLE then
+                scrollBar:Hide()
+            else
+                scrollBar:Show()
+            end
+        end
+
+        for i, opt in ipairs(sortedOptions) do
+            local menuBtn = CreateFrame("Button", nil, scrollChild)
+            menuBtn:SetSize(234, ITEM_HEIGHT)
+            menuBtn:SetPoint("TOPLEFT", 0, -(i - 1) * ITEM_HEIGHT)
+
+            menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            menuBtn.Text:SetPoint("LEFT", 8, 0)
+            menuBtn.Text:SetPoint("RIGHT", -8, 0)
+            menuBtn.Text:SetJustifyH("LEFT")
+            menuBtn.Text:SetText(opt.value)
+
+            -- Highlight selected item
+            local currentValue = dbTable[dbKey]
+            if currentValue == opt.key then
+                menuBtn.Text:SetTextColor(GetThemeColor().r, GetThemeColor().g, GetThemeColor().b)
+            else
+                menuBtn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+            end
+
+            menuBtn.Highlight = menuBtn:CreateTexture(nil, "HIGHLIGHT")
+            menuBtn.Highlight:SetAllPoints()
+            local c = GetThemeColor()
+            menuBtn.Highlight:SetColorTexture(c.r, c.g, c.b, 0.3)
+
+            menuBtn:SetScript("OnClick", function()
+                dbTable[dbKey] = opt.key
+                UpdateText()
+                menuFrame:Hide()
+                DF:UpdateAll()
+                if callback then callback() end
+            end)
+
+            table.insert(menuButtons, menuBtn)
+        end
+    end
+
+    searchBox:SetScript("OnTextChanged", function(self)
+        RebuildMenu(self:GetText())
+    end)
+
+    searchBox:SetScript("OnEscapePressed", function()
+        menuFrame:Hide()
+    end)
+
+    btn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+    end)
+
+    btn:SetScript("OnClick", function(self)
+        if menuFrame:IsShown() then
+            menuFrame:Hide()
+            currentOpenDropdown = nil
+        else
+            CloseOpenDropdown()
+            RebuildMenu()
+            menuFrame:Show()
+            currentOpenDropdown = menuFrame
+            searchBox:SetFocus()
+        end
+    end)
+
+    btn:SetScript("OnShow", UpdateText)
+    UpdateText()
+
     return container
 end
 
@@ -5417,10 +5876,22 @@ function DF:CreateGUI()
     
     -- PayPal link
     local paypalColor = { r = 0.35, g = 0.65, b = 0.45 }
-    local donateBtn = CreateFooterLink(footer, "Support development", paypalColor,
+    local donateBtn = CreateFooterLink(footer, "Support with PayPal", paypalColor,
         "https://paypal.me/dandersframesaddon", "Support DandersFrames Development")
     donateBtn:SetPoint("LEFT", sep, "RIGHT", 8, 0)
-    
+
+    -- Separator 2
+    local sep2 = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sep2:SetPoint("LEFT", donateBtn, "RIGHT", 8, 0)
+    sep2:SetText("|")
+    sep2:SetTextColor(C_BORDER.r, C_BORDER.g, C_BORDER.b)
+
+    -- Patreon link
+    local patreonColor = { r = 0.90, g = 0.35, b = 0.30 }
+    local patreonBtn = CreateFooterLink(footer, "Support with Patreon", patreonColor,
+        "https://www.patreon.com/DandersFrames", "Support DandersFrames on Patreon")
+    patreonBtn:SetPoint("LEFT", sep2, "RIGHT", 8, 0)
+
     -- Version on the right
     local versionText = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     versionText:SetPoint("RIGHT", footer, "RIGHT", -2, 0)

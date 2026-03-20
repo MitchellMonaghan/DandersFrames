@@ -520,6 +520,36 @@ function DF:GetTextureNameFromPath(texturePath)
     return nil
 end
 
+-- ============================================================
+-- SHARED MEDIA: SOUNDS
+-- ============================================================
+
+function DF:GetSoundList()
+    -- Returns a table of soundName -> soundName for dropdown compatibility
+    local list = {}
+    local LSM = GetLSM()
+    if LSM then
+        local sounds = LSM:List(LSM.MediaType.SOUND)
+        for _, name in ipairs(sounds) do
+            list[name] = name
+        end
+    end
+    return list
+end
+
+function DF:GetSoundPath(soundName)
+    if not soundName then return nil end
+    -- If it looks like a path already, return it
+    if soundName:find("\\") or soundName:find("/") then
+        return soundName
+    end
+    local LSM = GetLSM()
+    if LSM then
+        return LSM:Fetch(LSM.MediaType.SOUND, soundName)
+    end
+    return nil
+end
+
 -- Get font path by name (for SharedMedia compatibility)
 function DF:GetFont(name)
     local LSM = GetLSM()
@@ -828,6 +858,8 @@ DF.PartyDefaults = {
     buffDisableMouse = false,
     buffDurationAnchor = "CENTER",
     buffDurationColorByTime = true,
+    buffDurationHideAboveEnabled = false,
+    buffDurationHideAboveThreshold = 10,
     buffDurationFont = "DF Roboto SemiBold",
     buffDurationOutline = "SHADOW",
     buffDurationScale = 1.2000000476837,
@@ -841,6 +873,7 @@ DF.PartyDefaults = {
     buffExpiringBorderThickness = 2,
     buffExpiringEnabled = true,
     buffExpiringThreshold = 30,
+    buffExpiringThresholdMode = "PERCENT",
     buffExpiringTintColor = {r = 1, g = 0, b = 0.12156863510609, a = 0.46354159712791},
     buffExpiringTintEnabled = false,
     buffFilterCancelable = false,
@@ -957,6 +990,8 @@ DF.PartyDefaults = {
     debuffDisableMouse = false,
     debuffDurationAnchor = "CENTER",
     debuffDurationColorByTime = false,
+    debuffDurationHideAboveEnabled = false,
+    debuffDurationHideAboveThreshold = 10,
     debuffDurationFont = "DF Roboto SemiBold",
     debuffDurationOutline = "SHADOW",
     debuffDurationScale = 1,
@@ -970,6 +1005,7 @@ DF.PartyDefaults = {
     debuffExpiringBorderThickness = 2,
     debuffExpiringEnabled = false,
     debuffExpiringThreshold = 90,
+    debuffExpiringThresholdMode = "PERCENT",
     debuffExpiringTintColor = {r = 1, g = 0.30196079611778, b = 0.30196079611778, a = 0.81119740009308},
     debuffExpiringTintEnabled = true,
     debuffFilterMode = "BLIZZARD",
@@ -1077,6 +1113,7 @@ DF.PartyDefaults = {
     dispelShowIcon = true,
     dispelShowMagic = true,
     dispelShowPoison = true,
+    dispelNameText = false,
     dispellableHighlight = true,
 
     -- External Defensive
@@ -1100,6 +1137,22 @@ DF.PartyDefaults = {
     growDirection = "HORIZONTAL",
     growthAnchor = "CENTER",
     locked = true,
+    permanentMover = false,
+    permanentMoverActionLeft = "OPEN_SETTINGS",
+    permanentMoverActionRight = "SWITCH_PROFILE",
+    permanentMoverActionShiftLeft = "TOGGLE_TEST",
+    permanentMoverActionShiftRight = "SWITCH_CC_PROFILE",
+    permanentMoverAnchor = "RIGHT",
+    permanentMoverAttachTo = "CONTAINER",
+    permanentMoverColor = {r = 0.45, g = 0.45, b = 0.95},
+    permanentMoverCombatColor = {r = 0.8, g = 0.15, b = 0.15},
+    permanentMoverHeight = 60,
+    permanentMoverHideInCombat = false,
+    permanentMoverOffsetX = 20,
+    permanentMoverOffsetY = 0,
+    permanentMoverPullTimerDuration = 10,
+    permanentMoverShowOnHover = false,
+    permanentMoverWidth = 15,
     pixelPerfect = true,
     snapToGrid = true,
 
@@ -1187,6 +1240,7 @@ DF.PartyDefaults = {
     healthTextAnchor = "CENTER",
     healthTextColor = {r = 1, g = 1, b = 1, a = 1},
     healthTextFormat = "CURRENTMAX",
+    healthTextHidePercent = false,
     healthTextOutline = "SHADOW",
     healthTextUseClassColor = false,
     healthTextX = 0,
@@ -1854,6 +1908,7 @@ DF.PartyDefaults = {
         enabled = false,
         spec = "auto",
         previewScale = 1.0,
+        soundEnabled = true,
         defaults = {
             iconSize = 24,
             iconScale = 1.0,
@@ -2025,6 +2080,8 @@ DF.RaidDefaults = {
     buffDisableMouse = false,
     buffDurationAnchor = "CENTER",
     buffDurationColorByTime = true,
+    buffDurationHideAboveEnabled = false,
+    buffDurationHideAboveThreshold = 10,
     buffDurationFont = "DF Roboto SemiBold",
     buffDurationOutline = "SHADOW",
     buffDurationScale = 1.2000000476837,
@@ -2038,6 +2095,7 @@ DF.RaidDefaults = {
     buffExpiringBorderThickness = 2,
     buffExpiringEnabled = true,
     buffExpiringThreshold = 30,
+    buffExpiringThresholdMode = "PERCENT",
     buffExpiringTintColor = {r = 1, g = 0, b = 0.12156863510609, a = 0.46354159712791},
     buffExpiringTintEnabled = false,
     buffFilterCancelable = false,
@@ -2153,6 +2211,8 @@ DF.RaidDefaults = {
     debuffCountdownY = 0,
     debuffDisableMouse = false,
     debuffDurationColorByTime = false,
+    debuffDurationHideAboveEnabled = false,
+    debuffDurationHideAboveThreshold = 10,
     debuffDurationFont = "DF Roboto SemiBold",
     debuffDurationAnchor = "CENTER",
     debuffDurationOutline = "SHADOW",
@@ -2167,6 +2227,7 @@ DF.RaidDefaults = {
     debuffExpiringBorderThickness = 2,
     debuffExpiringEnabled = false,
     debuffExpiringThreshold = 90,
+    debuffExpiringThresholdMode = "PERCENT",
     debuffExpiringTintColor = {r = 1, g = 0.30196079611778, b = 0.30196079611778, a = 0.81119740009308},
     debuffExpiringTintEnabled = true,
     debuffFilterMode = "BLIZZARD",
@@ -2202,8 +2263,8 @@ DF.RaidDefaults = {
     defensiveBarFrameLevel = 0,
     defensiveBarGrowth = "RIGHT_DOWN",
     defensiveBarIconSize = 24,
-    defensiveBarMax = 4,
-    defensiveBarScale = 1.5,
+    defensiveBarMax = 3,
+    defensiveBarScale = 1.0,
     defensiveBarShowDuration = true,
     defensiveBarSpacing = 2,
     defensiveBarWrap = 5,
@@ -2232,7 +2293,7 @@ DF.RaidDefaults = {
     defensiveIconShowBorder = true,
     defensiveIconShowDuration = true,
     defensiveIconShowSwipe = true,
-    defensiveIconSize = 30,
+    defensiveIconSize = 20,
     defensiveIconX = 0,
     defensiveIconY = 0,
 
@@ -2274,6 +2335,7 @@ DF.RaidDefaults = {
     dispelShowIcon = true,
     dispelShowMagic = true,
     dispelShowPoison = true,
+    dispelNameText = false,
     dispellableHighlight = true,
 
     -- External Defensive
@@ -2297,6 +2359,22 @@ DF.RaidDefaults = {
     growDirection = "HORIZONTAL",
     growthAnchor = "CENTER",
     locked = true,
+    permanentMover = false,
+    permanentMoverActionLeft = "OPEN_SETTINGS",
+    permanentMoverActionRight = "SWITCH_PROFILE",
+    permanentMoverActionShiftLeft = "TOGGLE_TEST",
+    permanentMoverActionShiftRight = "SWITCH_CC_PROFILE",
+    permanentMoverAnchor = "RIGHT",
+    permanentMoverAttachTo = "CONTAINER",
+    permanentMoverColor = {r = 0.45, g = 0.45, b = 0.95},
+    permanentMoverCombatColor = {r = 0.8, g = 0.15, b = 0.15},
+    permanentMoverHeight = 60,
+    permanentMoverHideInCombat = false,
+    permanentMoverOffsetX = 20,
+    permanentMoverOffsetY = 0,
+    permanentMoverPullTimerDuration = 10,
+    permanentMoverShowOnHover = false,
+    permanentMoverWidth = 15,
     pixelPerfect = true,
     snapToGrid = true,
 
@@ -2384,6 +2462,7 @@ DF.RaidDefaults = {
     healthTextAnchor = "CENTER",
     healthTextColor = {r = 1, g = 1, b = 1, a = 1},
     healthTextFormat = "CURRENTMAX",
+    healthTextHidePercent = false,
     healthTextOutline = "SHADOW",
     healthTextUseClassColor = false,
     healthTextX = 0,
@@ -3051,6 +3130,7 @@ DF.RaidDefaults = {
         enabled = false,
         spec = "auto",
         previewScale = 1.0,
+        soundEnabled = true,
         defaults = {
             iconSize = 24,
             iconScale = 1.0,

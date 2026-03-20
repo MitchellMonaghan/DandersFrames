@@ -2193,11 +2193,7 @@ end
 
 -- Get unit name in format suitable for caching (handles cross-realm)
 local function GetCacheableName(unit)
-    local name, realm = UnitName(unit)
-    if not name then return nil end
-    if realm and realm ~= "" then
-        return name .. "-" .. realm
-    end
+    local name = GetUnitName(unit, true)  -- returns "Name-Realm" directly, avoids secret string taint
     return name
 end
 
@@ -2385,13 +2381,22 @@ function SecureSort:OnInspectReady(guid)
                     self:PushSpecDataToFrames()
                 end
                 -- Notify FlatRaidFrames to re-sort with updated spec data
+                -- Guard: only re-sort if flat mode is actually active (not grouped mode)
                 if DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
-                    DF.FlatRaidFrames:UpdateNameList()
+                    local rdb = DF:GetRaidDB()
+                    if rdb and not rdb.raidUseGroups then
+                        DF.FlatRaidFrames:UpdateNameList()
+                    else
+                        DF:Debug("FLATRAID", "Skipping UpdateNameList from inspect: grouped mode active")
+                    end
                 end
             else
                 -- Defer FlatRaidFrames re-sort until combat ends
                 if DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
-                    DF.FlatRaidFrames.pendingNameListUpdate = true
+                    local rdb = DF:GetRaidDB()
+                    if rdb and not rdb.raidUseGroups then
+                        DF.FlatRaidFrames.pendingNameListUpdate = true
+                    end
                 end
             end
         end
@@ -5809,13 +5814,19 @@ roleUpdateFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
             -- Notify FlatRaidFrames to re-sort with updated spec data
+            -- Guard: only re-sort if flat mode is actually active (not grouped mode)
             if DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
-                DF.FlatRaidFrames:UpdateNameList()
+                local rdb = DF:GetRaidDB()
+                if rdb and not rdb.raidUseGroups then
+                    DF.FlatRaidFrames:UpdateNameList()
+                else
+                    DF:Debug("FLATRAID", "Skipping UpdateNameList from spec change: grouped mode active")
+                end
             end
         end
         return
     end
-    
+
     -- Handle group roster changes - scan new members for specs
     if event == "GROUP_ROSTER_UPDATE" then
         if not InCombatLockdown() then

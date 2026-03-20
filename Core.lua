@@ -3275,15 +3275,23 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end
 
-        -- Migrate any missing settings from defaults
-        for key, value in pairs(DF.PartyDefaults) do
-            if DF.db.party[key] == nil then
-                DF.db.party[key] = DF:DeepCopy(value)
-            end
-        end
-        for key, value in pairs(DF.RaidDefaults) do
-            if DF.db.raid[key] == nil then
-                DF.db.raid[key] = DF:DeepCopy(value)
+        -- Migrate any missing settings from defaults (all profiles)
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                if profile.party then
+                    for key, value in pairs(DF.PartyDefaults) do
+                        if profile.party[key] == nil then
+                            profile.party[key] = DF:DeepCopy(value)
+                        end
+                    end
+                end
+                if profile.raid then
+                    for key, value in pairs(DF.RaidDefaults) do
+                        if profile.raid[key] == nil then
+                            profile.raid[key] = DF:DeepCopy(value)
+                        end
+                    end
+                end
             end
         end
 
@@ -3680,7 +3688,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Clean up Aura Designer entries for spells removed in the HARF→native transition.
         -- These spells remain secret and can no longer be tracked without HARF.
         local removedAuras = {
-            "TimeDilation", "Rewind", "VerdantEmbrace", "SensePower",
+            "TimeDilation", "Rewind", "VerdantEmbrace",
             "IronBark", "PainSuppression", "PowerInfusion", "GuardianSpirit",
             "LifeCocoon", "StrengthOfTheBlackOx",
             "BlessingOfProtection", "HolyBulwark", "SacredWeapon",
@@ -4426,7 +4434,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if DF.UpdateAuraClickThrough then
             DF:UpdateAuraClickThrough()
         end
-        
+        -- Update permanent mover combat state (color/visibility) — delayed to run
+        -- after any deferred frame refreshes that might reset backdrop colors
+        if DF.UpdatePermanentMoverCombatState then
+            C_Timer.After(0.05, function() DF:UpdatePermanentMoverCombatState() end)
+        end
+
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Track combat state
         DF.playerInCombat = true
@@ -4534,6 +4547,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         if DF.RefreshAllVisibleFrames then
             DF:RefreshAllVisibleFrames()
         end
+        -- Update permanent mover combat state (color/visibility) — delayed to run
+        -- after any deferred frame refreshes that might reset backdrop colors
+        if DF.UpdatePermanentMoverCombatState then
+            C_Timer.After(0.05, function() DF:UpdatePermanentMoverCombatState() end)
+        end
 
     elseif event == "PLAYER_UPDATE_RESTING" then
         -- Update rested indicator on player frame
@@ -4599,6 +4617,16 @@ function DF:UpdateAll()
         -- Editing raid settings (not in test mode), update raid layout
         if DF.UpdateRaidLayout then
             DF:UpdateRaidLayout()
+        end
+    elseif IsInRaid() and not (DF.IsInArena and DF:IsInArena()) then
+        -- In a live raid: update raid layout AND header visibility
+        -- (UpdateHeaderVisibility may also fire from Headers.lua's REGEN handler
+        -- via pendingVisibilityUpdate — that's harmless, the call is idempotent)
+        if DF.UpdateRaidLayout then
+            DF:UpdateRaidLayout()
+        end
+        if DF.UpdateHeaderVisibility then
+            DF:UpdateHeaderVisibility()
         end
     else
         -- Default: update party frames
@@ -4756,7 +4784,10 @@ function DF:FullProfileRefresh()
     -- === REFRESH FLATRAIDFRAMES IF ACTIVE ===
     if DF.FlatRaidFrames then
         if DF.FlatRaidFrames.initialized then
-            DF.FlatRaidFrames:ApplyLayoutSettings()
+            local raidDb = DF:GetRaidDB()
+            if not raidDb.raidUseGroups then
+                DF.FlatRaidFrames:ApplyLayoutSettings()
+            end
         end
     end
     
@@ -4771,9 +4802,13 @@ function DF:FullProfileRefresh()
         end
     end
     
-    -- Update live raid frames if we're in a raid (but NOT arena - arena uses partyContainer)
-    if IsInRaid() and not DF:IsInArena() and DF.UpdateLiveRaidFrames then
-        DF:UpdateLiveRaidFrames()
+    -- === SYNC HEADER VISIBILITY ===
+    -- Replaces the previous UpdateLiveRaidFrames call. Auto profiles may change
+    -- raidUseGroups, which requires toggling between flat and grouped headers.
+    -- UpdateHeaderVisibility handles the full party/raid/arena visibility matrix
+    -- and calls UpdateRaidHeaderVisibility internally.
+    if DF.UpdateHeaderVisibility then
+        DF:UpdateHeaderVisibility()
     end
     
     -- === UPDATE TEST FRAMES IF ACTIVE ===

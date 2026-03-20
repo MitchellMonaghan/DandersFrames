@@ -591,8 +591,9 @@ function DF:UpdateTestFrame(frame, index, applyLayout)
         return tostring(val)
     end
     
+    local pctFmt = db.healthTextHidePercent and "%.0f" or "%.0f%%"
     if format == "PERCENT" then
-        frame.healthText:SetFormattedText("%.0f%%", healthValue * 100)
+        frame.healthText:SetFormattedText(pctFmt, healthValue * 100)
     elseif format == "CURRENT" then
         frame.healthText:SetText(FormatValue(currentHealth))
     elseif format == "CURRENTMAX" then
@@ -606,7 +607,7 @@ function DF:UpdateTestFrame(frame, index, applyLayout)
     elseif format == "NONE" then
         frame.healthText:SetText("")
     else
-        frame.healthText:SetFormattedText("%.0f%%", healthValue * 100)
+        frame.healthText:SetFormattedText(pctFmt, healthValue * 100)
     end
     
     -- Update name
@@ -3667,6 +3668,12 @@ function DF:ShowTestFrames(silent)
     if not silent then
         print("|cff00ff00DandersFrames:|r Test mode enabled.")
     end
+
+    -- Update permanent mover for party test mode
+    C_Timer.After(0.1, function()
+        DF:UpdatePermanentMoverVisibility()
+        DF:UpdatePermanentMoverAnchor("party")
+    end)
 end
 
 -- Refresh all test frames (call this when settings change in test mode)
@@ -3878,6 +3885,14 @@ function DF:RefreshTestFramesWithLayout()
     if DF.testMode or DF.raidTestMode then
         DF:UpdateAllTestHighlights()
     end
+
+    -- Re-anchor permanent mover to updated test frames
+    if DF.testMode then
+        DF:UpdatePermanentMoverAnchor("party")
+    end
+    if DF.raidTestMode then
+        DF:UpdatePermanentMoverAnchor("raid")
+    end
 end
 
 -- Throttled layout refresh for slider changes (avoids flickering)
@@ -3980,6 +3995,12 @@ function DF:HideTestFrames(silent)
     if not silent then
         print("|cff00ff00DandersFrames:|r Test mode disabled.")
     end
+
+    -- Update permanent mover after exiting party test mode
+    C_Timer.After(0.1, function()
+        DF:UpdatePermanentMoverVisibility()
+        DF:UpdatePermanentMoverAnchor("party")
+    end)
 end
 
 -- Toggle test mode (mode-aware based on GUI.SelectedMode)
@@ -4013,7 +4034,7 @@ function DF:ToggleTestMode()
             print("|cffff9900DandersFrames:|r Cannot disable test mode while frames are unlocked. Lock frames first.")
             return
         end
-        
+
         -- Toggle party test mode
         if DF.testMode then
             DF:HideTestFrames()
@@ -4110,6 +4131,12 @@ function DF:ShowRaidTestFrames()
     if DF.GUI and DF.GUI.UpdateThemeColors then
         DF.GUI.UpdateThemeColors()
     end
+
+    -- Update permanent mover for raid test mode
+    C_Timer.After(0.1, function()
+        DF:UpdatePermanentMoverVisibility()
+        DF:UpdatePermanentMoverAnchor("raid")
+    end)
 end
 
 -- Hide raid test frames
@@ -4200,6 +4227,12 @@ function DF:HideRaidTestFrames()
     if DF.GUI and DF.GUI.UpdateThemeColors then
         DF.GUI.UpdateThemeColors()
     end
+
+    -- Update permanent mover after exiting raid test mode
+    C_Timer.After(0.1, function()
+        DF:UpdatePermanentMoverVisibility()
+        DF:UpdatePermanentMoverAnchor("party")
+    end)
 end
 
 -- Update raid test frames with test data
@@ -5234,8 +5267,8 @@ function DF:UpdateTestDefensiveBar(frame, testData)
         secondary = secondary or "DOWN"
 
         local scaledSize = iconSize * scale
-        local primaryX, primaryY = GetTestDefGrowthOffset(primary, scaledSize, spacing)
-        local secondaryX, secondaryY = GetTestDefGrowthOffset(secondary, scaledSize, spacing)
+        local primaryX, primaryY = GetTestDefGrowthOffset(primary, iconSize, spacing)
+        local secondaryX, secondaryY = GetTestDefGrowthOffset(secondary, iconSize, spacing)
 
         -- Render each test defensive icon
         for i = 1, numDefs do
@@ -5285,9 +5318,9 @@ function DF:UpdateTestDefensiveBar(frame, testData)
                         local col = math.floor(idx / wrap)
                         local row = idx % wrap
                         local iconsInCol = math.min(wrap, numDefs - (col * wrap))
-                        local centerOffset = (iconsInCol - 1) * (scaledSize + spacing) / 2
+                        local centerOffset = (iconsInCol - 1) * (iconSize + spacing) / 2
                         local x = baseX + (col * secX)
-                        local y = baseY - (row * (scaledSize + spacing)) + centerOffset
+                        local y = baseY - (row * (iconSize + spacing)) + centerOffset
                         icon:ClearAllPoints()
                         icon:SetPoint(anchor, frame, anchor, x, y)
                     end
@@ -5302,8 +5335,8 @@ function DF:UpdateTestDefensiveBar(frame, testData)
                         local row = math.floor(idx / wrap)
                         local col = idx % wrap
                         local iconsInRow = math.min(wrap, numDefs - (row * wrap))
-                        local centerOffset = (iconsInRow - 1) * (scaledSize + spacing) / 2
-                        local x = baseX + (col * (scaledSize + spacing)) - centerOffset
+                        local centerOffset = (iconsInRow - 1) * (iconSize + spacing) / 2
+                        local x = baseX + (col * (iconSize + spacing)) - centerOffset
                         local y = baseY + (row * secY)
                         icon:ClearAllPoints()
                         icon:SetPoint(anchor, frame, anchor, x, y)
@@ -6530,6 +6563,10 @@ function DF:CreateTestPanel()
             DF:ThrottledUpdateAll()
             if not DF.sliderDragging and DF.UpdateAllPetFrames then DF:UpdateAllPetFrames(true) end
         end
+        -- Re-anchor permanent mover when frame count changes
+        C_Timer.After(0.1, function()
+            DF:UpdatePermanentMoverAnchor(isRaidMode and "raid" or "party")
+        end)
     end)
     panel.frameCountSlider = frameCountSlider
     secGeneral:AddWidget(fcRow, 28)

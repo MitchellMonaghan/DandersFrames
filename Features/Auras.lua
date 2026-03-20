@@ -133,26 +133,37 @@ auraTimerGroup:SetScript("OnLoop", function()
             iconsByFrameType[frameType] = iconsByFrameType[frameType] + 1
             -- Check if features are enabled
             local needsDurationColor = icon.showDuration and icon.durationColorByTime
+            local needsDurationHide = icon.showDuration and icon.durationHideAboveEnabled
             local needsExpiring = icon.expiringEnabled
-            
-            if needsDurationColor or needsExpiring then
+
+            if needsDurationColor or needsDurationHide or needsExpiring then
                 local unit = icon.unitFrame and icon.unitFrame.unit
                 local auraInstanceID = icon.auraData.auraInstanceID
                 
                 if unit and auraInstanceID then
-                    -- Get hasExpiration
+                    -- Get hasExpiration as a secret boolean — ONLY for use with
+                    -- secret-aware APIs (SetAlphaFromBoolean, SetShownFromBoolean).
+                    -- Secret values CANNOT be tested with if/else/~=nil in Lua.
                     local hasExpiration = nil
                     if C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime then
                         hasExpiration = C_UnitAuras.DoesAuraHaveExpirationTime(unit, auraInstanceID)
                     end
-                    
-                    if hasExpiration ~= nil then
+
+                    do
                         -- Find native cooldown text if needed (safety net — rendering function usually discovers first)
                         if not icon.nativeCooldownText and icon.cooldown then
                             local regions = {icon.cooldown:GetRegions()}
                             for _, region in pairs(regions) do
                                 if region and region.GetObjectType and region:GetObjectType() == "FontString" then
                                     icon.nativeCooldownText = region
+                                    -- Create wrapper for hide-above-threshold alpha control
+                                    if not icon.durationHideWrapper then
+                                        icon.durationHideWrapper = CreateFrame("Frame", nil, icon.cooldown)
+                                        icon.durationHideWrapper:SetAllPoints(icon)
+                                        icon.durationHideWrapper:SetFrameLevel(icon.cooldown:GetFrameLevel() + 2)
+                                        icon.durationHideWrapper:EnableMouse(false)
+                                        region:SetParent(icon.durationHideWrapper)
+                                    end
                                     break
                                 end
                             end
@@ -181,7 +192,8 @@ auraTimerGroup:SetScript("OnLoop", function()
                             
                             local useNewAPI = durationObj and durationObj.EvaluateRemainingDuration
                             
-                            -- Duration color
+                            -- Duration color — pipe curve result directly to SetTextColor
+                            -- No intermediate locals to avoid secret value comparisons
                             if needsDurationColor and icon.nativeCooldownText and useNewAPI then
                                 if C_CurveUtil and C_CurveUtil.CreateColorCurve then
                                     if not DF.durationColorCurve then
@@ -193,14 +205,37 @@ auraTimerGroup:SetScript("OnLoop", function()
                                         curve:AddPoint(1, CreateColor(0, 1, 0, 1))
                                         DF.durationColorCurve = curve
                                     end
-                                    
+
                                     local result = durationObj:EvaluateRemainingPercent(DF.durationColorCurve)
-                                    if result then
-                                        if result.GetRGB then
-                                            local r, g, b = result:GetRGB()
-                                            icon.nativeCooldownText:SetTextColor(r, g, b, 1)
-                                        elseif result.r then
-                                            icon.nativeCooldownText:SetTextColor(result.r, result.g, result.b, 1)
+                                    if result and result.GetRGBA then
+                                        icon.nativeCooldownText:SetTextColor(result:GetRGBA())
+                                    end
+                                end
+                            end
+
+                            -- Duration hide above threshold — use SetAlphaFromBoolean on wrapper
+                            -- The wrapper frame controls visibility of the native cooldown text
+                            -- Curve alpha is secret, so pass through SetAlphaFromBoolean with
+                            -- hasExpiration as the gate (permanent buffs hidden by cooldown already)
+                            if needsDurationHide and icon.nativeCooldownText and useNewAPI and icon.durationHideWrapper then
+                                local threshold = icon.durationHideAboveThreshold or 10
+                                if C_CurveUtil and C_CurveUtil.CreateColorCurve then
+                                    DF.durationHideCurves = DF.durationHideCurves or {}
+                                    if not DF.durationHideCurves[threshold] then
+                                        local curve = C_CurveUtil.CreateColorCurve()
+                                        curve:SetType(Enum.LuaCurveType.Step)
+                                        curve:AddPoint(0, CreateColor(1, 1, 1, 1))
+                                        curve:AddPoint(threshold, CreateColor(1, 1, 1, 0))
+                                        curve:AddPoint(600, CreateColor(1, 1, 1, 0))
+                                        DF.durationHideCurves[threshold] = curve
+                                    end
+
+                                    if durationObj.EvaluateRemainingDuration then
+                                        local hideResult = durationObj:EvaluateRemainingDuration(DF.durationHideCurves[threshold])
+                                        -- hideResult is a ColorMixin (has GetRGBA, not GetAlpha)
+                                        -- Extract alpha via select(4, GetRGBA()) and pipe to SetAlphaFromBoolean
+                                        if hideResult and hideResult.GetRGBA and icon.durationHideWrapper.SetAlphaFromBoolean then
+                                            icon.durationHideWrapper:SetAlphaFromBoolean(hasExpiration, select(4, hideResult:GetRGBA()), 0)
                                         end
                                     end
                                 end
@@ -209,28 +244,38 @@ auraTimerGroup:SetScript("OnLoop", function()
                             -- Expiring indicators
                             if not icon.testAuraData and needsExpiring and useNewAPI then
                                 local threshold = icon.expiringThreshold or 30
-                                local thresholdDecimal = threshold / 100
-                                
+                                local useSeconds = icon.expiringThresholdMode == "SECONDS"
+
                                 if C_CurveUtil and C_CurveUtil.CreateColorCurve then
                                     DF.expiringCurves = DF.expiringCurves or {}
-                                    if not DF.expiringCurves[threshold] then
+                                    local cacheKey = (useSeconds and "s" or "p") .. threshold
+                                    if not DF.expiringCurves[cacheKey] then
                                         local curve = C_CurveUtil.CreateColorCurve()
                                         curve:SetType(Enum.LuaCurveType.Step)
-                                        curve:AddPoint(0, CreateColor(1, 1, 1, 1))
-                                        curve:AddPoint(thresholdDecimal, CreateColor(0, 0, 0, 0))
-                                        curve:AddPoint(1, CreateColor(0, 0, 0, 0))
-                                        DF.expiringCurves[threshold] = curve
+                                        if useSeconds then
+                                            curve:AddPoint(0, CreateColor(1, 1, 1, 1))
+                                            curve:AddPoint(threshold, CreateColor(0, 0, 0, 0))
+                                            curve:AddPoint(600, CreateColor(0, 0, 0, 0))
+                                        else
+                                            local thresholdDecimal = threshold / 100
+                                            curve:AddPoint(0, CreateColor(1, 1, 1, 1))
+                                            curve:AddPoint(thresholdDecimal, CreateColor(0, 0, 0, 0))
+                                            curve:AddPoint(1, CreateColor(0, 0, 0, 0))
+                                        end
+                                        DF.expiringCurves[cacheKey] = curve
+                                    end
+
+                                    local expireResult
+                                    if useSeconds and durationObj.EvaluateRemainingDuration then
+                                        -- EvaluateRemainingDuration handles non-expiring auras safely
+                                        -- (their cooldown is hidden via SetShownFromBoolean)
+                                        expireResult = durationObj:EvaluateRemainingDuration(DF.expiringCurves[cacheKey])
+                                    else
+                                        expireResult = durationObj:EvaluateRemainingPercent(DF.expiringCurves[cacheKey])
                                     end
                                     
-                                    local expireResult = durationObj:EvaluateRemainingPercent(DF.expiringCurves[threshold])
-                                    
-                                    if expireResult then
-                                        local expiringAlpha = 0
-                                        if expireResult.GetAlpha then
-                                            expiringAlpha = expireResult:GetAlpha()
-                                        elseif expireResult.a ~= nil then
-                                            expiringAlpha = expireResult.a
-                                        end
+                                    if expireResult and expireResult.GetRGBA then
+                                        local expiringAlpha = select(4, expireResult:GetRGBA())
                                         
                                         -- Tint
                                         if icon.expiringTint and icon.expiringTintEnabled then
@@ -266,19 +311,11 @@ auraTimerGroup:SetScript("OnLoop", function()
                                                 end
                                                 
                                                 local colorResult = durationObj:EvaluateRemainingPercent(DF.expiringBorderColorCurve)
-                                                if colorResult and icon.expiringBorderTop then
-                                                    if colorResult.GetRGBA then
-                                                        local r, g, b, a = colorResult:GetRGBA()
-                                                        icon.expiringBorderTop:SetColorTexture(r, g, b, a)
-                                                        icon.expiringBorderBottom:SetColorTexture(r, g, b, a)
-                                                        icon.expiringBorderLeft:SetColorTexture(r, g, b, a)
-                                                        icon.expiringBorderRight:SetColorTexture(r, g, b, a)
-                                                    elseif colorResult.r then
-                                                        icon.expiringBorderTop:SetColorTexture(colorResult.r, colorResult.g, colorResult.b, colorResult.a or 1)
-                                                        icon.expiringBorderBottom:SetColorTexture(colorResult.r, colorResult.g, colorResult.b, colorResult.a or 1)
-                                                        icon.expiringBorderLeft:SetColorTexture(colorResult.r, colorResult.g, colorResult.b, colorResult.a or 1)
-                                                        icon.expiringBorderRight:SetColorTexture(colorResult.r, colorResult.g, colorResult.b, colorResult.a or 1)
-                                                    end
+                                                if colorResult and colorResult.GetRGBA and icon.expiringBorderTop then
+                                                    icon.expiringBorderTop:SetColorTexture(colorResult:GetRGBA())
+                                                    icon.expiringBorderBottom:SetColorTexture(colorResult:GetRGBA())
+                                                    icon.expiringBorderLeft:SetColorTexture(colorResult:GetRGBA())
+                                                    icon.expiringBorderRight:SetColorTexture(colorResult:GetRGBA())
                                                 end
                                             else
                                                 if icon.expiringBorderAlphaContainer.SetAlphaFromBoolean then
@@ -467,9 +504,12 @@ local function TriggerAuraUpdateForUnit(unit)
     -- Also update pinned frames showing this unit
     -- (Pinned frames share units with main frames but are excluded from unitFrameMap)
     if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.headers then
+        local pinnedDB = DF.db and DF.db[IsInRaid() and "raid" or "party"]
+        pinnedDB = pinnedDB and pinnedDB.pinnedFrames
         for setIndex = 1, 2 do
             local header = DF.PinnedFrames.headers[setIndex]
-            if header and header:IsShown() then
+            local set = pinnedDB and pinnedDB.sets and pinnedDB.sets[setIndex]
+            if header and header:IsShown() and set and set.enabled then
                 for i = 1, 40 do
                     local child = header:GetAttribute("child" .. i)
                     if child and child:IsVisible() and child.unit == unit then
@@ -1479,7 +1519,7 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
             local unitDeadOrOffline = UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)
             
             -- Set border color (normal border, not expiring) - only if we control borders
-            local borderEnabled = auraType == "DEBUFF" and db.debuffBorderEnabled ~= false or db.buffBorderEnabled ~= false
+            local borderEnabled = (auraType == "DEBUFF" and db.debuffBorderEnabled ~= false) or (auraType ~= "DEBUFF" and db.buffBorderEnabled ~= false)
             if borderEnabled and not masqueBorderControl then
                 if auraType == "DEBUFF" and not unitDeadOrOffline then
                     -- Use custom dispel type colors if enabled, via color curve API
@@ -1563,9 +1603,18 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
                             DF:SafeSetFont(region, durationFont, durationSize, durationOutline)
                         end
 
-                        -- Keep native text as child of cooldown (NOT reparented)
-                        -- When cooldown is hidden for permanent buffs, the text hides automatically as a child
-                        -- Position it where the user configured (ClearAllPoints works across parents)
+                        -- Create wrapper frame for parent-level alpha control (hide duration above threshold).
+                        -- Blizzard's CooldownFrame resets both SetTextColor alpha and SetAlpha on its
+                        -- FontString every frame, so the only reliable hide is via a parent frame's alpha.
+                        if not icon.durationHideWrapper then
+                            icon.durationHideWrapper = CreateFrame("Frame", nil, icon.cooldown)
+                            icon.durationHideWrapper:SetAllPoints(icon)
+                            icon.durationHideWrapper:SetFrameLevel(icon.cooldown:GetFrameLevel() + 2)
+                            icon.durationHideWrapper:EnableMouse(false)
+                        end
+                        region:SetParent(icon.durationHideWrapper)
+
+                        -- Position it where the user configured
                         region:ClearAllPoints()
                         region:SetPoint(durationAnchor, icon, durationAnchor, durationX, durationY)
 
@@ -1700,7 +1749,7 @@ function DF:UpdateAuraIconsDirect(frame, icons, auraType, maxAuras)
     local masqueBorderControl = db.masqueBorderControl and DF.Masque and masqueActive
 
     -- Pre-fetch: border enabled (once per call)
-    local borderEnabled = auraType == "DEBUFF" and db.debuffBorderEnabled ~= false or db.buffBorderEnabled ~= false
+    local borderEnabled = (auraType == "DEBUFF" and db.debuffBorderEnabled ~= false) or (auraType ~= "DEBUFF" and db.buffBorderEnabled ~= false)
 
     -- Pre-fetch: dead/offline state (once per call, not per icon)
     local unitDeadOrOffline = UnitIsDeadOrGhost(unit) or not UnitIsConnected(unit)
@@ -1913,8 +1962,15 @@ function DF:UpdateAuraIconsDirect(frame, icons, auraType, maxAuras)
                                     DF:SafeSetFont(region, durationFont, durationSize, durationOutline)
                                 end
 
-                                -- Keep native text as child of cooldown (NOT reparented)
-                                -- When cooldown is hidden for permanent buffs, the text hides automatically
+                                -- Create wrapper frame for parent-level alpha control (hide duration above threshold)
+                                if not icon.durationHideWrapper then
+                                    icon.durationHideWrapper = CreateFrame("Frame", nil, icon.cooldown)
+                                    icon.durationHideWrapper:SetAllPoints(icon)
+                                    icon.durationHideWrapper:SetFrameLevel(icon.cooldown:GetFrameLevel() + 2)
+                                    icon.durationHideWrapper:EnableMouse(false)
+                                end
+                                region:SetParent(icon.durationHideWrapper)
+
                                 region:ClearAllPoints()
                                 region:SetPoint(durationAnchor, icon, durationAnchor, durationX, durationY)
 

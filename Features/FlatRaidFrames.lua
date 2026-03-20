@@ -483,6 +483,7 @@ function FlatRaidFrames:CreateFrames()
         if child then
             childCount = childCount + 1
             child:SetSize(frameWidth, frameHeight)
+            child.isRaidFrame = true
         end
     end
     DebugPrint("Created", childCount, "child frames, sized to", frameWidth, "x", frameHeight)
@@ -682,11 +683,13 @@ function FlatRaidFrames:ApplyLayoutSettings(skipRefresh)
         header:SetAttribute("groupBy", nil)
         header:SetAttribute("nameList", "")
         
-        -- Step 2: Clear all child positions
+        -- Step 2: Clear all child positions and sync isRaidFrame flag
+        -- Always true: these are structurally raid children regardless of IsInRaid() state
         for i = 1, 40 do
             local child = header:GetAttribute("child" .. i)
             if child then
                 child:ClearAllPoints()
+                child.isRaidFrame = true
             end
         end
         
@@ -731,11 +734,12 @@ function FlatRaidFrames:RefreshLayout()
     
     DebugPrint("RefreshLayout - resizing children and toggling startingIndex")
     
-    -- FIRST: Resize all child frames (needed for proper positioning)
+    -- FIRST: Resize all child frames and sync isRaidFrame flag (needed for proper positioning)
     for i = 1, 40 do
         local child = header:GetAttribute("child" .. i)
         if child then
             child:SetSize(frameWidth, frameHeight)
+            child.isRaidFrame = true
         end
     end
     
@@ -754,6 +758,7 @@ end
 -- it expands symmetrically from its center point
 function FlatRaidFrames:ResizeInnerContainer()
     if not self.innerContainer or not self.header then return end
+    DF:Debug("FLATRAID", "ResizeInnerContainer: recalculating")
     
     local db = GetRaidDB()
     if not db then return end
@@ -794,13 +799,18 @@ function FlatRaidFrames:ResizeInnerContainer()
     end
     
     self.innerContainer:SetSize(width, height)
-    DebugPrint("ResizeInnerContainer:", width, "x", height, "(", visibleCount, "frames)")
+    DF:Debug("FLATRAID", "ResizeInnerContainer: %dx%d (%d visible, %d rows, %d cols)", width, height, visibleCount, rows, cols)
     
-    -- Also update raidContainer and mover to max possible size
-    self:UpdateContainerSize()
-    
-    -- Sync mover frame to match the active container size
-    DF:SyncRaidMoverToContainer()
+    -- Only resize the shared raidContainer if flat mode is actually active
+    -- In grouped mode, the position handler manages container sizing — FlatRaid
+    -- must NOT touch it or grouped headers will jump to wrong positions
+    local rdb = GetRaidDB()
+    if rdb and not rdb.raidUseGroups then
+        self:UpdateContainerSize()
+        DF:SyncRaidMoverToContainer()
+    else
+        DF:Debug("FLATRAID", "ResizeInnerContainer: SKIPPING container resize (grouped mode active)")
+    end
 end
 
 -- Update container size based on layout settings
@@ -828,7 +838,12 @@ function FlatRaidFrames:UpdateContainerSize()
         containerHeight = unitsPerRow * frameHeight + (unitsPerRow - 1) * vSpacing
     end
     
+    local oldW, oldH = DF.raidContainer:GetSize()
     DF.raidContainer:SetSize(containerWidth, containerHeight)
+    DF:Debug("FLATRAID", "UpdateContainerSize: %dx%d -> %dx%d (raidUseGroups=%s)",
+        math.floor(oldW + 0.5), math.floor(oldH + 0.5),
+        math.floor(containerWidth + 0.5), math.floor(containerHeight + 0.5),
+        tostring(db.raidUseGroups))
     DebugPrint("Container size:", containerWidth, "x", containerHeight)
 end
 
@@ -844,11 +859,20 @@ function FlatRaidFrames:UpdateSorting()
         return
     end
 
-    if InCombatLockdown() then
-        self.pendingNameListUpdate = true
-        DebugPrint("Sorting update deferred (combat)")
+    -- Safety: bail out if grouped mode is active — FlatRaid should not be sorting
+    local rdb = GetRaidDB()
+    if rdb and rdb.raidUseGroups then
+        DF:Debug("FLATRAID", "UpdateSorting: BLOCKED (grouped mode active, raidUseGroups=true)")
         return
     end
+
+    if InCombatLockdown() then
+        self.pendingNameListUpdate = true
+        DF:Debug("FLATRAID", "UpdateSorting: deferred (combat lockdown)")
+        return
+    end
+
+    DF:Debug("FLATRAID", "UpdateSorting: starting")
 
     local db = GetRaidDB()
     if not db then return end
@@ -1016,8 +1040,28 @@ function FlatRaidFrames:SetEnabled(enabled)
     end
     
     local header = self.header
-    
+
     if enabled then
+        -- When already visible, only refresh child sizes and isRaidFrame flag
+        -- (skip the heavy Hide/Show + UpdateNameList cycle to avoid double-work
+        -- since ApplyRaidFlatSorting will follow from ProcessRosterUpdate).
+        if header:IsShown() and self.innerContainer and self.innerContainer:IsShown() then
+            DF:Debug("FLATRAID", "SetEnabled(true): already visible, refreshing child sizes only")
+            local db = GetRaidDB()
+            local frameWidth = db and db.frameWidth or 80
+            local frameHeight = db and db.frameHeight or 40
+            for i = 1, 40 do
+                local child = header:GetAttribute("child" .. i)
+                if child then
+                    child:SetSize(frameWidth, frameHeight)
+                    child.isRaidFrame = true
+                end
+            end
+            return
+        end
+
+        DF:Debug("FLATRAID", "SetEnabled(true): performing full setup")
+
         -- CRITICAL: Hide separated headers (group-based layout) when enabling flat mode
         -- This prevents having two sets of frames visible
         if DF.raidSeparatedHeaders then
@@ -1031,18 +1075,20 @@ function FlatRaidFrames:SetEnabled(enabled)
                 end
             end
         end
-        
+
         -- 1. Apply layout attributes (skip 4-step refresh - UpdateNameList rebuilds below)
         self:ApplyLayoutSettings(true)
         
-        -- 2. Ensure child frame sizes are correct BEFORE refresh
+        -- 2. Ensure child frame sizes and isRaidFrame flag are correct BEFORE refresh
         local db = GetRaidDB()
         local frameWidth = db and db.frameWidth or 80
         local frameHeight = db and db.frameHeight or 40
+        -- Always true: these are structurally raid children regardless of IsInRaid() state
         for i = 1, 40 do
             local child = header:GetAttribute("child" .. i)
             if child then
                 child:SetSize(frameWidth, frameHeight)
+                child.isRaidFrame = true
             end
         end
         
@@ -1068,18 +1114,36 @@ function FlatRaidFrames:SetEnabled(enabled)
         
         -- 7. Delayed resize to ensure proper positioning after frames become visible
         -- SecureGroupHeaderTemplate may not immediately show children after nameList update
+        -- If combat starts before the timer fires, queue for PLAYER_REGEN_ENABLED
         C_Timer.After(0.1, function()
-            if self.header and self.header:IsShown() and not InCombatLockdown() then
-                self:ResizeInnerContainer()
+            if self.header and self.header:IsShown() then
+                if not InCombatLockdown() then
+                    self:ResizeInnerContainer()
+                else
+                    self.pendingResize = true
+                end
             end
         end)
     else
+        DF:Debug("FLATRAID", "SetEnabled(false): hiding flat raid frames")
         header:Hide()
         if self.innerContainer then
             self.innerContainer:Hide()
         end
         if DF.SetHeaderChildrenEventsEnabled then
             DF:SetHeaderChildrenEventsEnabled(header, false)
+        end
+
+        -- When flat frames are disabled and grouped mode is active, ensure
+        -- separated headers are visible. This handles the deferred-from-combat
+        -- case where the original "show separated" call ran while flat was
+        -- still visible. Guard on raidUseGroups to prevent infinite loop
+        -- (when raidUseGroups=false, UpdateRaidHeaderVisibility would call
+        -- SetEnabled(true), but we only call it when raidUseGroups=true).
+        local db = GetRaidDB()
+        if db and db.raidUseGroups and DF.UpdateRaidHeaderVisibility
+                and IsInRaid() and not InCombatLockdown() then
+            DF:UpdateRaidHeaderVisibility()
         end
     end
 end
@@ -1152,10 +1216,12 @@ end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("ROLE_CHANGED_INFORM")
-eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+-- NOTE: GROUP_ROSTER_UPDATE, ROLE_CHANGED_INFORM, and PLAYER_SPECIALIZATION_CHANGED
+-- are NOT registered here. Roster changes are handled by ProcessRosterUpdate() in Headers.lua
+-- which calls ApplyRaidFlatSorting() -> UpdateNameList(). Handling them here too caused
+-- a double-update: once immediately from this handler, and once on the next frame from
+-- the throttled ProcessRosterUpdate, making frames visibly jump on every roster change.
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     -- ============================================================
@@ -1230,18 +1296,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
             FlatRaidFrames:SetEnabled(FlatRaidFrames.pendingVisibility)
             FlatRaidFrames.pendingVisibility = nil
         end
+
+        if FlatRaidFrames.pendingResize then
+            FlatRaidFrames.pendingResize = false
+            if FlatRaidFrames.header and FlatRaidFrames.header:IsShown() then
+                FlatRaidFrames:ResizeInnerContainer()
+            end
+        end
         return
     end
     
-    -- ============================================================
-    -- GROUP_ROSTER_UPDATE, ROLE_CHANGED_INFORM, PLAYER_SPECIALIZATION_CHANGED
-    -- ============================================================
-    if not DF.db or not FlatRaidFrames.initialized then
-        return
-    end
-    if not ShouldBeActive() then return end
-    
-    FlatRaidFrames:UpdateNameList()
 end)
 
 -- ============================================================

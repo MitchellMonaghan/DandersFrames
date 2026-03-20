@@ -1,8 +1,89 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-03-11T23:30:25Z"
+DF.BUILD_DATE = "2026-03-20T15:16:39Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [4.1.3] - 2026-03-17
+
+### New Features
+* (Aura Designer) **Show When Missing** — per-indicator toggle that inverts visibility: shows the indicator when the aura is absent, hides when present. Supports all indicator types except bars. Icons support a "Desaturate When Missing" sub-option.
+* (Aura Designer) **Show When Missing + Expiring** — when both are enabled, the indicator stays hidden while the buff is active, appears during the expiring window, then shows with normal appearance once the buff drops off
+* (Auras) **Growth Direction Control** — replaced the single growth dropdown with a three-part control (Orientation, Wrap, Direction) for clearer configuration
+* (Aura Designer) **Sound Alerts** — per-indicator sound alerts that play when an aura appears, expires, or is missing. Supports all LibSharedMedia sounds, adjustable volume, loop/one-shot modes, and a global "Mute All Sound Alerts" toggle in the Aura Designer banner. Includes a searchable sound dropdown picker.
+
+### Bug Fixes
+* (Raid Frames) **Major fix** for raid frames jumping/shifting position when players join, leave, or when loading into LFR/BGs — completely reworked the reposition pipeline to batch all updates into a single authoritative reposition, with a settling debounce for instance loading
+* (Flat Raid Frames) Fixed flat raid frames flickering between party and raid settings during group transitions
+* (Flat Raid Frames) Fixed flat raid frame positioning breaking after layout or roster changes
+* (Position) Fixed mover handles for both party and raid staying visible after switching group type
+* (Auto Layouts) Fixed several issues with switching between flat and grouped layouts — duplicate frames, hidden groups reappearing after combat, and layout not updating after mid-fight settings changes
+* (Aura Designer) Fixed grouped layout preview not rendering correctly after the growth direction overhaul — indicators were stacking on top of each other instead of spreading out
+* (Aura Designer) Fixed custom border indicators not showing on the frame preview
+* (Aura Designer) Fixed indicators appearing on disabled pinned frames
+* (Aura Designer) Fixed several Show When Missing visual issues — out-of-range alpha, transparent frames, stale duration text, pulsate animation not stopping, and indicators not appearing in test mode
+* (Sound Alerts) Fixed sound engine not finding raid frames when using flat layout
+* (Sound Alerts) Sound-only auras now correctly tracked for buff bar dedup
+* (Sorting) Fixed secret string taint in cross-realm name caching
+
+### Improvements
+* (Debug Console) Added comprehensive debug logging across roster updates, header visibility, flat raid operations, frame positioning, and frame layout — helps diagnose frame issues in the field
+
+## [4.1.2] - 2026-03-16
+
+### New Features
+* (Health Text) **Hide % Symbol** — new checkbox to remove the percent sign from health percentage text
+* (Pinned Frames) **Growth direction anchoring** — Frame Growth and Column Growth now support Start, Center, and End options, controlling which edge stays fixed as frames are added (e.g. "Start" grows rightward/downward, "End" grows leftward/upward)
+* (Pinned Frames) **Reset Position button** — resets a pinned frame set to the center of the screen if it gets lost off-screen
+
+> **Note:** Pinned frame positions may have shifted slightly due to the new anchoring system. Use the Reset Position button or reposition frames if needed.
+
+### Bug Fixes
+* (Auras) Fixed buff/debuff borders staying visible even when disabled — operator precedence bug caused the buff border check to fire regardless of aura type
+* (Aura Designer) Fixed stack count text bleeding onto adjacent icons when auras reorder in a layout group
+* (Defensive Icons) Fixed 2nd+ defensive bar icons always showing tooltip and ignoring tooltip settings, anchor position, and click-through configuration
+* (Resource Bar) Fixed resource bar being 2px too wide when "Match Width" is enabled and a frame border is active
+* (Status Icons) Fixed leader icon not hiding in combat when "Hide in Combat" is enabled
+* (Pinned Frames) Fixed error when OnDragStop fires without a matching OnDragStart on pinned frame movers
+
+## [4.1.1] - 2026-03-15
+
+### Bug Fixes
+* (Position) Lowered permanent mover frame strata from HIGH to MEDIUM so it no longer covers other UI elements
+* (Defensive Icons) Fixed double-scaled positioning offsets causing defensive icons to stack vertically instead of horizontally
+* (Defensive Icons) Reduced raid frame defensive icon defaults (size 20, scale 1.0, max 3) to fit narrower raid frames
+* (Pinned Frames) Fixed aura designer indicators (borders, defensives, dispels) leaking onto disabled pinned frame sets
+* (Aura Designer) Fixed border indicator pandemic state using the regular border alpha instead of the configured expiring alpha
+* (Aura Designer) Declassified Beacon of Virtue as non-secret — spell ID 200025 is on Blizzard's whitelist and readable via standard API
+
+## [4.1.0] - 2026-03-14
+
+### New Features
+* (Position) **Permanent Mover handle** — a small always-visible drag handle on frames for repositioning without unlocking, with customizable position, size, offset, colors, show-on-hover with fade animation, hide-in-combat option, and red combat indicator
+* (Position) **Permanent Mover quick actions** — left-click, right-click, shift+left-click, and shift+right-click can be bound to 13 preset actions including open settings, quick switch profile/click-cast profile, cycle profiles, toggle test mode, unlock frames, toggle solo mode, ready check, pull timer, reset position, and reload UI
+* (Position) **Permanent Mover attach to unit** — handle can be attached to the container, first visible unit, or last visible unit so it follows the group size
+* (Position) **Hide drag overlay** checkbox in the unlock panel to hide the blue drag area while keeping frames draggable
+* (Dispel Overlay) **Color Name Text** — optional checkbox to color the unit's name text with the dispel type color when a dispellable debuff is present
+* (Aura Designer) **Expiring pulsate for icon, square, and health bar indicators** — borders and fills can now pulse when an aura is about to expire
+* (Aura Designer) **Expiring whole alpha pulse** — entire icon/square pulses its alpha when expiring
+* (Aura Designer) **Expiring bounce animation** — icon/square bounces up and down when expiring
+* (Aura Designer) **Hide duration text above threshold** — duration text can be hidden when the remaining time is above a configurable seconds threshold (icon, square, and bar types)
+* (Aura Designer) **Expiring threshold in seconds** — expiring indicators can now trigger based on remaining seconds as well as remaining percentage
+* (Aura Designer) **Trigger operator (ANY / ALL)** — indicators with multiple trigger spells can now require all triggers to be active (AND mode) or just one (OR mode, default)
+* (Aura Designer) **Duration priority (Highest / Lowest)** — expiring indicators on multi-trigger spells can track the highest or lowest remaining duration buff
+* (Aura Designer) **Custom border mode** — border indicators can now use an independent overlay per aura, so multiple border indicators can be visible at the same time
+* (Aura Designer) **Settings grouped in containers** — all indicator settings panels and global defaults are now organized with bordered section containers
+* (Aura Designer) **Earthliving Weapon** added as a trackable Restoration Shaman aura
+* (Aura Designer) **Sense Power** added as a trackable Augmentation Evoker secret aura
+* (Aura Designer) **Ebon Might self-buff tracking** — Augmentation Evoker's caster self-buff (395296) is now tracked on the player via fingerprint disambiguation, with correct tooltip and buff bar dedup
+* (Aura Designer) **Symbiotic Relationship linked aura system** — Restoration Druid's caster buff is detected on the player and mirrored as an indicator onto the target's frame, with OOC target resolution, tooltip-based fallback, recast detection, and buff bar dedup
+* (Aura Designer) **Ancestral Vigor** added as a trackable Restoration Shaman aura
+* (Aura Blacklist) **Expanded blacklist coverage** — added Rogue poisons, Shaman weapon imbuements, Blessing of the Bronze (all class variants), Paladin rites, Mage Icicles, Hunter Tip of the Spear, and Shaman Reincarnation
+* (Debug) **Script Runner** — multiline Lua script input in the debug console with persistent text across sessions
+
+### Bug Fixes
+* (Position) Fixed nudge buttons causing the blue drag area to vanish
+* (Auras) **Fixed taint errors from secret value comparisons** — duration hide, expiring indicators, and color curves now correctly pipe secret values through secret-aware APIs only
 
 ## [4.0.16] - 2026-03-11
 
@@ -10,6 +91,8 @@ DF.CHANGELOG_TEXT = [===[
 * (Click Casting) **Fixed binding tooltip vanishing when pressing modifier keys** — modifier format mismatch caused all bindings to be filtered out
 * (Pet Frames) Fixed taint error from secret boolean in pet range checking
 * (Fading) **Fixed name and health text alpha resetting to 1.0** on zone change, combat res, vehicle exit, and test mode exit
+* (Aura Designer) **Fixed secret auras not appearing immediately on cast in combat** — inline fingerprint matching eliminates race condition between detection and rendering
+* (Aura Designer) Fixed Verdant Embrace tooltip incorrectly showing Upheaval
 
 ### New Features
 * (Aura Designer) **Secret aura tracking** — tracks auras that WoW hides behind secret spell IDs using signature-based fingerprinting (credit to Harrek for the technique and aura data from Advanced Raid Frames)
@@ -29,6 +112,13 @@ DF.CHANGELOG_TEXT = [===[
 * (Aura Designer) Spell cards now show WoW spell tooltips on hover
 * (Aura Designer) Secret auras shown in a distinct section with visual styling to differentiate from regular auras
 * (Aura Designer) Added "unsupported spec" message when viewing a non-healer spec
+* (Aura Designer) **Class color border** on preview frame window showing the current spec's class
+* (Aura Designer) **Class-colored spec dropdown** — each spec name colored by class for clarity
+* (Aura Designer) **Customise button** on layout group members — jumps directly to that aura's effects settings
+* (Aura Designer) Fixed page scrolling — only the right settings panel scrolls now, preview stays in view
+* (Auras) Added **Raid In Combat** debuff filter option — matches the existing buff filter for better debuff coverage
+* (Click Casting) Renamed "Mouseover" fallback to "Global" for clarity
+* (Click Casting) "Does not work with action bar binds" warning now highlighted in red
 
 ## [4.0.15] - 2026-03-10
 

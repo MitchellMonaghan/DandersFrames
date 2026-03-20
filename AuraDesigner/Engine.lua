@@ -13,6 +13,8 @@ local pairs, ipairs, type = pairs, ipairs, type
 local tinsert = table.insert
 local sort = table.sort
 local wipe = table.wipe
+local floor = math.floor
+local strsplit = strsplit
 local GetTime = GetTime
 
 -- Debug throttle: only log once per N seconds to avoid spam
@@ -29,6 +31,72 @@ DF.AuraDesigner.Engine = Engine
 
 local Adapter   -- Set during init
 local Indicators -- Set during init (AuraDesigner/Indicators.lua)
+local SoundEngine -- Set during init (AuraDesigner/SoundEngine.lua)
+
+-- ============================================================
+-- GROUP GRID LAYOUT HELPER
+-- Computes X/Y offsets for a group member based on growth
+-- direction, icons per row, and active index.
+-- ============================================================
+
+local function GetGroupGrowthOffset(direction, step)
+    if direction == "LEFT" then      return -step, 0
+    elseif direction == "RIGHT" then return step, 0
+    elseif direction == "UP" then    return 0, step
+    elseif direction == "DOWN" then  return 0, -step
+    end
+    return 0, 0
+end
+
+local function ComputeGroupOffset(group, activeIdx, step, totalCount)
+    local growth = group.growDirection or "RIGHT"
+    local primary, secondary = strsplit("_", growth)
+    -- Legacy single-direction compat: if no underscore, default secondary
+    if not secondary then
+        if primary == "RIGHT" or primary == "LEFT" then
+            secondary = "DOWN"
+        else
+            secondary = "RIGHT"
+        end
+    end
+
+    local wrap = group.iconsPerRow or 8
+    if wrap < 1 then wrap = 1 end
+
+    local col = activeIdx % wrap
+    local row = floor(activeIdx / wrap)
+
+    local sX, sY = GetGroupGrowthOffset(secondary, step)
+
+    if primary == "CENTER" then
+        -- Center icons within each row
+        local iconsInRow = wrap
+        if totalCount then
+            local lastRow = floor((totalCount - 1) / wrap)
+            if row == lastRow then
+                iconsInRow = ((totalCount - 1) % wrap) + 1
+            end
+        end
+        local centerOffset = -((iconsInRow - 1) * step) / 2
+        -- Determine center axis from secondary direction
+        local cX, cY
+        if sX ~= 0 then
+            -- Secondary is horizontal, so center vertically
+            cX = 0
+            cY = centerOffset + (col * step)
+        else
+            -- Secondary is vertical (or zero), so center horizontally
+            cX = centerOffset + (col * step)
+            cY = 0
+        end
+        return (group.offsetX or 0) + cX + (row * sX),
+               (group.offsetY or 0) + cY + (row * sY)
+    else
+        local pX, pY = GetGroupGrowthOffset(primary, step)
+        return (group.offsetX or 0) + (col * pX) + (row * sX),
+               (group.offsetY or 0) + (col * pY) + (row * sY)
+    end
+end
 
 -- ============================================================
 -- INDICATOR TYPE DEFINITIONS
@@ -44,6 +112,7 @@ local INDICATOR_TYPES = {
     { key = "nametext",   placed = false },
     { key = "healthtext", placed = false },
     { key = "framealpha", placed = false },
+    { key = "sound",      placed = false },
 }
 
 -- Frame-level types only (for gathering loop — placed types come from indicators array)
@@ -109,6 +178,47 @@ local function ResolveLayoutGroups(adDB, activeInds, spec)
 end
 
 -- ============================================================
+-- SYNTHETIC AURA DATA (Show When Missing)
+-- ============================================================
+
+local function buildSyntheticAuraData(auraName, spec)
+    local spellIds = DF.AuraDesigner.SpellIDs and DF.AuraDesigner.SpellIDs[spec]
+    local sidRaw = spellIds and spellIds[auraName]
+    local sid = type(sidRaw) == "number" and sidRaw or (type(sidRaw) == "table" and sidRaw[1] or 0)
+    local iconTextures = DF.AuraDesigner.IconTextures
+    local icon = iconTextures and iconTextures[auraName] or 136243
+    return {
+        spellId = sid,
+        icon = icon,
+        duration = 0,
+        expirationTime = 0,
+        stacks = 0,
+        caster = nil,
+        auraInstanceID = nil,
+        isMissingAura = true,
+    }
+end
+
+-- Check if an aura is within its indicator's expiring threshold
+local function IsAuraExpiring(auraData, config)
+    if not config.expiringEnabled then return false end
+    local duration = auraData.duration
+    local expirationTime = auraData.expirationTime
+    if not expirationTime or expirationTime == 0 or not duration or duration == 0 then
+        return false  -- permanent aura, never expires
+    end
+    local remaining = expirationTime - GetTime()
+    if remaining <= 0 then return false end
+    local threshold = config.expiringThreshold or 5
+    local mode = config.expiringThresholdMode or "PERCENT"
+    if mode == "PERCENT" then
+        return (remaining / duration * 100) <= threshold
+    else
+        return remaining <= threshold
+    end
+end
+
+-- ============================================================
 -- SPEC RESOLUTION
 -- ============================================================
 
@@ -132,7 +242,16 @@ function Engine:UpdateFrame(frame)
     if not Indicators then
         Indicators = DF.AuraDesigner.Indicators
     end
+    if not SoundEngine then
+        SoundEngine = DF.AuraDesigner.SoundEngine
+        if SoundEngine then
+            SoundEngine:Init()
+        end
+    end
     if not Adapter or not Indicators then return end
+
+    -- Skip invisible frames (e.g. disabled pinned frame children)
+    if not frame:IsVisible() then return end
 
     local unit = frame.unit
     if not unit or not UnitExists(unit) then
@@ -243,20 +362,45 @@ function Engine:UpdateFrame(frame)
         for auraName, auraCfg in pairs(auras) do
           if type(auraCfg) == "table" then
             local auraData = activeAuras[auraName]
+            local wasBlacklisted = false
             if auraData then
                 -- Skip blacklisted auras
                 local blTable = DF.db and DF.db.auraBlacklist
                 if blTable and auraData.spellId and DF.AuraBlacklist and DF.AuraBlacklist.IsBlacklisted(blTable.buffs, auraData.spellId) then
                     auraData = nil
+                    wasBlacklisted = true
                 end
             end
 
             local priority = auraCfg.priority or 5
 
-            -- Placed indicators from instances array (only when owning aura is active)
-            if auraData then
-                if auraCfg.indicators then
-                    for _, indicator in ipairs(auraCfg.indicators) do
+            -- Placed indicators (must run even without auraData for showWhenMissing)
+            if auraCfg.indicators then
+                for _, indicator in ipairs(auraCfg.indicators) do
+                    local isMissing = not auraData
+                    local wantMissing = indicator.showWhenMissing
+                    -- Bar indicators don't support missing mode (no duration data)
+                    if indicator.type == "bar" then wantMissing = false end
+                    -- Blacklisted aura is present, don't treat as missing
+                    if wantMissing and wasBlacklisted then wantMissing = false end
+
+                    if wantMissing then
+                        -- Always add: missing → synthetic, present → real (ticker handles expiring visibility)
+                        local effectiveAuraData = auraData
+                        if isMissing then
+                            effectiveAuraData = buildSyntheticAuraData(auraName, spec)
+                        end
+                        tinsert(activeIndicators, {
+                            auraName    = auraName,
+                            instanceKey = auraName .. "#" .. indicator.id,
+                            typeKey     = indicator.type,
+                            placed      = true,
+                            config      = indicator,
+                            auraData    = effectiveAuraData,
+                            isMissingAura = isMissing,
+                            priority    = priority,
+                        })
+                    elseif auraData then
                         tinsert(activeIndicators, {
                             auraName    = auraName,
                             instanceKey = auraName .. "#" .. indicator.id,
@@ -278,25 +422,96 @@ function Engine:UpdateFrame(frame)
                     local triggerAuraData = nil
                     local triggers = typeCfg.triggers
                     if triggers then
-                        -- Multi-trigger: fire if ANY trigger aura is active.
-                        -- Pick the trigger with the highest remaining duration
-                        -- so expiring color transitions use the longest-lasting aura.
-                        local bestRemaining = -1
-                        for _, trigName in ipairs(triggers) do
-                            local trigData = activeAuras[trigName]
-                            if trigData then
-                                local expTime = trigData.expirationTime
-                                if not expTime or expTime == 0 then
-                                    -- Permanent buff — always prefer, never expires
-                                    triggerAuraData = trigData
-                                    bestRemaining = math.huge
+                        local useAnd = typeCfg.triggerOperator == "AND"
+                        local pickLowest = typeCfg.triggerDurationPriority ~= "HIGHEST"  -- LOWEST is default
+                        if useAnd then
+                            -- AND mode: fire only if ALL trigger auras are active.
+                            local allActive = true
+                            local bestRemaining = pickLowest and math.huge or -1
+                            local candidate = nil
+                            local secretFallback = nil  -- first active secret aura as fallback
+                            for _, trigName in ipairs(triggers) do
+                                local trigData = activeAuras[trigName]
+                                if not trigData then
+                                    allActive = false
+                                    break
+                                end
+                                if trigData.secret then
+                                    -- Secret aura: can't compare duration in Lua
+                                    -- Keep as fallback only if no whitelist aura is found
+                                    if not secretFallback then
+                                        secretFallback = trigData
+                                    end
                                 else
-                                    local remaining = expTime - now
-                                    if remaining > bestRemaining then
-                                        bestRemaining = remaining
-                                        triggerAuraData = trigData
+                                    local expTime = trigData.expirationTime
+                                    if not expTime or expTime == 0 then
+                                        if not candidate then
+                                            candidate = trigData
+                                        end
+                                        if not pickLowest then
+                                            bestRemaining = math.huge
+                                            candidate = trigData
+                                        end
+                                    else
+                                        local remaining = expTime - now
+                                        if pickLowest then
+                                            if remaining < bestRemaining then
+                                                bestRemaining = remaining
+                                                candidate = trigData
+                                            end
+                                        else
+                                            if remaining > bestRemaining then
+                                                bestRemaining = remaining
+                                                candidate = trigData
+                                            end
+                                        end
                                     end
                                 end
+                            end
+                            if allActive then
+                                triggerAuraData = candidate or secretFallback
+                            end
+                        else
+                            -- OR mode (default): fire if ANY trigger aura is active.
+                            local bestRemaining = pickLowest and math.huge or -1
+                            local secretFallback = nil
+                            for _, trigName in ipairs(triggers) do
+                                local trigData = activeAuras[trigName]
+                                if trigData then
+                                    if trigData.secret then
+                                        -- Secret aura: can't compare duration in Lua
+                                        if not secretFallback then
+                                            secretFallback = trigData
+                                        end
+                                    else
+                                        local expTime = trigData.expirationTime
+                                        if not expTime or expTime == 0 then
+                                            if not pickLowest then
+                                                triggerAuraData = trigData
+                                                bestRemaining = math.huge
+                                            elseif not triggerAuraData then
+                                                triggerAuraData = trigData
+                                            end
+                                        else
+                                            local remaining = expTime - now
+                                            if pickLowest then
+                                                if remaining < bestRemaining then
+                                                    bestRemaining = remaining
+                                                    triggerAuraData = trigData
+                                                end
+                                            else
+                                                if remaining > bestRemaining then
+                                                    bestRemaining = remaining
+                                                    triggerAuraData = trigData
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            -- Use secret fallback only if no whitelist aura was picked
+                            if not triggerAuraData and secretFallback then
+                                triggerAuraData = secretFallback
                             end
                         end
                     else
@@ -304,7 +519,27 @@ function Engine:UpdateFrame(frame)
                         triggerAuraData = auraData
                     end
 
-                    if triggerAuraData then
+                    local showWhenMissing = typeCfg.showWhenMissing
+                    -- Blacklisted aura is present, don't treat as missing
+                    if showWhenMissing and wasBlacklisted then showWhenMissing = false end
+
+                    if showWhenMissing then
+                        -- Always add: missing → synthetic, present → real (ticker handles expiring visibility)
+                        local isTriggerMissing = not triggerAuraData
+                        local effectiveTrigger = triggerAuraData
+                        if isTriggerMissing then
+                            effectiveTrigger = buildSyntheticAuraData(auraName, spec)
+                        end
+                        tinsert(activeIndicators, {
+                            auraName = auraName,
+                            typeKey  = typeDef.key,
+                            placed   = false,
+                            config   = typeCfg,
+                            auraData = effectiveTrigger,
+                            isMissingAura = isTriggerMissing,
+                            priority = priority,
+                        })
+                    elseif triggerAuraData then
                         tinsert(activeIndicators, {
                             auraName = auraName,
                             typeKey  = typeDef.key,
@@ -332,7 +567,7 @@ function Engine:UpdateFrame(frame)
         for auraName, auraCfg in pairs(auras) do
           if type(auraCfg) == "table" then
             local auraData = activeAuras[auraName]
-            if auraData and auraData.auraInstanceID then
+            if auraData and (auraData.auraInstanceID or auraData.dedupInstanceIDs) then
                 local hasIndicator = auraCfg.indicators and #auraCfg.indicators > 0
                 if not hasIndicator then
                     for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
@@ -343,7 +578,15 @@ function Engine:UpdateFrame(frame)
                     end
                 end
                 if hasIndicator then
-                    frame.dfAD_activeInstanceIDs[auraData.auraInstanceID] = true
+                    if auraData.auraInstanceID then
+                        frame.dfAD_activeInstanceIDs[auraData.auraInstanceID] = true
+                    end
+                    -- Dedup inferred aura target-side instance IDs (e.g. SR 474750/474760)
+                    if auraData.dedupInstanceIDs then
+                        for id in pairs(auraData.dedupInstanceIDs) do
+                            frame.dfAD_activeInstanceIDs[id] = true
+                        end
+                    end
                 end
             end
             -- Also mark trigger auras for dedup when multi-trigger is configured
@@ -408,18 +651,7 @@ function Engine:UpdateFrame(frame)
                 local size = config.size or (adDB.defaults and adDB.defaults.iconSize) or 24
                 local scale = config.scale or (adDB.defaults and adDB.defaults.iconScale) or 1.0
                 local step = (size * scale) + (group.spacing or 2)
-
-                local oX, oY = group.offsetX or 0, group.offsetY or 0
-                local dir = group.growDirection or "RIGHT"
-                if dir == "RIGHT" then
-                    oX = oX + (activeIdx * step)
-                elseif dir == "LEFT" then
-                    oX = oX - (activeIdx * step)
-                elseif dir == "DOWN" then
-                    oY = oY - (activeIdx * step)
-                elseif dir == "UP" then
-                    oY = oY + (activeIdx * step)
-                end
+                local oX, oY = ComputeGroupOffset(group, activeIdx, step, actives and #actives or 0)
 
                 -- Create a lightweight metatable wrapper so we don't mutate saved config
                 config = setmetatable({
@@ -449,6 +681,13 @@ function Engine:ClearFrame(frame)
     if Indicators then
         Indicators:HideAll(frame)
     end
+    -- Stop sound engine when AD is disabled
+    if not SoundEngine then
+        SoundEngine = DF.AuraDesigner.SoundEngine
+    end
+    if SoundEngine then
+        SoundEngine:StopAll()
+    end
     -- Clear active instance IDs so buff bar dedup doesn't stale-filter
     if frame.dfAD_activeInstanceIDs then
         wipe(frame.dfAD_activeInstanceIDs)
@@ -470,6 +709,9 @@ function Engine:UpdateTestFrame(frame)
         Indicators = DF.AuraDesigner.Indicators
     end
     if not Indicators then return end
+
+    -- Skip invisible frames (e.g. disabled pinned frame children)
+    if not frame:IsVisible() then return end
 
     local db = DF:GetFrameDB(frame)
     if not db then return end
@@ -526,33 +768,99 @@ function Engine:UpdateTestFrame(frame)
 
         local priority = auraCfg.priority or 5
 
-        -- Placed indicators
+        -- Check if ALL indicators want missing mode — if so, nil out mock data
+        -- so showWhenMissing indicators render in test mode
+        local allMissing = true
         if auraCfg.indicators then
             for _, indicator in ipairs(auraCfg.indicators) do
-                tinsert(activeIndicators, {
-                    auraName    = auraName,
-                    instanceKey = auraName .. "#" .. indicator.id,
-                    typeKey     = indicator.type,
-                    placed      = true,
-                    config      = indicator,
-                    auraData    = auraData,
-                    priority    = priority,
-                })
+                if not indicator.showWhenMissing or indicator.type == "bar" then
+                    allMissing = false
+                    break
+                end
+            end
+        else
+            allMissing = false
+        end
+        if allMissing then
+            for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
+                local typeCfg = auraCfg[typeDef.key]
+                if typeCfg and not typeCfg.showWhenMissing then
+                    allMissing = false
+                    break
+                end
+            end
+        end
+        if allMissing then
+            auraData = nil
+        end
+
+        -- Placed indicators (handles showWhenMissing)
+        if auraCfg.indicators then
+            for _, indicator in ipairs(auraCfg.indicators) do
+                local isMissing = not auraData
+                local wantMissing = indicator.showWhenMissing
+                if indicator.type == "bar" then wantMissing = false end
+
+                if wantMissing then
+                    -- Always add: missing → synthetic, present → real (Apply handles visibility)
+                    local effectiveAuraData = auraData
+                    if isMissing then
+                        effectiveAuraData = buildSyntheticAuraData(auraName, spec)
+                    end
+                    tinsert(activeIndicators, {
+                        auraName    = auraName,
+                        instanceKey = auraName .. "#" .. indicator.id,
+                        typeKey     = indicator.type,
+                        placed      = true,
+                        config      = indicator,
+                        auraData    = effectiveAuraData,
+                        isMissingAura = isMissing,
+                        priority    = priority,
+                    })
+                elseif auraData then
+                    tinsert(activeIndicators, {
+                        auraName    = auraName,
+                        instanceKey = auraName .. "#" .. indicator.id,
+                        typeKey     = indicator.type,
+                        placed      = true,
+                        config      = indicator,
+                        auraData    = auraData,
+                        priority    = priority,
+                    })
+                end
             end
         end
 
-        -- Frame-level indicators
+        -- Frame-level indicators (handles showWhenMissing)
         for _, typeDef in ipairs(FRAME_LEVEL_TYPES) do
             local typeCfg = auraCfg[typeDef.key]
             if typeCfg then
-                tinsert(activeIndicators, {
-                    auraName = auraName,
-                    typeKey  = typeDef.key,
-                    placed   = false,
-                    config   = typeCfg,
-                    auraData = auraData,
-                    priority = priority,
-                })
+                local wantMissing = typeCfg.showWhenMissing
+                local isMissing = not auraData
+                if wantMissing then
+                    -- Always add: missing → synthetic, present → real (Apply handles visibility)
+                    local effectiveAuraData = auraData
+                    if isMissing then
+                        effectiveAuraData = buildSyntheticAuraData(auraName, spec)
+                    end
+                    tinsert(activeIndicators, {
+                        auraName = auraName,
+                        typeKey  = typeDef.key,
+                        placed   = false,
+                        config   = typeCfg,
+                        auraData = effectiveAuraData,
+                        priority = priority,
+                    })
+                elseif auraData then
+                    tinsert(activeIndicators, {
+                        auraName = auraName,
+                        typeKey  = typeDef.key,
+                        placed   = false,
+                        config   = typeCfg,
+                        auraData = auraData,
+                        priority = priority,
+                    })
+                end
             end
         end
       end
@@ -589,13 +897,7 @@ function Engine:UpdateTestFrame(frame)
                 local size = config.size or (adDB.defaults and adDB.defaults.iconSize) or 24
                 local scale = config.scale or (adDB.defaults and adDB.defaults.iconScale) or 1.0
                 local step = (size * scale) + (group.spacing or 2)
-                local oX, oY = group.offsetX or 0, group.offsetY or 0
-                local dir = group.growDirection or "RIGHT"
-                if dir == "RIGHT" then     oX = oX + (activeIdx * step)
-                elseif dir == "LEFT" then  oX = oX - (activeIdx * step)
-                elseif dir == "DOWN" then  oY = oY - (activeIdx * step)
-                elseif dir == "UP" then    oY = oY + (activeIdx * step)
-                end
+                local oX, oY = ComputeGroupOffset(group, activeIdx, step, actives and #actives or 0)
                 config = setmetatable({
                     anchor = group.anchor or "TOPLEFT",
                     offsetX = oX,

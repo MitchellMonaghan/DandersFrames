@@ -18,8 +18,12 @@ DandersFrames = DF
 -- ============================================================
 local rosterThrottleFrame = CreateFrame("Frame")
 rosterThrottleFrame:Hide()
+local gruEventCount = 0        -- total GRU events since last PEW
+local gruBurstCount = 0        -- GRU events coalesced into current throttle batch
 rosterThrottleFrame:SetScript("OnUpdate", function(self)
     self:Hide()
+    DF:Debug("ROSTER", "Throttle fired: processing %d coalesced GRU events (%d total since PEW)", gruBurstCount, gruEventCount)
+    gruBurstCount = 0
     if not InCombatLockdown() then
         DF:ProcessRosterUpdate()
     else
@@ -43,6 +47,9 @@ rosterThrottleFrame:SetScript("OnUpdate", function(self)
 end)
 
 local function QueueRosterUpdate()
+    gruBurstCount = gruBurstCount + 1
+    gruEventCount = gruEventCount + 1
+    DF:Debug("ROSTER", "QueueRosterUpdate: GRU #%d (burst #%d), members=%d", gruEventCount, gruBurstCount, GetNumGroupMembers())
     rosterThrottleFrame:Show()  -- Showing already-shown frame = no-op
 end
 
@@ -123,6 +130,12 @@ end
 -- unit assignments haven't changed), the map stays empty and all
 -- unit events are silently dropped — causing health desync.
 -- ============================================================
+function DF:CountUnitFrameMap()
+    local count = 0
+    for _ in pairs(unitFrameMap) do count = count + 1 end
+    return count
+end
+
 function DF:RebuildUnitFrameMap()
     -- Targeted cleanup: remove stale entries where the frame is hidden
     -- or no longer assigned to that unit. This replaces the old destructive
@@ -508,20 +521,27 @@ function DF:InitializeHeaderChild(frame)
         isArena = parentName:find("Arena") ~= nil
         isPinned = parentName:find("Pinned") ~= nil
         isRaid = parentName:find("Raid") ~= nil and not isArena and not isPinned
-        isRaidCombined = parentName:find("RaidCombined") ~= nil
+        -- Match ALL grouped raid header children: DandersRaidGroup1Header..8Header
+        -- AND legacy RaidCombined (if any). Flat raid uses DandersFlatRaidHeader
+        -- which does NOT match here — flat children need ApplyFrameLayout on OnShow.
+        isRaidCombined = (parentName:find("RaidGroup") ~= nil) or (parentName:find("RaidCombined") ~= nil)
     end
-    
+
     -- PINNED FRAMES: Use current group status to determine raid vs party
     -- Pinned frames can show either party or raid members, so they should
     -- use the appropriate settings based on whether we're in a raid
     if isPinned then
         isRaid = IsInRaid()
     end
-    
+
     frame.isRaidFrame = isRaid
     frame.isArenaFrame = isArena  -- Arena uses party settings but raid units
     frame.isPinnedFrame = isPinned
     frame.dfIsRaidCombinedChild = isRaidCombined
+
+    DF:Debug("LAYOUT", "InitializeHeaderChild: parent=%s isRaid=%s isArena=%s isPinned=%s",
+        frame:GetParent() and frame:GetParent():GetName() or "nil",
+        tostring(isRaid), tostring(isArena), tostring(isPinned))
     
     -- Get appropriate DB and set frame size
     -- Arena frames use PARTY settings (same as party frames)
@@ -568,6 +588,14 @@ function DF:InitializeHeaderChild(frame)
             local rawNewGuid = actualUnit and UnitGUID(actualUnit) or nil
             local newGuid = (rawNewGuid and not issecretvalue(rawNewGuid)) and rawNewGuid or nil
             local oldGuid = oldUnit and unitGuidCache[oldUnit] or nil
+
+            -- LEVEL 0: Both nil — nothing to do
+            -- Hide/Show cycles on SecureGroupHeaderTemplate fire OnAttributeChanged("unit", nil)
+            -- on every pre-allocated child slot. For empty groups this generates dozens of
+            -- nil->nil transitions per GRU that are pure noise.
+            if not oldUnit and not actualUnit then
+                return
+            end
 
             -- LEVEL 1: Skip if unit string AND GUID are both the same
             -- (Must check GUID because same unit string can have different player after roster change)
@@ -619,6 +647,8 @@ function DF:InitializeHeaderChild(frame)
             end
             
             DF:RosterDebugCount("OnAttributeChanged(unit)-PROCESSED")
+            DF:Debug("ROSTER", "OnAttributeChanged: %s -> %s (isRaid=%s)",
+                tostring(oldUnit), tostring(actualUnit), tostring(self.isRaidFrame))
             
             -- Clear old unit's cache
             if oldUnit then
@@ -811,9 +841,13 @@ function DF:InitializeHeaderChild(frame)
         -- Small delay to ensure unit is set
         C_Timer.After(0.05, function()
             if self and self.unit and self:IsVisible() then
+                DF:Debug("LAYOUT", "OnShow refresh: %s (headerChild=%s isRaid=%s)",
+                    self.unit or "?", tostring(self.dfIsHeaderChild), tostring(self.isRaidFrame))
                 -- Apply layout in case settings changed while hidden
-                -- SKIP for raid combined children - SetSize triggers SecureGroupHeader_Update
-                -- which causes position flickering on roster changes
+                -- SKIP for raid combined (grouped) children — SetSize triggers SecureGroupHeader_Update
+                -- which repositions every sibling, causing visible frame jumping on roster changes.
+                -- Raid combined children get sized explicitly by ApplyHeaderSettings.
+                -- Party and flat raid children need this to stay correctly sized.
                 if DF.ApplyFrameLayout and not self.dfIsRaidCombinedChild then
                     DF:ApplyFrameLayout(self)
                 end
@@ -2158,7 +2192,11 @@ function DF:CreateRaidPositionHandler()
         local handler = self
         local container = handler:GetFrameRef("container")
         if not container then return end
-        
+
+        -- Batch mode: skip repositioning until all group counts are synced
+        local suppress = handler:GetAttribute("suppressreposition")
+        if suppress and suppress == 1 then return end
+
         -- Get all group refs explicitly (no string concat in loop)
         local group1 = handler:GetFrameRef("group1")
         local group2 = handler:GetFrameRef("group2")
@@ -3066,7 +3104,7 @@ function DF:CreateRaidPositionHandler()
                     local posHandler = self:GetFrameRef("positionHandler")
                     local groupIndex = self:GetAttribute("groupIndex")
                     if not posHandler or not groupIndex then return end
-                    
+
                     -- Count our own children using frameref-child prefix
                     local count = 0
                     local c1 = self:GetAttribute("frameref-child1")
@@ -3079,8 +3117,8 @@ function DF:CreateRaidPositionHandler()
                     if c3 and c3:IsShown() then count = count + 1 end
                     if c4 and c4:IsShown() then count = count + 1 end
                     if c5 and c5:IsShown() then count = count + 1 end
-                    
-                    -- Report our count
+
+                    -- Report our count (always update, even when suppressed)
                     if groupIndex == 1 then posHandler:SetAttribute("group1count", count)
                     elseif groupIndex == 2 then posHandler:SetAttribute("group2count", count)
                     elseif groupIndex == 3 then posHandler:SetAttribute("group3count", count)
@@ -3090,10 +3128,13 @@ function DF:CreateRaidPositionHandler()
                     elseif groupIndex == 7 then posHandler:SetAttribute("group7count", count)
                     elseif groupIndex == 8 then posHandler:SetAttribute("group8count", count)
                     end
-                    
-                    -- Trigger reposition
-                    local v = posHandler:GetAttribute("triggerposition") or 0
-                    posHandler:SetAttribute("triggerposition", v + 1)
+
+                    -- Trigger reposition (skip if batching — caller will trigger once at end)
+                    local suppress = posHandler:GetAttribute("suppressreposition")
+                    if not suppress or suppress ~= 1 then
+                        local v = posHandler:GetAttribute("triggerposition") or 0
+                        posHandler:SetAttribute("triggerposition", v + 1)
+                    end
                 end
             ]])
             
@@ -3161,7 +3202,7 @@ function DF:HookRaidChildrenForRepositioning()
                         local parentGroup = self:GetFrameRef("parentGroup")
                         local groupIndex = self:GetAttribute("parentGroupIndex")
                         if not posHandler or not parentGroup or not groupIndex then return end
-                        
+
                         -- Count parent's children using frameref-child prefix
                         local count = 0
                         local c1 = parentGroup:GetAttribute("frameref-child1")
@@ -3174,8 +3215,8 @@ function DF:HookRaidChildrenForRepositioning()
                         if c3 and c3:IsShown() then count = count + 1 end
                         if c4 and c4:IsShown() then count = count + 1 end
                         if c5 and c5:IsShown() then count = count + 1 end
-                        
-                        -- Set count based on index
+
+                        -- Set count based on index (always update, even when suppressed)
                         if groupIndex == 1 then posHandler:SetAttribute("group1count", count)
                         elseif groupIndex == 2 then posHandler:SetAttribute("group2count", count)
                         elseif groupIndex == 3 then posHandler:SetAttribute("group3count", count)
@@ -3185,10 +3226,13 @@ function DF:HookRaidChildrenForRepositioning()
                         elseif groupIndex == 7 then posHandler:SetAttribute("group7count", count)
                         elseif groupIndex == 8 then posHandler:SetAttribute("group8count", count)
                         end
-                        
-                        -- Trigger reposition
-                        local v = posHandler:GetAttribute("triggerposition") or 0
-                        posHandler:SetAttribute("triggerposition", v + 1)
+
+                        -- Trigger reposition (skip if batching — caller will trigger once at end)
+                        local suppress = posHandler:GetAttribute("suppressreposition")
+                        if not suppress or suppress ~= 1 then
+                            local v = posHandler:GetAttribute("triggerposition") or 0
+                            posHandler:SetAttribute("triggerposition", v + 1)
+                        end
                     ]])
                     
                     -- OnHide - count parent's children (excluding self) and trigger
@@ -3197,7 +3241,7 @@ function DF:HookRaidChildrenForRepositioning()
                         local parentGroup = self:GetFrameRef("parentGroup")
                         local groupIndex = self:GetAttribute("parentGroupIndex")
                         if not posHandler or not parentGroup or not groupIndex then return end
-                        
+
                         -- Count parent's children, excluding self since we're hiding
                         local count = 0
                         local c1 = parentGroup:GetAttribute("frameref-child1")
@@ -3210,8 +3254,8 @@ function DF:HookRaidChildrenForRepositioning()
                         if c3 and c3:IsShown() and c3 ~= self then count = count + 1 end
                         if c4 and c4:IsShown() and c4 ~= self then count = count + 1 end
                         if c5 and c5:IsShown() and c5 ~= self then count = count + 1 end
-                        
-                        -- Set count based on index
+
+                        -- Set count based on index (always update, even when suppressed)
                         if groupIndex == 1 then posHandler:SetAttribute("group1count", count)
                         elseif groupIndex == 2 then posHandler:SetAttribute("group2count", count)
                         elseif groupIndex == 3 then posHandler:SetAttribute("group3count", count)
@@ -3221,10 +3265,13 @@ function DF:HookRaidChildrenForRepositioning()
                         elseif groupIndex == 7 then posHandler:SetAttribute("group7count", count)
                         elseif groupIndex == 8 then posHandler:SetAttribute("group8count", count)
                         end
-                        
-                        -- Trigger reposition
-                        local v = posHandler:GetAttribute("triggerposition") or 0
-                        posHandler:SetAttribute("triggerposition", v + 1)
+
+                        -- Trigger reposition (skip if batching — caller will trigger once at end)
+                        local suppress = posHandler:GetAttribute("suppressreposition")
+                        if not suppress or suppress ~= 1 then
+                            local v = posHandler:GetAttribute("triggerposition") or 0
+                            posHandler:SetAttribute("triggerposition", v + 1)
+                        end
                     ]])
                     
                     if DF.debugHeaders then
@@ -3238,14 +3285,32 @@ end
 
 -- Update raid header layout attributes based on growDirection
 -- Call this when growDirection changes
+-- Cache last-applied layout state so we only ClearAllPoints when something actually changed.
+-- ClearAllPoints momentarily unanchors every child frame; if it runs on every GRU the
+-- frames visually "jump" as SecureGroupHeaderTemplate re-anchors them.
+local lastLayoutHorizontal = nil
+local lastLayoutSpacing = nil
+
 function DF:UpdateRaidHeaderLayoutAttributes()
     if InCombatLockdown() then return end
     if not DF.raidSeparatedHeaders then return end
-    
+
     local db = DF:GetRaidDB()
     local horizontal = (db.growDirection == "HORIZONTAL")  -- Groups as columns
     local spacing = db.frameSpacing or 2
-    
+
+    -- Skip entirely if nothing changed — avoids the destructive ClearAllPoints
+    if horizontal == lastLayoutHorizontal and spacing == lastLayoutSpacing then
+        DF:Debug("ROSTER", "UpdateRaidHeaderLayoutAttributes: no change, skipping")
+        return
+    end
+
+    DF:Debug("ROSTER", "UpdateRaidHeaderLayoutAttributes: layout changed (horizontal=%s->%s, spacing=%s->%s)",
+        tostring(lastLayoutHorizontal), tostring(horizontal),
+        tostring(lastLayoutSpacing), tostring(spacing))
+    lastLayoutHorizontal = horizontal
+    lastLayoutSpacing = spacing
+
     for group = 1, 8 do
         local header = DF.raidSeparatedHeaders[group]
         if header then
@@ -3257,7 +3322,7 @@ function DF:UpdateRaidHeaderLayoutAttributes()
                     child:ClearAllPoints()
                 end
             end
-            
+
             -- Note: point=TOP/LEFT keeps player order consistent (first at top/left)
             -- The secure snippet handles where the GROUP is positioned (START/END)
             if horizontal then
@@ -3275,7 +3340,7 @@ function DF:UpdateRaidHeaderLayoutAttributes()
             end
         end
     end
-    
+
     if DF.debugHeaders then
         print("|cFF00FF00[DF Headers]|r Updated header layout attributes: horizontal=" .. tostring(horizontal))
     end
@@ -3323,12 +3388,14 @@ end
 function DF:TriggerRaidPosition()
     -- Can't SetAttribute on secure frames during combat
     if InCombatLockdown() then
+        DF:Debug("POSITION", "TriggerRaidPosition: deferred (combat)")
         DF.pendingRaidPositionTrigger = true
         return
     end
-    
+
     if DF.raidPositionHandler then
         local v = DF.raidPositionHandler:GetAttribute("triggerposition") or 0
+        DF:Debug("POSITION", "TriggerRaidPosition: firing (counter=%d)", v + 1)
         DF.raidPositionHandler:SetAttribute("triggerposition", v + 1)
         
         if DF.debugHeaders then
@@ -3830,9 +3897,14 @@ function DF:ApplyRaidGroupSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
 
-    -- Re-apply child layout attributes (point, xOffset, yOffset) from the DB
-    -- so that Hide/Show below rebuilds children with the correct spacing. (#269)
-    DF:UpdateRaidHeaderLayoutAttributes()
+    -- Suppress repositioning FIRST, before any attribute changes that could
+    -- trigger SecureGroupHeader child re-anchoring → OnShow → position snippet.
+    -- Without this, UpdateRaidHeaderLayoutAttributes (called by UpdateRaidPositionAttributes
+    -- below) fires unsuppressed repositions via ClearAllPoints/SetAttribute on headers.
+    DF:Debug("ROSTER", "ApplyRaidGroupSorting: suppressing reposition, configuring 8 groups")
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("suppressreposition", 1)
+    end
 
     -- Cache raid roster info once (avoids 320+ GetRaidRosterInfo calls)
     CacheRaidRosterInfo()
@@ -3889,6 +3961,11 @@ function DF:ApplyRaidGroupSorting()
     end
     local roleOrderString = table.concat(groupingOrder, ",")
     
+    -- Track last-applied sorting key per group so we only Hide/Show when something changed.
+    -- Hide/Show forces SecureGroupHeaderTemplate to ClearAllPoints+SetPoint every child,
+    -- which causes visible frame jumping even though positions ultimately resolve correctly.
+    DF._lastGroupSortKey = DF._lastGroupSortKey or {}
+
     -- Configure each group header (SORTING ONLY - positioning handled by secure handler)
     for i = 1, 8 do
         local header = DF.raidSeparatedHeaders[i]
@@ -3905,9 +3982,16 @@ function DF:ApplyRaidGroupSorting()
             -- NOTE: Positioning attributes (point, yOffset, sortDir, ClearAllPoints/SetPoint)
             -- are now handled by the secure position handler via UpdateRaidPositionAttributes
 
+            -- Build the sorting key BEFORE applying attributes.
+            -- This lets us detect whether anything actually changed and skip the
+            -- destructive Hide/Show cycle when the sorting is identical.
+            local sortKey
+
             -- CHECK sortEnabled FIRST (like party sorting does)
             -- This ensures ALL headers get sorting disabled, not just those that don't need nameList
             if not sortEnabled then
+                sortKey = "INDEX:" .. i
+
                 -- Sorting disabled - clear ALL sorting attributes with nil
                 -- CRITICAL: Must use nil, not empty string, for SecureGroupHeaderTemplate
                 header:SetAttribute("nameList", nil)
@@ -3935,6 +4019,7 @@ function DF:ApplyRaidGroupSorting()
                     -- For other groups: use "SORTED" (player position doesn't matter)
                     local groupSelfPosition = isPlayerGroup and selfPosition or "SORTED"
                     local nameList = DF:BuildRaidGroupNameList(i, groupSelfPosition)
+                    sortKey = "NL:" .. (nameList or "")
 
                     -- Clear native sorting attributes - use direct SetAttribute to bypass cache
                     -- This ensures attributes are always set fresh when switching modes
@@ -3953,6 +4038,8 @@ function DF:ApplyRaidGroupSorting()
                         print("|cFF00FF00[DF Headers]|r   Group", i, tag, ": nameList mode -", nameList)
                     end
                 else
+                    sortKey = "ROLE:" .. i .. ":" .. roleOrderString
+
                     -- Use native sorting with groupFilter (simple role sorting only)
                     -- Use direct SetAttribute to bypass cache
                     header:SetAttribute("nameList", nil)
@@ -3967,28 +4054,71 @@ function DF:ApplyRaidGroupSorting()
                 end
             end
 
-            -- Force SecureGroupHeaderTemplate to re-evaluate sorting attributes
-            -- by hiding and re-showing. Only re-show if the group should be visible
-            -- per user settings — this prevents hidden groups from reappearing on
-            -- roster changes (the root cause of the positioning/visibility desync).
-            header:Hide()
-            if showGroup then
-                header:Show()
-                DF:SetHeaderChildrenEventsEnabled(header, true)
-            else
+            -- Determine if we need the destructive Hide/Show cycle.
+            -- SecureGroupHeaderTemplate re-evaluates children on Show(), calling
+            -- ClearAllPoints+SetPoint on every child. This causes visible frame
+            -- jumping. Only do it when sorting actually changed.
+            local sortChanged = (sortKey ~= DF._lastGroupSortKey[i])
+            DF._lastGroupSortKey[i] = sortKey
+
+            if not showGroup then
                 -- Group is hidden per user settings — keep it hidden
+                if header:IsShown() then header:Hide() end
                 -- Set count to 0 so positioning handler skips this group (no gap)
                 if DF.raidPositionHandler then
                     DF.raidPositionHandler:SetAttribute("group" .. i .. "count", 0)
                 end
                 DF:SetHeaderChildrenEventsEnabled(header, false)
+                DF:Debug("ROSTER", "  Group %d: hidden (user setting)", i)
+            elseif not sortChanged and header:IsShown() then
+                -- Sorting unchanged and header already shown — skip Hide/Show
+                DF:Debug("ROSTER", "  Group %d: sort unchanged, skipping Hide/Show", i)
+            else
+                -- Sorting changed or header needs to be shown — do the full cycle
+                header:Hide()
+                header:Show()
+                DF:SetHeaderChildrenEventsEnabled(header, true)
+                local childCountAfter = 0
+                for ci = 1, 5 do
+                    local ch = header:GetAttribute("child" .. ci)
+                    if ch and ch:IsShown() then childCountAfter = childCountAfter + 1 end
+                end
+                DF:Debug("ROSTER", "  Group %d: Hide/Show (sortChanged=%s), children -> %d", i, tostring(sortChanged), childCountAfter)
             end
         end
     end
     
-    -- Trigger positioning after sorting attributes are set
-    -- This does both secure attribute updates AND Lua positioning
+    -- Update layout attributes and position handler settings WHILE suppress is still on.
+    -- UpdateRaidHeaderLayoutAttributes clears child anchor points, which causes
+    -- SecureGroupHeaderTemplate to re-anchor children (firing OnShow). If suppress
+    -- were already off, each child OnShow would independently fire the position snippet,
+    -- creating N redundant repositions. By keeping suppress on, those OnShow hooks
+    -- are no-ops, and we fire ONE authoritative reposition after unsuppressing.
     DF:UpdateRaidPositionAttributes()
+
+    -- NOW unsuppress and fire the single authoritative reposition
+    DF:Debug("ROSTER", "ApplyRaidGroupSorting: unsuppressing, triggering authoritative reposition")
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
+    end
+    DF:TriggerRaidPosition()
+
+    -- Log header positions after reposition for diagnosis
+    if DF.raidSeparatedHeaders then
+        for i = 1, 8 do
+            local h = DF.raidSeparatedHeaders[i]
+            if h and h:IsShown() then
+                local point, relativeTo, relativePoint, x, y = h:GetPoint(1)
+                local childCount = 0
+                for ci = 1, 5 do
+                    local ch = h:GetAttribute("child" .. ci)
+                    if ch and ch:IsShown() then childCount = childCount + 1 end
+                end
+                DF:Debug("ROSTER", "  Final G%d: %d children, pos=(%s, %.0f, %.0f)",
+                    i, childCount, point or "nil", x or 0, y or 0)
+            end
+        end
+    end
     
     -- Clear the roster cache (no longer needed until next update)
     ClearRaidRosterCache()
@@ -4827,7 +4957,7 @@ end
 -- HEADER VISIBILITY MANAGEMENT
 -- ============================================================
 
-function DF:UpdateHeaderVisibility()
+function DF:UpdateHeaderVisibility(skipRaidReposition)
     if InCombatLockdown() then
         -- Can't modify secure frames during combat - defer until PLAYER_REGEN_ENABLED
         -- State driver registration requires SetAttribute which is protected in combat
@@ -4849,7 +4979,11 @@ function DF:UpdateHeaderVisibility()
     local inArena = (contentType == "arena")
     local inRaid = IsInRaid() and not inArena  -- Raid but NOT arena
     local inParty = IsInGroup() and not IsInRaid()
-    
+
+    DF:Debug("VISIBILITY", "UpdateHeaderVisibility: content=%s inRaid=%s inParty=%s skipRaidRepos=%s caller=%s",
+        tostring(contentType), tostring(inRaid), tostring(inParty), tostring(skipRaidReposition),
+        debugstack(2, 1, 0) or "?")
+
     -- ARENA DEBUG: Log the visibility decision
     local inInst, instType = IsInInstance()
     
@@ -4931,7 +5065,7 @@ function DF:UpdateHeaderVisibility()
     -- RAID: Use raid headers (only when in raid, NOT arena)
     -- ============================================================
     if inRaid then
-        DF:UpdateRaidHeaderVisibility()
+        DF:UpdateRaidHeaderVisibility(skipRaidReposition)
     else
         -- Hide all raid headers (includes arena case)
         -- Also disable events on child frames (performance)
@@ -5000,16 +5134,34 @@ function DF:UpdateHeaderVisibility()
     if DF.RefreshClassPower then
         DF:RefreshClassPower()
     end
+
+    -- Sync permanent mover visibility with the active frame set
+    -- Without this, both party and raid movers stay visible after a party<->raid transition
+    if DF.UpdatePermanentMoverVisibility then
+        DF:UpdatePermanentMoverVisibility()
+    end
 end
 
-function DF:UpdateRaidHeaderVisibility()
-    if InCombatLockdown() then return end
-    
-    -- Don't show live frames while in test mode
-    if DF.testMode or DF.raidTestMode then
+function DF:UpdateRaidHeaderVisibility(skipReposition)
+    if InCombatLockdown() then
+        DF.pendingRaidHeaderVisibility = true
         return
     end
-    
+
+    -- Guard against infinite recursion: SetEnabled(false) calls back here
+    if DF._updatingRaidHeaderVisibility then return end
+    DF._updatingRaidHeaderVisibility = true
+
+    DF:Debug("VISIBILITY", "UpdateRaidHeaderVisibility: skipReposition=%s", tostring(skipReposition))
+
+    -- Don't show live frames while in test mode
+    -- IMPORTANT: Clear the recursion guard before returning, otherwise all future
+    -- calls to UpdateRaidHeaderVisibility are permanently blocked until ReloadUI.
+    if DF.testMode or DF.raidTestMode then
+        DF._updatingRaidHeaderVisibility = nil
+        return
+    end
+
     local db = DF:GetRaidDB()
     
     -- Show container
@@ -5017,14 +5169,21 @@ function DF:UpdateRaidHeaderVisibility()
         DF.raidContainer:Show()
     end
     
+    -- Suppress repositioning during show/hide loop to prevent multiple
+    -- partial repositions with stale group counts
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("suppressreposition", 1)
+    end
+
     if db.raidUseGroups then
+        DF:Debug("VISIBILITY", "  Raid mode: GROUPED (separated headers)")
         -- Separated mode: show individual group headers
-        
+
         -- CRITICAL: Hide FlatRaidFrames when switching to grouped mode
         if DF.FlatRaidFrames and DF.FlatRaidFrames.header then
             DF.FlatRaidFrames:SetEnabled(false)
         end
-        
+
         if DF.raidSeparatedHeaders then
             for i = 1, 8 do
                 local header = DF.raidSeparatedHeaders[i]
@@ -5032,7 +5191,7 @@ function DF:UpdateRaidHeaderVisibility()
                     -- Show/hide based on group visibility settings
                     local showGroup = db.raidGroupVisible and db.raidGroupVisible[i]
                     if showGroup == nil then showGroup = true end  -- Default to show
-                    
+
                     if showGroup then
                         -- CRITICAL: Only call Show() if not already visible!
                         if not header:IsShown() then
@@ -5062,8 +5221,9 @@ function DF:UpdateRaidHeaderVisibility()
             end
         end
     else
+        DF:Debug("VISIBILITY", "  Raid mode: FLAT (FlatRaidFrames)")
         -- Combined mode (flat layout): use FlatRaidFrames
-        
+
         -- CRITICAL: Hide separated headers FIRST before enabling FlatRaidFrames
         if DF.raidSeparatedHeaders then
             for i = 1, 8 do
@@ -5073,11 +5233,46 @@ function DF:UpdateRaidHeaderVisibility()
                 end
             end
         end
-        
+
         -- Enable FlatRaidFrames (which will also hide separated headers as a safeguard)
         if DF.FlatRaidFrames then
             DF.FlatRaidFrames:SetEnabled(true)
         end
+    end
+
+    DF._updatingRaidHeaderVisibility = nil
+
+    -- Reposition handling:
+    -- When skipReposition=true (called from ProcessRosterUpdate before sorting),
+    -- leave suppressreposition=1 so secure-side OnShow/OnAttributeChanged hooks
+    -- can't fire stale repositions in the gap before ApplyRaidGroupSorting starts.
+    -- The sorting function will unsuppress and fire the authoritative reposition.
+    if not skipReposition then
+        if DF.raidPositionHandler then
+            DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
+        end
+        DF:Debug("VISIBILITY", "  Triggering raid reposition (authoritative)")
+        DF:TriggerRaidPosition()
+    else
+        DF:Debug("VISIBILITY", "  Leaving suppressreposition=1 (sorting will unsuppress)")
+    end
+
+    -- Log final header visibility state for diagnosis
+    if DF.raidSeparatedHeaders then
+        local vis = {}
+        for i = 1, 8 do
+            local h = DF.raidSeparatedHeaders[i]
+            if h then
+                local count = 0
+                for ci = 1, 5 do
+                    local ch = h:GetAttribute("child" .. ci)
+                    if ch and ch:IsShown() then count = count + 1 end
+                end
+                vis[i] = h:IsShown() and count or -1  -- -1 = header hidden
+            end
+        end
+        DF:Debug("VISIBILITY", "  Header states: G1=%d G2=%d G3=%d G4=%d G5=%d G6=%d G7=%d G8=%d (shown children, -1=hidden)",
+            vis[1] or 0, vis[2] or 0, vis[3] or 0, vis[4] or 0, vis[5] or 0, vis[6] or 0, vis[7] or 0, vis[8] or 0)
     end
 end
 
@@ -5422,6 +5617,8 @@ headerCombatFrame:SetScript("OnEvent", function()
     
     if DF.pendingVisibilityUpdate then
         DF.pendingVisibilityUpdate = nil
+        DF.pendingRaidHeaderVisibility = nil  -- Subsumed by full visibility update
+        DF.pendingRaidVisibilityUpdate = nil  -- Subsumed by full visibility update
         -- Register deferred state drivers if needed (was blocked during combat)
         if DF.pendingStateDrivers then
             DF.pendingStateDrivers = nil
@@ -5431,7 +5628,25 @@ headerCombatFrame:SetScript("OnEvent", function()
         end
         DF:UpdateHeaderVisibility()
     end
-    
+
+    -- Process deferred raid header visibility (flat ↔ grouped switch)
+    -- Only fires if pendingVisibilityUpdate didn't already handle it above
+    if DF.pendingRaidHeaderVisibility then
+        DF.pendingRaidHeaderVisibility = nil
+        DF:UpdateRaidHeaderVisibility()
+    end
+
+    -- Process orphan pendingRaidVisibilityUpdate (set by UpdateLiveRaidFrames
+    -- in Init.lua when called during combat — previously never consumed)
+    if DF.pendingRaidVisibilityUpdate then
+        DF.pendingRaidVisibilityUpdate = nil
+        -- Replay what UpdateLiveRaidFrames does: show raidContainer + sync headers
+        if IsInRaid() and DF.raidContainer then
+            DF.raidContainer:Show()
+        end
+        DF:UpdateRaidHeaderVisibility()
+    end
+
     local raidDb = DF:GetRaidDB()
     local isFlatRaid = IsInRaid() and not raidDb.raidUseGroups
     
@@ -7348,6 +7563,8 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     -- 3. Update position handler for group layout
     -- Frame updates (role icons, dispel, etc.) happen via OnAttributeChanged and UNIT_* events
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        DF:Debug("ROSTER", "EVENT: %s, members=%d, inRaid=%s, combat=%s",
+            event, GetNumGroupMembers(), tostring(IsInRaid()), tostring(InCombatLockdown()))
         DF:RosterDebugEvent("Headers.lua:" .. event)
         
         -- Only if headers are fully initialized
@@ -7437,7 +7654,12 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         
         -- PLAYER_ENTERING_WORLD runs immediately
-        
+        gruEventCount = 0  -- Reset GRU counter for this zone-in
+        local isInInstance, instanceType = IsInInstance()
+        DF:Debug("ROSTER", "PEW: isInitialLogin=%s, isReload=%s, inRaid=%s, inGroup=%s, members=%d, inInstance=%s, instanceType=%s",
+            tostring(arg1), tostring(arg2), tostring(IsInRaid()), tostring(IsInGroup()),
+            GetNumGroupMembers(), tostring(isInInstance), tostring(instanceType or "nil"))
+
         -- ARENA DEBUG: Log instance detection state at PEW entry
         
         -- FIX: Clear ALL caches to force re-validation of all frames
@@ -7451,6 +7673,14 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- incorrectly returning false when entering LFR with similar roster composition
         wipe(rosterMembershipCache)
         lastRosterCount = 0
+
+        -- Clear sorting key cache so the next ApplyRaidGroupSorting does a full
+        -- Hide/Show cycle. Zone transitions may change the roster composition
+        -- even though the nameList string looks the same.
+        if DF._lastGroupSortKey then wipe(DF._lastGroupSortKey) end
+        -- Clear layout cache so UpdateRaidHeaderLayoutAttributes runs fully
+        lastLayoutHorizontal = nil
+        lastLayoutSpacing = nil
         
         -- NOTE: Do NOT wipe(unitFrameMap) here. Keeping existing entries ensures
         -- UNIT_HEALTH events keep dispatching to frames while headers rebuild.
@@ -7480,10 +7710,10 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- visible because ApplyHeaderSettings doesn't call UpdateHeaderVisibility.
         -- The addon relied on GROUP_ROSTER_UPDATE (queued to next frame) to fix this,
         -- but that creates a race with combat start at arena gates.
+        DF:Debug("ROSTER", "PEW: calling UpdateHeaderVisibility()")
         DF:UpdateHeaderVisibility()
-        
-        -- ARENA DEBUG: Log what UpdateHeaderVisibility decided
-        
+        DF:Debug("ROSTER", "PEW: UpdateHeaderVisibility() complete, calling ApplyHeaderSettings()")
+
         -- ARENA FIX: Reset stale sorting attributes on arena header.
         -- ApplyHeaderSettings calls ApplyPartyGroupSorting (party only), never ApplyArenaHeaderSorting.
         -- So the arena header retains the stale nameList from the PREVIOUS arena match.
@@ -7506,13 +7736,15 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         end
         
         DF:ApplyHeaderSettings()
-        
+        DF:Debug("ROSTER", "PEW: ApplyHeaderSettings() complete")
+
         -- FIX: Rebuild unitFrameMap immediately after ApplyHeaderSettings.
         -- If sorting attributes haven't changed, OnAttributeChanged("unit") won't fire
         -- on header children, leaving unitFrameMap empty after the wipe above.
         -- Without this, all UNIT_HEALTH events are silently dropped until something
         -- else triggers OnAttributeChanged (e.g., a roster change).
         DF:RebuildUnitFrameMap()
+        DF:Debug("ROSTER", "PEW: initial RebuildUnitFrameMap done, mapSize=%d", DF.unitFrameMap and DF:CountUnitFrameMap() or -1)
         
         -- Explicitly refresh all visible frames after a small delay
         -- This catches cases where unit attributes don't change but the player behind
@@ -7520,7 +7752,9 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         C_Timer.After(0.1, function()
             -- FIX: Rebuild map again in case header children became visible
             -- after the initial rebuild (SecureGroupHeaderTemplate may defer child Show)
+            DF:Debug("ROSTER", "PEW +0.1s: rebuilding unitFrameMap, members=%d, GRUs so far=%d", GetNumGroupMembers(), gruEventCount)
             DF:RebuildUnitFrameMap()
+            DF:Debug("ROSTER", "PEW +0.1s: mapSize=%d", DF.unitFrameMap and DF:CountUnitFrameMap() or -1)
             if DF.RefreshLiveFrames then
                 DF:RefreshLiveFrames()
             end
@@ -7550,8 +7784,13 @@ headerEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- refresh ensures every frame has correct health data.
         if IsInRaid() then
             C_Timer.After(1.0, function()
-                if InCombatLockdown() then return end
+                if InCombatLockdown() then
+                    DF:Debug("ROSTER", "PEW +1.0s: skipped (combat lockdown)")
+                    return
+                end
+                DF:Debug("ROSTER", "PEW +1.0s: rebuilding unitFrameMap, members=%d, GRUs so far=%d", GetNumGroupMembers(), gruEventCount)
                 DF:RebuildUnitFrameMap()
+                DF:Debug("ROSTER", "PEW +1.0s: mapSize=%d", DF.unitFrameMap and DF:CountUnitFrameMap() or -1)
                 if DF.RefreshLiveFrames then
                     DF:RefreshLiveFrames()
                 end
@@ -7606,7 +7845,10 @@ end)
 -- Separated roster update processing for debounce
 function DF:ProcessRosterUpdate()
     DF:RosterDebugEvent("Headers.lua:ProcessRosterUpdate")
-    
+    local numGroup = GetNumGroupMembers()
+    local inRaid = IsInRaid()
+    DF:Debug("ROSTER", "ProcessRosterUpdate: %d members, inRaid=%s", numGroup, tostring(inRaid))
+
     -- Clear range cache so stale unit→range mappings are flushed
     -- (moved here from Range.lua's own GROUP_ROSTER_UPDATE handler)
     if DF.ClearRangeCache then
@@ -7621,6 +7863,7 @@ function DF:ProcessRosterUpdate()
     
     -- ARENA: Special handling - uses party settings but raid unit IDs
     if inArena then
+        DF:Debug("ROSTER", "  Path: ARENA")
         -- Update visibility (shows arena header, hides party/raid)
         DF:UpdateHeaderVisibility()
         
@@ -7644,17 +7887,20 @@ function DF:ProcessRosterUpdate()
     
     -- RAID (not arena): Use flat layout handling
     if IsInRaid() and not raidDb.raidUseGroups then
+        DF:Debug("ROSTER", "  Path: FLAT RAID")
         -- If in combat, queue refresh for after combat
         if InCombatLockdown() then
+            DF:Debug("ROSTER", "  Deferred: combat lockdown (pendingFlatLayoutRefresh)")
             DF.pendingFlatLayoutRefresh = true
             return
         end
-        
-        -- TEST 1: Visibility update - OK
-        DF:UpdateHeaderVisibility()
-        
+
+        -- Visibility update — skip grouped-raid reposition (flat raids don't use it)
+        DF:UpdateHeaderVisibility(true)
+
         -- TEST 2: HasRosterMembershipChanged check - OK
         if not HasRosterMembershipChanged() then
+            DF:Debug("ROSTER", "  Flat raid: roster unchanged, skipping sorting")
             -- FIX: Even though roster hasn't changed, unitFrameMap may be empty
             -- (e.g., after PLAYER_ENTERING_WORLD wiped it and OnAttributeChanged
             -- didn't fire because unit assignments are the same). Rebuild it.
@@ -7664,6 +7910,7 @@ function DF:ProcessRosterUpdate()
         
         -- Always call flat raid sorting - it handles sortEnabled=false internally
         -- This ensures stale nameList/groupBy attributes are cleared when sorting is disabled
+        DF:Debug("ROSTER", "  Flat raid: roster changed, applying sorting")
         DF:ApplyRaidFlatSorting()
         
         -- TEST 4: UpdateRestedIndicator - OK (group labels not needed for flat layout)
@@ -7681,7 +7928,11 @@ function DF:ProcessRosterUpdate()
     
     -- Update visibility (handles raid<->party container switching)
     -- This is always needed as it's cheap and handles party<->raid switching
-    DF:UpdateHeaderVisibility()
+    -- Skip raid reposition here — sorting below will trigger its own authoritative
+    -- reposition with correct group counts. Firing here with stale counts causes
+    -- visible frame jumping.
+    DF:Debug("ROSTER", "  Path: PARTY/GROUPED RAID (skipRaidReposition=true)")
+    DF:UpdateHeaderVisibility(true)
     
     -- Update player group tracking for "Player's Group First" feature (raid only, not arena)
     if IsInRaid() and not inArena and raidDb.raidPlayerGroupFirst then
@@ -7692,18 +7943,22 @@ function DF:ProcessRosterUpdate()
     -- This prevents redundant sorting when GROUP_ROSTER_UPDATE fires multiple times
     -- with the same roster data
     if not HasRosterMembershipChanged() then
+        DF:Debug("ROSTER", "  Roster unchanged — skipping sorting, rebuilding unitFrameMap")
         -- Roster is identical - skip sorting
         -- Visibility update already handled above
         -- FIX: Rebuild unitFrameMap in case it was wiped (e.g., by PLAYER_ENTERING_WORLD)
         -- but OnAttributeChanged didn't fire because unit assignments are unchanged.
         DF:RebuildUnitFrameMap()
-        -- Position handler still needs a poke for grow-from-center
-        if IsInRaid() and not inArena and DF.raidPositionHandler and DF.raidSeparatedHeaders then
-            DF:TriggerRaidPosition()
+        -- Clear suppressreposition that was set by UpdateHeaderVisibility(true) above.
+        -- Without this, suppress leaks and blocks all future repositioning until
+        -- the next roster change that passes HasRosterMembershipChanged().
+        if DF.raidPositionHandler then
+            DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
         end
         return
     end
-    
+
+    DF:Debug("ROSTER", "  Roster CHANGED — applying sorting")
     -- Roster actually changed - apply sorting
     -- NOTE: Sorting functions can't run during combat (they modify secure header attributes)
     -- Queue for after combat if in combat lockdown
@@ -7728,16 +7983,17 @@ function DF:ProcessRosterUpdate()
     if IsInRaid() and not inArena then
         -- Always call raid sorting - it handles sortEnabled=false internally
         if raidDb.raidUseGroups then
+            DF:Debug("ROSTER", "  Applying grouped raid sorting")
             DF:ApplyRaidGroupSorting()
         else
+            DF:Debug("ROSTER", "  Applying flat raid sorting")
             DF:ApplyRaidFlatSorting()
         end
         
-        -- Update position handler for group layout changes
-        if DF.raidPositionHandler and DF.raidSeparatedHeaders then
-            DF:TriggerRaidPosition()
-        end
-        
+        -- NOTE: TriggerRaidPosition is NOT called here because ApplyRaidGroupSorting()
+        -- already triggers it via UpdateRaidPositionAttributes(). Calling it again caused
+        -- a double-reposition that made frames visually jump on roster changes.
+
         -- Update group labels (quick operation, safe anytime)
         if DF.UpdateRaidGroupLabels then
             C_Timer.After(0.1, function()

@@ -27,6 +27,14 @@ local issecretvalue = issecretvalue or function() return false end
 local GetAuraDataByAuraInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
 local IsAuraFilteredOut = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
 
+-- Check if an interpolated color result differs from the original color.
+-- result.r/g/b may be secret (tainted) values from EvaluateRemainingDuration/Percent;
+-- arithmetic on secret values throws. If tainted, the engine IS interpolating → expiring.
+local function IsColorExpiring(result, oc)
+    if issecretvalue(result.r) then return true end
+    return (math.abs(result.r - oc.r) > 0.01 or math.abs(result.g - oc.g) > 0.01 or math.abs(result.b - oc.b) > 0.01)
+end
+
 DF.AuraDesigner = DF.AuraDesigner or {}
 
 local Indicators = {}
@@ -157,8 +165,18 @@ end
 -- ============================================================
 
 local expiringRegistry = {}
+local pendingHideWhenNotExpiring = false  -- Set by Apply before dispatch, read by RegisterExpiring
+local pendingUseShowHide = false          -- When true, ticker uses Show/Hide instead of SetAlpha
+local pendingHiddenAlpha = nil            -- Alpha to use when "not expiring" (nil = 0 for borders, savedAlpha for framealpha)
 
 local function RegisterExpiring(element, entryData)
+    -- Propagate Show When Missing visibility flag
+    if pendingHideWhenNotExpiring then
+        entryData.hideWhenNotExpiring = true
+        entryData.visibleAlpha = entryData.originalAlpha or 1
+        entryData.useShowHide = pendingUseShowHide or false
+        entryData.hiddenAlpha = pendingHiddenAlpha  -- nil = use 0, number = use that alpha
+    end
     expiringRegistry[element] = entryData
 
     -- Evaluate immediately so the Apply function ends with the correct
@@ -169,8 +187,13 @@ local function RegisterExpiring(element, entryData)
     if entryData.colorCurve and entryData.unit and entryData.auraInstanceID
        and C_UnitAuras and C_UnitAuras.GetAuraDuration then
         local durationObj = C_UnitAuras.GetAuraDuration(entryData.unit, entryData.auraInstanceID)
-        if durationObj and durationObj.EvaluateRemainingPercent then
-            local result = durationObj:EvaluateRemainingPercent(entryData.colorCurve)
+        if durationObj then
+            local result
+            if entryData.thresholdMode == "SECONDS" and durationObj.EvaluateRemainingDuration then
+                result = durationObj:EvaluateRemainingDuration(entryData.colorCurve)
+            elseif durationObj.EvaluateRemainingPercent then
+                result = durationObj:EvaluateRemainingPercent(entryData.colorCurve)
+            end
             if result and entryData.applyResult then
                 entryData.applyResult(element, result, entryData)
                 applied = true
@@ -182,11 +205,19 @@ local function RegisterExpiring(element, entryData)
         local exp = entryData.expirationTime
         if dur and exp and not issecretvalue(dur) and not issecretvalue(exp) and dur > 0 then
             local remaining = max(0, exp - GetTime())
-            local pct = remaining / dur
-            local isExpiring = pct <= ((entryData.threshold or 30) / 100)
+            local isExpiring
+            if entryData.thresholdMode == "SECONDS" then
+                isExpiring = remaining <= (entryData.threshold or 10)
+            else
+                local pct = remaining / dur
+                isExpiring = pct <= ((entryData.threshold or 30) / 100)
+            end
             if entryData.applyManual then
                 entryData.applyManual(element, isExpiring, entryData)
             end
+        elseif entryData.applyManual then
+            -- duration=0 means permanent or synthetic (missing) aura — not expiring
+            entryData.applyManual(element, false, entryData)
         end
     end
 end
@@ -201,7 +232,8 @@ end
 --   Below threshold → expiring color
 --   At/above threshold → original color
 -- Same pattern as bar's dfAD_colorCurve for expiring-only mode.
-local function BuildExpiringColorCurve(threshold, expiringColor, originalColor)
+-- thresholdMode: nil/"PERCENT" = percentage (0-100), "SECONDS" = seconds (1-60)
+local function BuildExpiringColorCurve(threshold, expiringColor, originalColor, thresholdMode)
     if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
     local curve = C_CurveUtil.CreateColorCurve()
     curve:SetType(Enum.LuaCurveType.Step)
@@ -212,9 +244,134 @@ local function BuildExpiringColorCurve(threshold, expiringColor, originalColor)
     local ocG = originalColor.g or 1
     local ocB = originalColor.b or 1
     curve:AddPoint(0, CreateColor(ecR, ecG, ecB, 1))
-    curve:AddPoint(threshold / 100, CreateColor(ocR, ocG, ocB, 1))
-    curve:AddPoint(1, CreateColor(ocR, ocG, ocB, 1))
+    if thresholdMode == "SECONDS" then
+        -- Curve points in seconds for EvaluateRemainingDuration
+        curve:AddPoint(threshold, CreateColor(ocR, ocG, ocB, 1))
+        curve:AddPoint(600, CreateColor(ocR, ocG, ocB, 1))  -- 10min cap
+    else
+        -- Curve points as decimal percentage for EvaluateRemainingPercent
+        curve:AddPoint(threshold / 100, CreateColor(ocR, ocG, ocB, 1))
+        curve:AddPoint(1, CreateColor(ocR, ocG, ocB, 1))
+    end
     return curve
+end
+
+-- Build a Step color curve for hiding duration text above a seconds threshold.
+-- Returns alpha=1 (visible) when remaining <= threshold, alpha=0 (hidden) above.
+-- Only uses EvaluateRemainingDuration (always seconds-based).
+-- Create (or return cached) pulse AnimationGroup on a frame.
+-- Matches the buff tab's expiring border pulse: 1→0.3→1, 0.5s each, IN_OUT, REPEAT.
+local function GetOrCreatePulseAnim(frame)
+    if not frame.dfAD_pulse then
+        frame.dfAD_pulse = frame:CreateAnimationGroup()
+        frame.dfAD_pulse:SetLooping("REPEAT")
+        local fadeOut = frame.dfAD_pulse:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0.3)
+        fadeOut:SetDuration(0.5)
+        fadeOut:SetOrder(1)
+        fadeOut:SetSmoothing("IN_OUT")
+        local fadeIn = frame.dfAD_pulse:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0.3)
+        fadeIn:SetToAlpha(1)
+        fadeIn:SetDuration(0.5)
+        fadeIn:SetOrder(2)
+        fadeIn:SetSmoothing("IN_OUT")
+    end
+    return frame.dfAD_pulse
+end
+
+-- Play or stop a pulse animation based on expiring state.
+local function UpdatePulseState(el, isExpiring)
+    if el.dfAD_expiringPulsate and el.dfAD_pulse then
+        if isExpiring and not el.dfAD_pulse:IsPlaying() then
+            el.dfAD_pulse:Play()
+        elseif not isExpiring and el.dfAD_pulse:IsPlaying() then
+            el.dfAD_pulse:Stop()
+            el:SetAlpha(1)
+        end
+    end
+end
+
+-- Create or return a whole-frame alpha pulse animation (pulses entire icon/square).
+local function GetOrCreateWholeAlphaPulse(frame)
+    if not frame.dfAD_wholeAlphaPulse then
+        frame.dfAD_wholeAlphaPulse = frame:CreateAnimationGroup()
+        frame.dfAD_wholeAlphaPulse:SetLooping("REPEAT")
+        local fadeOut = frame.dfAD_wholeAlphaPulse:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0.3)
+        fadeOut:SetDuration(0.5)
+        fadeOut:SetOrder(1)
+        fadeOut:SetSmoothing("IN_OUT")
+        local fadeIn = frame.dfAD_wholeAlphaPulse:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0.3)
+        fadeIn:SetToAlpha(1)
+        fadeIn:SetDuration(0.5)
+        fadeIn:SetOrder(2)
+        fadeIn:SetSmoothing("IN_OUT")
+    end
+    return frame.dfAD_wholeAlphaPulse
+end
+
+-- Create or return a bounce (translation) animation.
+-- For squares, a wrapper frame is used to avoid CooldownFrameTemplate rendering glitches
+-- when Translation is applied directly to a frame with a Cooldown child.
+-- The wrapper is created and managed in the square expiring setup section.
+local function GetOrCreateBounceAnim(frame)
+    if not frame.dfAD_bounceAnim then
+        frame.dfAD_bounceAnim = frame:CreateAnimationGroup()
+        frame.dfAD_bounceAnim:SetLooping("REPEAT")
+        local up = frame.dfAD_bounceAnim:CreateAnimation("Translation")
+        up:SetOffset(0, 4)
+        up:SetDuration(0.25)
+        up:SetOrder(1)
+        up:SetSmoothing("OUT")
+        local down = frame.dfAD_bounceAnim:CreateAnimation("Translation")
+        down:SetOffset(0, -4)
+        down:SetDuration(0.25)
+        down:SetOrder(2)
+        down:SetSmoothing("IN")
+    end
+    return frame.dfAD_bounceAnim
+end
+
+-- Play or stop whole-alpha pulse based on expiring state.
+local function UpdateWholeAlphaPulseState(el, isExpiring)
+    if el.dfAD_expiringWholeAlphaPulse and el.dfAD_wholeAlphaPulse then
+        if isExpiring and not el.dfAD_wholeAlphaPulse:IsPlaying() then
+            el.dfAD_wholeAlphaPulse:Play()
+        elseif not isExpiring and el.dfAD_wholeAlphaPulse:IsPlaying() then
+            el.dfAD_wholeAlphaPulse:Stop()
+            el:SetAlpha(1)
+        end
+    end
+end
+
+-- Play or stop bounce animation based on expiring state.
+local function UpdateBounceState(el, isExpiring)
+    if el.dfAD_expiringBounce and el.dfAD_bounceAnim then
+        if isExpiring and not el.dfAD_bounceAnim:IsPlaying() then
+            el.dfAD_bounceAnim:Play()
+        elseif not isExpiring and el.dfAD_bounceAnim:IsPlaying() then
+            el.dfAD_bounceAnim:Stop()
+        end
+    end
+end
+
+local function BuildDurationHideCurve(threshold)
+    if not C_CurveUtil or not C_CurveUtil.CreateColorCurve then return nil end
+    DF.durationHideCurves = DF.durationHideCurves or {}
+    local cacheKey = threshold
+    if not DF.durationHideCurves[cacheKey] then
+        local curve = C_CurveUtil.CreateColorCurve()
+        curve:SetType(Enum.LuaCurveType.Step)
+        curve:AddPoint(0, CreateColor(1, 1, 1, 1))          -- visible
+        curve:AddPoint(threshold, CreateColor(1, 1, 1, 0))  -- hidden
+        curve:AddPoint(600, CreateColor(1, 1, 1, 0))        -- cap
+        DF.durationHideCurves[cacheKey] = curve
+    end
+    return DF.durationHideCurves[cacheKey]
 end
 
 local expiringFrame = CreateFrame("Frame")
@@ -236,8 +393,13 @@ expiringFrame:SetScript("OnUpdate", function(_, elapsed)
             if entry.colorCurve and entry.unit and entry.auraInstanceID
                and C_UnitAuras and C_UnitAuras.GetAuraDuration then
                 local durationObj = C_UnitAuras.GetAuraDuration(entry.unit, entry.auraInstanceID)
-                if durationObj and durationObj.EvaluateRemainingPercent then
-                    local result = durationObj:EvaluateRemainingPercent(entry.colorCurve)
+                if durationObj then
+                    local result
+                    if entry.thresholdMode == "SECONDS" and durationObj.EvaluateRemainingDuration then
+                        result = durationObj:EvaluateRemainingDuration(entry.colorCurve)
+                    elseif durationObj.EvaluateRemainingPercent then
+                        result = durationObj:EvaluateRemainingPercent(entry.colorCurve)
+                    end
                     if result and entry.applyResult then
                         entry.applyResult(element, result, entry)
                         applied = true
@@ -245,17 +407,53 @@ expiringFrame:SetScript("OnUpdate", function(_, elapsed)
                 end
             end
 
-            -- Preview fallback: manual pct comparison (same as bar's preview path)
+            -- Preview fallback: manual comparison (same as bar's preview path)
             if not applied then
                 local dur = entry.duration
                 local exp = entry.expirationTime
                 if dur and exp and not issecretvalue(dur) and not issecretvalue(exp) and dur > 0 then
                     local remaining = max(0, exp - GetTime())
-                    local pct = remaining / dur
-                    local isExpiring = pct <= ((entry.threshold or 30) / 100)
+                    local isExpiring
+                    if entry.thresholdMode == "SECONDS" then
+                        isExpiring = remaining <= (entry.threshold or 10)
+                    else
+                        local pct = remaining / dur
+                        isExpiring = pct <= ((entry.threshold or 30) / 100)
+                    end
                     if entry.applyManual then
                         entry.applyManual(element, isExpiring, entry)
                     end
+                elseif entry.applyManual then
+                    -- duration=0 means permanent or synthetic (missing) aura — not expiring
+                    entry.applyManual(element, false, entry)
+                end
+            end
+
+            -- Show When Missing: toggle visibility based on expiring state.
+            -- Icons/squares use Hide()/Show() so OOR alpha restore won't undo us.
+            -- Borders use SetAlpha() since they're not in the OOR icon/square loop.
+            if entry.hideWhenNotExpiring then
+                local dur = entry.duration
+                local exp = entry.expirationTime
+                local isExp = false
+                if dur and exp and not issecretvalue(dur) and not issecretvalue(exp) and dur > 0 then
+                    local rem = max(0, exp - GetTime())
+                    if entry.thresholdMode == "SECONDS" then
+                        isExp = rem <= (entry.threshold or 10)
+                    else
+                        isExp = (rem / dur) <= ((entry.threshold or 30) / 100)
+                    end
+                end
+                if entry.useShowHide then
+                    if isExp then
+                        element:Show()
+                        element:SetAlpha(entry.visibleAlpha or 1)
+                    else
+                        element:Hide()
+                    end
+                else
+                    local notExpAlpha = entry.hiddenAlpha or 0
+                    element:SetAlpha(isExp and (entry.visibleAlpha or 1) or notExpAlpha)
                 end
             end
         end
@@ -281,6 +479,8 @@ local function EnsureFrameState(frame)
             activeIcons = {},
             activeSquares = {},
             activeBars = {},
+            -- Custom border tracking: { [auraName] = true } for active this frame
+            activeCustomBorders = {},
             -- Saved defaults for reverting (tintOverlay cached separately)
             savedNameColor = nil,
             savedHealthTextColor = nil,
@@ -305,6 +505,7 @@ function Indicators:BeginFrame(frame)
     table.wipe(state.activeIcons)
     table.wipe(state.activeSquares)
     table.wipe(state.activeBars)
+    table.wipe(state.activeCustomBorders)
 end
 
 -- ============================================================
@@ -312,6 +513,13 @@ end
 -- ============================================================
 
 function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, priority)
+    -- Show When Missing + aura is present: hide unless expiring
+    local hideUntilExpiring = config.showWhenMissing and auraData and not auraData.isMissingAura
+    if hideUntilExpiring and not config.expiringEnabled then
+        -- No expiring configured; nothing to show when aura is present
+        return
+    end
+
     -- Validate aura still exists and matches expectations before rendering.
     -- Mirrors the defensive bar post-validation pattern (commit 7b141a8).
     local unit = frame.unit
@@ -327,13 +535,27 @@ function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, 
         end
 
         -- Verify the aura belongs to the player (not another player's buff)
-        if unit and IsAuraFilteredOut then
+        -- Skip for selfOnly auras (e.g. Symbiotic Relationship) where the
+        -- source is another unit but the buff legitimately appears on the player
+        if unit and IsAuraFilteredOut and not auraData.selfOnly then
             if IsAuraFilteredOut(unit, auraID, "HELPFUL|PLAYER") then return end
         end
     end
 
+    -- Set module flags so RegisterExpiring (called inside Apply*) picks them up
+    pendingHideWhenNotExpiring = hideUntilExpiring or false
+    -- Icons and squares use Show/Hide to avoid OOR alpha restore undoing the hide
+    pendingUseShowHide = (typeKey == "icon" or typeKey == "square") and hideUntilExpiring or false
+    -- Frame alpha reverts to saved alpha instead of 0 when "not expiring"
+    if typeKey == "framealpha" and hideUntilExpiring then
+        local state = frame.dfAD
+        pendingHiddenAlpha = state and state.savedAlpha or 1.0
+    else
+        pendingHiddenAlpha = nil
+    end
+
     if typeKey == "border" then
-        self:ApplyBorder(frame, config, auraData)
+        self:ApplyBorder(frame, config, auraData, auraName)
     elseif typeKey == "healthbar" then
         self:ApplyHealthBar(frame, config, auraData)
     elseif typeKey == "nametext" then
@@ -349,6 +571,36 @@ function Indicators:Apply(frame, typeKey, config, auraData, defaults, auraName, 
     elseif typeKey == "bar" then
         self:ApplyBar(frame, config, auraData, defaults, auraName, priority)
     end
+
+    pendingHideWhenNotExpiring = false  -- Reset
+    pendingUseShowHide = false
+    pendingHiddenAlpha = nil
+
+    -- After rendering, hide the indicator if we're in "present but hide until expiring" mode.
+    -- The expiring ticker (3 FPS) will toggle visibility when the threshold is met.
+    -- Use Hide() for icons/squares so OOR alpha restore (UpdateAuraDesignerAppearance)
+    -- won't undo our visibility override. Borders keep SetAlpha since they're not in
+    -- the OOR icon/square loop.
+    if hideUntilExpiring then
+        if typeKey == "icon" then
+            local icon = frame.dfAD_icons and frame.dfAD_icons[auraName]
+            if icon then icon:Hide() end
+        elseif typeKey == "square" then
+            local sq = frame.dfAD_squares and frame.dfAD_squares[auraName]
+            if sq then sq:Hide() end
+        elseif typeKey == "border" then
+            local ch = frame.dfAD_border
+            if config.borderMode == "custom" and frame.dfAD_customBorders then
+                ch = frame.dfAD_customBorders[auraName]
+            end
+            if ch then ch:SetAlpha(0) end
+        elseif typeKey == "framealpha" then
+            -- Revert to normal alpha — don't make the frame transparent
+            local state = frame.dfAD
+            local savedAlpha = state and state.savedAlpha or 1.0
+            frame:SetAlpha(savedAlpha)
+        end
+    end
 end
 
 -- ============================================================
@@ -358,7 +610,7 @@ end
 
 function Indicators:ApplyTest(frame, typeKey, config, auraData, defaults, auraName, priority)
     if typeKey == "border" then
-        self:ApplyBorder(frame, config, auraData)
+        self:ApplyBorder(frame, config, auraData, auraName)
     elseif typeKey == "healthbar" then
         self:ApplyHealthBar(frame, config, auraData)
     elseif typeKey == "nametext" then
@@ -385,9 +637,21 @@ function Indicators:EndFrame(frame)
     local state = frame.dfAD
     if not state then return end
 
-    -- Revert border
+    -- Revert shared border
     if not state.border then
         self:RevertBorder(frame)
+    end
+
+    -- Hide custom borders not active this frame
+    if frame.dfAD_customBorders then
+        for key, ch in pairs(frame.dfAD_customBorders) do
+            if not state.activeCustomBorders[key] then
+                UnregisterExpiring(ch)
+                DF.ApplyHighlightStyle(ch, "NONE", 2, 0, 1, 1, 1, 1)
+                ch.dfAD_style = nil
+                ch.dfAD_auraID = nil
+            end
+        end
     end
 
     -- Revert health bar color
@@ -427,6 +691,7 @@ end
 
 function Indicators:HideAll(frame)
     self:RevertBorder(frame)
+    self:RevertCustomBorders(frame)
     self:RevertHealthBar(frame)
     self:RevertNameText(frame)
     self:RevertHealthText(frame)
@@ -487,51 +752,79 @@ local function GetOrCreateADBorder(frame)
     return ch
 end
 
-function Indicators:ApplyBorder(frame, config, auraData)
-    local state = EnsureFrameState(frame)
-    if state.border then return end  -- Already claimed by higher priority
-    state.border = true
+local function GetOrCreateCustomBorder(frame, key)
+    if not frame.dfAD_customBorders then
+        frame.dfAD_customBorders = {}
+    end
+    local pool = frame.dfAD_customBorders
+    if pool[key] then
+        pool[key]:ClearAllPoints()
+        pool[key]:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        pool[key]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        return pool[key]
+    end
 
+    local ch = CreateFrame("Frame", nil, UIParent)
+    ch:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    ch:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    ch:SetFrameStrata(frame:GetFrameStrata())
+    ch:SetFrameLevel(frame:GetFrameLevel() + 7)  -- Below shared border(+8)
+    ch:Hide()
+
+    ch.topLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.bottomLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.leftLine = ch:CreateTexture(nil, "OVERLAY")
+    ch.rightLine = ch:CreateTexture(nil, "OVERLAY")
+
+    frame:HookScript("OnHide", function()
+        if pool[key] then
+            pool[key]:Hide()
+        end
+    end)
+
+    pool[key] = ch
+    return ch
+end
+
+-- Shared logic for applying border style, change detection, and expiring
+-- registration to a border overlay frame. Used by both shared and custom borders.
+local function ApplyBorderToOverlay(ch, frame, config, auraData)
     local color = config.color
     if not color then return end
 
-    local ch = GetOrCreateADBorder(frame)
     local r, g, b = color[1] or color.r or 1, color[2] or color.g or 1, color[3] or color.b or 1
     local alpha = color[4] or color.a or 1
     local thickness = config.thickness or 2
     local inset = config.inset or 0
 
-    -- Migrate old style names (Solid→SOLID, Glow→GLOW, Pulse→SOLID)
     local style = BORDER_STYLE_MIGRATION[config.style] or config.style or "SOLID"
 
-    -- Skip redundant re-apply when the border is already showing with the
-    -- same settings.  ApplyHighlightStyle hides everything then rebuilds,
-    -- which causes a one-frame flicker for animated borders.
     local auraID = auraData and auraData.auraInstanceID
+    local expiringPulsate = config.expiringPulsate or false
     if ch:IsShown()
         and ch.dfAD_style == style
         and ch.dfAD_r == r and ch.dfAD_g == g and ch.dfAD_b == b and ch.dfAD_a == alpha
         and ch.dfAD_thickness == thickness and ch.dfAD_inset == inset
-        and ch.dfAD_auraID == auraID then
-        -- Nothing changed — leave border as-is (animation continues uninterrupted)
+        and ch.dfAD_auraID == auraID
+        and ch.dfAD_expiringPulsate == expiringPulsate then
         return
     end
 
-    -- Reuse the highlight system's rendering for all 6 border modes
     DF.ApplyHighlightStyle(ch, style, thickness, inset, r, g, b, alpha)
 
-    -- Cache current state for change detection
     ch.dfAD_style = style
     ch.dfAD_r, ch.dfAD_g, ch.dfAD_b, ch.dfAD_a = r, g, b, alpha
     ch.dfAD_thickness = thickness
     ch.dfAD_inset = inset
     ch.dfAD_auraID = auraID
 
-    -- ========================================
-    -- EXPIRING: register with shared ticker
-    -- ========================================
     local expiringEnabled = config.expiringEnabled
     if expiringEnabled == nil then expiringEnabled = false end
+
+    -- Lazy-create pulse animation group (reused across aura changes)
+    if expiringPulsate then GetOrCreatePulseAnim(ch) end
+    ch.dfAD_expiringPulsate = expiringPulsate
+
     if expiringEnabled then
         local ec = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
         local oc = {r = r, g = g, b = b}
@@ -541,25 +834,54 @@ function Indicators:ApplyBorder(frame, config, auraData)
             threshold = config.expiringThreshold or 30,
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
-            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode),
+            thresholdMode = config.expiringThresholdMode,
             color = ec, originalColor = oc,
-            originalAlpha = alpha, style = style, thickness = thickness, inset = inset,
+            originalAlpha = alpha, expiringAlpha = config.expiringAlpha or 1.0, style = style, thickness = thickness, inset = inset,
             applyResult = function(el, result, entry)
-                DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, result.r, result.g, result.b, entry.originalAlpha)
+                local oc2 = entry.originalColor
+                local isExp = IsColorExpiring(result, oc2)
+                local a = isExp and entry.expiringAlpha or entry.originalAlpha
+                DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, result.r, result.g, result.b, a)
+                UpdatePulseState(el, isExp)
             end,
             applyManual = function(el, isExp, entry)
                 if isExp then
                     local c = entry.color
-                    DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, c.r or 1, c.g or 0.2, c.b or 0.2, entry.originalAlpha)
+                    DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, c.r or 1, c.g or 0.2, c.b or 0.2, entry.expiringAlpha)
                 else
                     local c = entry.originalColor
                     DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, c.r, c.g, c.b, entry.originalAlpha)
                 end
+                UpdatePulseState(el, isExp)
             end,
         })
     else
         UnregisterExpiring(ch)
+        -- Stop pulsation when expiring is disabled
+        if ch.dfAD_pulse and ch.dfAD_pulse:IsPlaying() then
+            ch.dfAD_pulse:Stop()
+            ch:SetAlpha(1)
+        end
     end
+end
+
+function Indicators:ApplyBorder(frame, config, auraData, auraName)
+    local state = EnsureFrameState(frame)
+
+    if config.borderMode == "custom" and auraName then
+        -- Custom border: independent overlay, bypasses shared claim system
+        local ch = GetOrCreateCustomBorder(frame, auraName)
+        state.activeCustomBorders[auraName] = true
+        ApplyBorderToOverlay(ch, frame, config, auraData)
+        return
+    end
+
+    -- Shared border (default): priority-based, first claim wins
+    if state.border then return end
+    state.border = true
+    local ch = GetOrCreateADBorder(frame)
+    ApplyBorderToOverlay(ch, frame, config, auraData)
 end
 
 function Indicators:RevertBorder(frame)
@@ -570,6 +892,17 @@ function Indicators:RevertBorder(frame)
         -- Clear cached state so next ApplyBorder won't skip via change detection
         frame.dfAD_border.dfAD_style = nil
         frame.dfAD_border.dfAD_auraID = nil
+    end
+end
+
+function Indicators:RevertCustomBorders(frame)
+    if frame and frame.dfAD_customBorders then
+        for _, ch in pairs(frame.dfAD_customBorders) do
+            UnregisterExpiring(ch)
+            DF.ApplyHighlightStyle(ch, "NONE", 2, 0, 1, 1, 1, 1)
+            ch.dfAD_style = nil
+            ch.dfAD_auraID = nil
+        end
     end
 end
 
@@ -636,7 +969,12 @@ function Indicators:ApplyHealthBar(frame, config, auraData)
     -- ========================================
     local expiringEnabled = config.expiringEnabled
     if expiringEnabled == nil then expiringEnabled = false end
-    if expiringEnabled and overlay then
+
+    local expiringPulsate = config.expiringPulsate or false
+    if expiringPulsate then GetOrCreatePulseAnim(overlay) end
+    overlay.dfAD_expiringPulsate = expiringPulsate
+
+    if expiringEnabled then
         local ec = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
         local oc = {r = r, g = g, b = b}
         RegisterExpiring(overlay, {
@@ -646,18 +984,27 @@ function Indicators:ApplyHealthBar(frame, config, auraData)
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
             blend = blend,
-            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode),
+            thresholdMode = config.expiringThresholdMode,
             color = ec, originalColor = oc,
             applyResult = function(el, result, entry)
                 el:SetStatusBarColor(result.r, result.g, result.b, entry.blend)
+                local oc2 = entry.originalColor
+                local isExp = IsColorExpiring(result, oc2)
+                UpdatePulseState(el, isExp)
             end,
             applyManual = function(el, isExp, entry)
                 local c = isExp and entry.color or entry.originalColor
                 el:SetStatusBarColor(c.r or 1, c.g or 1, c.b or 1, entry.blend)
+                UpdatePulseState(el, isExp)
             end,
         })
     elseif overlay then
         UnregisterExpiring(overlay)
+        if overlay.dfAD_pulse and overlay.dfAD_pulse:IsPlaying() then
+            overlay.dfAD_pulse:Stop()
+            overlay:SetAlpha(1)
+        end
     end
 end
 
@@ -668,6 +1015,10 @@ function Indicators:RevertHealthBar(frame)
     -- Hide overlay and unregister its expiring ticker
     if state.tintOverlay then
         UnregisterExpiring(state.tintOverlay)
+        if state.tintOverlay.dfAD_pulse and state.tintOverlay.dfAD_pulse:IsPlaying() then
+            state.tintOverlay.dfAD_pulse:Stop()
+            state.tintOverlay:SetAlpha(1)
+        end
         state.tintOverlay:Hide()
     end
 
@@ -761,7 +1112,8 @@ function Indicators:ApplyNameText(frame, config, auraData)
                 threshold = config.expiringThreshold or 30,
                 duration = auraData and auraData.duration,
                 expirationTime = auraData and auraData.expirationTime,
-                colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+                colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode),
+            thresholdMode = config.expiringThresholdMode,
                 color = ec, originalColor = oc,
                 applyResult = function(el, result, entry)
                     el:SetTextColor(result.r, result.g, result.b, result.a or 1)
@@ -832,7 +1184,8 @@ function Indicators:ApplyHealthText(frame, config, auraData)
                 threshold = config.expiringThreshold or 30,
                 duration = auraData and auraData.duration,
                 expirationTime = auraData and auraData.expirationTime,
-                colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+                colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode),
+            thresholdMode = config.expiringThresholdMode,
                 color = ec, originalColor = oc,
                 applyResult = function(el, result, entry)
                     el:SetTextColor(result.r, result.g, result.b, result.a or 1)
@@ -902,7 +1255,8 @@ function Indicators:ApplyFrameAlpha(frame, config, auraData)
             threshold = config.expiringThreshold or 30,
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
-            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode),
+            thresholdMode = config.expiringThresholdMode,
             expiringAlpha = expiringAlpha,
             originalAlpha = originalAlpha,
             applyResult = function(el, result, entry)
@@ -1031,6 +1385,12 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         if icon.texture then icon.texture:Hide() end
     end
 
+    -- Desaturation for Show When Missing mode
+    if icon.texture then
+        local desaturate = config.missingDesaturate and auraData.isMissingAura
+        icon.texture:SetDesaturated(desaturate and true or false)
+    end
+
     -- Cooldown — uses Duration object pipeline (secret-safe)
     local hideSwipe = config.hideSwipe; if hideSwipe == nil then hideSwipe = defaults and defaults.hideSwipe end
     local hasDuration = HasAuraDuration(auraData, frame.unit)
@@ -1041,6 +1401,11 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     else
         icon.cooldown:SetDrawSwipe(false)
         icon.cooldown:Hide()
+        -- Clear stale countdown text (may persist if reparented to durationHideWrapper)
+        if icon.nativeCooldownText then
+            icon.nativeCooldownText:SetText("")
+            icon.nativeCooldownText:Hide()
+        end
     end
 
     -- ========================================
@@ -1142,12 +1507,18 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         if durationColorByTime == nil then durationColorByTime = true end
     end
 
+    local durationHideAboveEnabled = config.durationHideAboveEnabled
+    if durationHideAboveEnabled == nil then durationHideAboveEnabled = (defaults and defaults.durationHideAboveEnabled) or false end
+    local durationHideAboveThreshold = config.durationHideAboveThreshold or (defaults and defaults.durationHideAboveThreshold) or 10
+
     -- Wire settings to icon properties (read by shared aura timer if registered)
     icon.showDuration = showDuration
     icon.durationColorByTime = durationColorByTime
     icon.durationAnchor = durationAnchor
     icon.durationX = durationX
     icon.durationY = durationY
+    icon.durationHideAboveEnabled = durationHideAboveEnabled
+    icon.durationHideAboveThreshold = durationHideAboveThreshold
     icon.cooldown:SetHideCountdownNumbers(not showDuration)
 
     -- Find native cooldown text if not yet cached (same scan as the shared timer)
@@ -1166,9 +1537,18 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     -- (AD icons may not be registered with the shared timer, so we do it here)
     if icon.nativeCooldownText then
         if showDuration then
-            -- Reparent to textOverlay so it draws above cooldown swipe
-            if not icon.nativeTextReparented and icon.textOverlay then
-                icon.nativeCooldownText:SetParent(icon.textOverlay)
+            -- Reparent to a wrapper frame so we can control visibility via the
+            -- wrapper's alpha.  Blizzard's CooldownFrame resets both SetTextColor
+            -- alpha AND SetAlpha on its own FontString every frame, so the only
+            -- reliable way to hide the text is a parent-level alpha override.
+            if not icon.durationHideWrapper and icon.textOverlay then
+                icon.durationHideWrapper = CreateFrame("Frame", nil, icon.textOverlay)
+                icon.durationHideWrapper:SetAllPoints(icon.textOverlay)
+                icon.durationHideWrapper:SetFrameLevel(icon.textOverlay:GetFrameLevel())
+                icon.durationHideWrapper:EnableMouse(false)
+            end
+            if not icon.nativeTextReparented and icon.durationHideWrapper then
+                icon.nativeCooldownText:SetParent(icon.durationHideWrapper)
                 icon.nativeTextReparented = true
             end
             -- Style
@@ -1178,6 +1558,39 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
             icon.nativeCooldownText:ClearAllPoints()
             icon.nativeCooldownText:SetPoint(durationAnchor, icon, durationAnchor, durationX, durationY)
             icon.nativeCooldownText:Show()
+
+            -- Compute hide-above alpha (initial evaluation)
+            local hideAlpha = 1
+            if durationHideAboveEnabled and hasDuration then
+                local usedHideAPI = false
+                if frame.unit and auraData.auraInstanceID
+                   and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+                    local dObj = C_UnitAuras.GetAuraDuration(frame.unit, auraData.auraInstanceID)
+                    if dObj and dObj.EvaluateRemainingDuration then
+                        local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                        if hideCurve then
+                            local hideResult = dObj:EvaluateRemainingDuration(hideCurve)
+                            if hideResult then
+                                hideAlpha = hideResult.a or (hideResult.GetAlpha and hideResult:GetAlpha()) or 1
+                            end
+                            usedHideAPI = true
+                        end
+                    end
+                end
+                if not usedHideAPI then
+                    local exp = auraData.expirationTime
+                    local dur = auraData.duration
+                    if exp and dur and not issecretvalue(exp) and not issecretvalue(dur) and dur > 0 then
+                        local remaining = max(0, exp - GetTime())
+                        hideAlpha = remaining > durationHideAboveThreshold and 0 or 1
+                    end
+                end
+            end
+
+            -- Apply hide-above alpha on the wrapper frame (immune to Blizzard resets)
+            if icon.durationHideWrapper then
+                icon.durationHideWrapper:SetAlpha(hideAlpha)
+            end
 
             -- Color by remaining time (green → yellow → orange → red)
             if durationColorByTime and hasDuration then
@@ -1198,7 +1611,7 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
                         end
                         local result = durationObj:EvaluateRemainingPercent(DF.durationColorCurve)
                         if result and result.r then
-                            icon.nativeCooldownText:SetTextColor(result.r, result.g, result.b)
+                            icon.nativeCooldownText:SetTextColor(result.r, result.g, result.b, 1)
                         end
                         usedAPI = true
                     end
@@ -1227,11 +1640,44 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
             else
                 local durationColor = config.durationColor or (defaults and defaults.durationColor)
                 if durationColor then
-                    icon.nativeCooldownText:SetTextColor(durationColor.r or 1, durationColor.g or 1, durationColor.b or 1, durationColor.a or 1)
+                    icon.nativeCooldownText:SetTextColor(durationColor.r or 1, durationColor.g or 1, durationColor.b or 1, 1)
                 else
                     icon.nativeCooldownText:SetTextColor(1, 1, 1, 1)
                 end
             end
+
+            -- Register wrapper for ongoing hide-above alpha updates via the shared ticker
+            -- Temporarily suppress hideWhenNotExpiring so the wrapper doesn't get it
+            -- (wrapper has its own threshold logic, not the expiring threshold)
+            local savedHWNE = pendingHideWhenNotExpiring
+            pendingHideWhenNotExpiring = false
+            if durationHideAboveEnabled and hasDuration and icon.durationHideWrapper then
+                local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                if hideCurve then
+                    RegisterExpiring(icon.durationHideWrapper, {
+                        unit = frame.unit,
+                        auraInstanceID = auraData and auraData.auraInstanceID,
+                        threshold = durationHideAboveThreshold,
+                        thresholdMode = "SECONDS",
+                        duration = auraData and auraData.duration,
+                        expirationTime = auraData and auraData.expirationTime,
+                        colorCurve = hideCurve,
+                        applyResult = function(el, result)
+                            local a = result.a or (result.GetAlpha and result:GetAlpha()) or 1
+                            el:SetAlpha(a)
+                        end,
+                        applyManual = function(el, isExp)
+                            el:SetAlpha(isExp and 1 or 0)
+                        end,
+                    })
+                end
+            else
+                if icon.durationHideWrapper then
+                    UnregisterExpiring(icon.durationHideWrapper)
+                    icon.durationHideWrapper:SetAlpha(1)
+                end
+            end
+            pendingHideWhenNotExpiring = savedHWNE  -- Restore for main registration
         else
             icon.nativeCooldownText:Hide()
         end
@@ -1242,24 +1688,77 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     -- ========================================
     local expiringEnabled = config.expiringEnabled
     if expiringEnabled == nil then expiringEnabled = false end
-    if expiringEnabled then
+    local expiringPulsate = config.expiringPulsate or false
+
+    -- Lazy-create a wrapper frame for the border texture so we can animate its alpha
+    if expiringPulsate and icon.border then
+        if not icon.adBorderPulseFrame then
+            icon.adBorderPulseFrame = CreateFrame("Frame", nil, icon)
+            icon.adBorderPulseFrame:SetAllPoints(icon)
+            icon.adBorderPulseFrame:SetFrameLevel(icon:GetFrameLevel())
+            icon.adBorderPulseFrame:EnableMouse(false)
+        end
+        if not icon.adBorderReparented then
+            icon.border:SetParent(icon.adBorderPulseFrame)
+            icon.adBorderReparented = true
+        end
+        GetOrCreatePulseAnim(icon.adBorderPulseFrame)
+        icon.adBorderPulseFrame.dfAD_expiringPulsate = true
+    elseif icon.adBorderPulseFrame then
+        icon.adBorderPulseFrame.dfAD_expiringPulsate = false
+        if icon.adBorderPulseFrame.dfAD_pulse and icon.adBorderPulseFrame.dfAD_pulse:IsPlaying() then
+            icon.adBorderPulseFrame.dfAD_pulse:Stop()
+            icon.adBorderPulseFrame:SetAlpha(1)
+        end
+    end
+
+    -- Whole-alpha pulse: animates the entire icon frame's alpha
+    local expiringWholeAlphaPulse = config.expiringWholeAlphaPulse or false
+    if expiringWholeAlphaPulse then GetOrCreateWholeAlphaPulse(icon) end
+    icon.dfAD_expiringWholeAlphaPulse = expiringWholeAlphaPulse
+    if not expiringWholeAlphaPulse and icon.dfAD_wholeAlphaPulse and icon.dfAD_wholeAlphaPulse:IsPlaying() then
+        icon.dfAD_wholeAlphaPulse:Stop()
+        icon:SetAlpha(1)
+    end
+
+    -- Bounce: animates the icon frame position up and down
+    local expiringBounce = config.expiringBounce or false
+    if expiringBounce then GetOrCreateBounceAnim(icon) end
+    icon.dfAD_expiringBounce = expiringBounce
+    if not expiringBounce and icon.dfAD_bounceAnim and icon.dfAD_bounceAnim:IsPlaying() then
+        icon.dfAD_bounceAnim:Stop()
+    end
+
+    -- Register if ANY expiring feature is active (color, pulsate, alpha pulse, bounce)
+    local anyExpiringFeature = expiringEnabled or expiringPulsate or expiringWholeAlphaPulse or expiringBounce
+    if anyExpiringFeature then
         local ec = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
         local oc = {r = 0, g = 0, b = 0}  -- icon border default = black
+        local applyColor = expiringEnabled
         RegisterExpiring(icon, {
             unit = frame.unit,
             auraInstanceID = auraData and auraData.auraInstanceID,
             threshold = config.expiringThreshold or 30,
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
-            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
-            color = ec,
+            colorCurve = applyColor and BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode) or nil,
+            thresholdMode = config.expiringThresholdMode,
+            color = ec, originalColor = oc,
             applyResult = function(el, result, entry)
+                -- applyResult only fires when colorCurve is set (i.e. applyColor = true)
                 if el.border then
                     el.border:SetColorTexture(result.r, result.g, result.b, result.a or 1)
                 end
+                local oc2 = entry.originalColor
+                local isExp = IsColorExpiring(result, oc2)
+                if el.adBorderPulseFrame then
+                    UpdatePulseState(el.adBorderPulseFrame, isExp)
+                end
+                UpdateWholeAlphaPulseState(el, isExp)
+                UpdateBounceState(el, isExp)
             end,
             applyManual = function(el, isExp, entry)
-                if el.border then
+                if applyColor and el.border then
                     if isExp then
                         local c = entry.color
                         el.border:SetColorTexture(c.r or 1, c.g or 0.2, c.b or 0.2, 1)
@@ -1267,10 +1766,26 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
                         el.border:SetColorTexture(0, 0, 0, 0.8)
                     end
                 end
+                if el.adBorderPulseFrame then
+                    UpdatePulseState(el.adBorderPulseFrame, isExp)
+                end
+                UpdateWholeAlphaPulseState(el, isExp)
+                UpdateBounceState(el, isExp)
             end,
         })
     else
         UnregisterExpiring(icon)
+        if icon.adBorderPulseFrame and icon.adBorderPulseFrame.dfAD_pulse and icon.adBorderPulseFrame.dfAD_pulse:IsPlaying() then
+            icon.adBorderPulseFrame.dfAD_pulse:Stop()
+            icon.adBorderPulseFrame:SetAlpha(1)
+        end
+        if icon.dfAD_wholeAlphaPulse and icon.dfAD_wholeAlphaPulse:IsPlaying() then
+            icon.dfAD_wholeAlphaPulse:Stop()
+            icon:SetAlpha(1)
+        end
+        if icon.dfAD_bounceAnim and icon.dfAD_bounceAnim:IsPlaying() then
+            icon.dfAD_bounceAnim:Stop()
+        end
     end
 
     -- Mouse handling: propagate motion/clicks to parent for tooltips and click-casting
@@ -1302,6 +1817,9 @@ function Indicators:HideUnusedIcons(frame, activeMap)
             end
             if icon.cooldown then
                 icon.cooldown:Hide()
+            end
+            if icon.count then
+                icon.count:SetText("")
             end
         end
     end
@@ -1529,6 +2047,10 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
         if durationColorByTime == nil then durationColorByTime = true end
     end
 
+    local durationHideAboveEnabled = config.durationHideAboveEnabled
+    if durationHideAboveEnabled == nil then durationHideAboveEnabled = (defaults and defaults.durationHideAboveEnabled) or false end
+    local durationHideAboveThreshold = config.durationHideAboveThreshold or (defaults and defaults.durationHideAboveThreshold) or 10
+
     if sq.cooldown then
         sq.cooldown:SetHideCountdownNumbers(not showDuration)
     end
@@ -1548,8 +2070,15 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
     -- Reparent, style, and position the native countdown text
     if sq.nativeCooldownText then
         if showDuration and hasDuration then
-            if not sq.nativeTextReparented and sq.textOverlay then
-                sq.nativeCooldownText:SetParent(sq.textOverlay)
+            -- Create wrapper frame for parent-level alpha control
+            if not sq.durationHideWrapper and sq.textOverlay then
+                sq.durationHideWrapper = CreateFrame("Frame", nil, sq.textOverlay)
+                sq.durationHideWrapper:SetAllPoints(sq.textOverlay)
+                sq.durationHideWrapper:SetFrameLevel(sq.textOverlay:GetFrameLevel())
+                sq.durationHideWrapper:EnableMouse(false)
+            end
+            if not sq.nativeTextReparented and sq.durationHideWrapper then
+                sq.nativeCooldownText:SetParent(sq.durationHideWrapper)
                 sq.nativeTextReparented = true
             end
             local durationSize = 10 * durationScale
@@ -1557,6 +2086,39 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
             sq.nativeCooldownText:ClearAllPoints()
             sq.nativeCooldownText:SetPoint(durationAnchor, sq, durationAnchor, durationX, durationY)
             sq.nativeCooldownText:Show()
+
+            -- Compute hide-above alpha (initial evaluation)
+            local hideAlpha = 1
+            if durationHideAboveEnabled then
+                local usedHideAPI = false
+                if frame.unit and auraData.auraInstanceID
+                   and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+                    local dObj = C_UnitAuras.GetAuraDuration(frame.unit, auraData.auraInstanceID)
+                    if dObj and dObj.EvaluateRemainingDuration then
+                        local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                        if hideCurve then
+                            local hideResult = dObj:EvaluateRemainingDuration(hideCurve)
+                            if hideResult then
+                                hideAlpha = hideResult.a or (hideResult.GetAlpha and hideResult:GetAlpha()) or 1
+                            end
+                            usedHideAPI = true
+                        end
+                    end
+                end
+                if not usedHideAPI then
+                    local exp = auraData.expirationTime
+                    local dur = auraData.duration
+                    if exp and dur and not issecretvalue(exp) and not issecretvalue(dur) and dur > 0 then
+                        local remaining = max(0, exp - GetTime())
+                        hideAlpha = remaining > durationHideAboveThreshold and 0 or 1
+                    end
+                end
+            end
+
+            -- Apply hide-above alpha on the wrapper frame (immune to Blizzard resets)
+            if sq.durationHideWrapper then
+                sq.durationHideWrapper:SetAlpha(hideAlpha)
+            end
 
             -- Color by remaining time (green → yellow → orange → red)
             if durationColorByTime then
@@ -1576,7 +2138,7 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
                         end
                         local result = durationObj:EvaluateRemainingPercent(DF.durationColorCurve)
                         if result and result.r then
-                            sq.nativeCooldownText:SetTextColor(result.r, result.g, result.b)
+                            sq.nativeCooldownText:SetTextColor(result.r, result.g, result.b, 1)
                         end
                         usedAPI = true
                     end
@@ -1604,11 +2166,43 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
             else
                 local durationColor = config.durationColor or (defaults and defaults.durationColor)
                 if durationColor then
-                    sq.nativeCooldownText:SetTextColor(durationColor.r or 1, durationColor.g or 1, durationColor.b or 1, durationColor.a or 1)
+                    sq.nativeCooldownText:SetTextColor(durationColor.r or 1, durationColor.g or 1, durationColor.b or 1, 1)
                 else
                     sq.nativeCooldownText:SetTextColor(1, 1, 1, 1)
                 end
             end
+
+            -- Register wrapper for ongoing hide-above alpha updates via the shared ticker
+            -- Temporarily suppress hideWhenNotExpiring so the wrapper doesn't get it
+            local savedHWNE2 = pendingHideWhenNotExpiring
+            pendingHideWhenNotExpiring = false
+            if durationHideAboveEnabled and sq.durationHideWrapper then
+                local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                if hideCurve then
+                    RegisterExpiring(sq.durationHideWrapper, {
+                        unit = frame.unit,
+                        auraInstanceID = auraData and auraData.auraInstanceID,
+                        threshold = durationHideAboveThreshold,
+                        thresholdMode = "SECONDS",
+                        duration = auraData and auraData.duration,
+                        expirationTime = auraData and auraData.expirationTime,
+                        colorCurve = hideCurve,
+                        applyResult = function(el, result)
+                            local a = result.a or (result.GetAlpha and result:GetAlpha()) or 1
+                            el:SetAlpha(a)
+                        end,
+                        applyManual = function(el, isExp)
+                            el:SetAlpha(isExp and 1 or 0)
+                        end,
+                    })
+                end
+            else
+                if sq.durationHideWrapper then
+                    UnregisterExpiring(sq.durationHideWrapper)
+                    sq.durationHideWrapper:SetAlpha(1)
+                end
+            end
+            pendingHideWhenNotExpiring = savedHWNE2  -- Restore for main registration
         else
             sq.nativeCooldownText:Hide()
         end
@@ -1619,24 +2213,77 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
     -- ========================================
     local expiringEnabled = config.expiringEnabled
     if expiringEnabled == nil then expiringEnabled = false end
-    if expiringEnabled then
+    local expiringPulsate = config.expiringPulsate or false
+
+    -- Lazy-create a wrapper frame for the fill texture so we can animate its alpha
+    if expiringPulsate and sq.texture then
+        if not sq.adFillPulseFrame then
+            sq.adFillPulseFrame = CreateFrame("Frame", nil, sq)
+            sq.adFillPulseFrame:SetAllPoints(sq)
+            sq.adFillPulseFrame:SetFrameLevel(sq:GetFrameLevel())
+            sq.adFillPulseFrame:EnableMouse(false)
+        end
+        if not sq.adFillReparented then
+            sq.texture:SetParent(sq.adFillPulseFrame)
+            sq.adFillReparented = true
+        end
+        GetOrCreatePulseAnim(sq.adFillPulseFrame)
+        sq.adFillPulseFrame.dfAD_expiringPulsate = true
+    elseif sq.adFillPulseFrame then
+        sq.adFillPulseFrame.dfAD_expiringPulsate = false
+        if sq.adFillPulseFrame.dfAD_pulse and sq.adFillPulseFrame.dfAD_pulse:IsPlaying() then
+            sq.adFillPulseFrame.dfAD_pulse:Stop()
+            sq.adFillPulseFrame:SetAlpha(1)
+        end
+    end
+
+    -- Whole-alpha pulse: animates the entire square frame's alpha
+    local expiringWholeAlphaPulse = config.expiringWholeAlphaPulse or false
+    if expiringWholeAlphaPulse then GetOrCreateWholeAlphaPulse(sq) end
+    sq.dfAD_expiringWholeAlphaPulse = expiringWholeAlphaPulse
+    if not expiringWholeAlphaPulse and sq.dfAD_wholeAlphaPulse and sq.dfAD_wholeAlphaPulse:IsPlaying() then
+        sq.dfAD_wholeAlphaPulse:Stop()
+        sq:SetAlpha(1)
+    end
+
+    -- Bounce: Translation animation directly on the square.
+    local expiringBounce = config.expiringBounce or false
+    if expiringBounce then GetOrCreateBounceAnim(sq) end
+    sq.dfAD_expiringBounce = expiringBounce
+    if not expiringBounce and sq.dfAD_bounceAnim and sq.dfAD_bounceAnim:IsPlaying() then
+        sq.dfAD_bounceAnim:Stop()
+    end
+
+    -- Register if ANY expiring feature is active (color, pulsate, alpha pulse, bounce)
+    local anyExpiringFeature = expiringEnabled or expiringPulsate or expiringWholeAlphaPulse or expiringBounce
+    if anyExpiringFeature then
         local ec = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
         local oc = {r = color and (color[1] or color.r) or 1, g = color and (color[2] or color.g) or 1, b = color and (color[3] or color.b) or 1}
+        local applyColor = expiringEnabled
         RegisterExpiring(sq, {
             unit = frame.unit,
             auraInstanceID = auraData and auraData.auraInstanceID,
             threshold = config.expiringThreshold or 30,
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
-            colorCurve = BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc),
+            colorCurve = applyColor and BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode) or nil,
+            thresholdMode = config.expiringThresholdMode,
             color = ec, originalColor = oc,
             applyResult = function(el, result, entry)
+                -- applyResult only fires when colorCurve is set (i.e. applyColor = true)
                 if el.texture then
                     el.texture:SetColorTexture(result.r, result.g, result.b, result.a or 1)
                 end
+                local oc2 = entry.originalColor
+                local isExp = IsColorExpiring(result, oc2)
+                if el.adFillPulseFrame then
+                    UpdatePulseState(el.adFillPulseFrame, isExp)
+                end
+                UpdateWholeAlphaPulseState(el, isExp)
+                UpdateBounceState(el, isExp)
             end,
             applyManual = function(el, isExp, entry)
-                if el.texture then
+                if applyColor and el.texture then
                     if isExp then
                         local c = entry.color
                         el.texture:SetColorTexture(c.r or 1, c.g or 0.2, c.b or 0.2, 1)
@@ -1645,10 +2292,26 @@ function Indicators:ApplySquare(frame, config, auraData, defaults, auraName, pri
                         el.texture:SetColorTexture(c.r or 1, c.g or 1, c.b or 1, 1)
                     end
                 end
+                if el.adFillPulseFrame then
+                    UpdatePulseState(el.adFillPulseFrame, isExp)
+                end
+                UpdateWholeAlphaPulseState(el, isExp)
+                UpdateBounceState(el, isExp)
             end,
         })
     else
         UnregisterExpiring(sq)
+        if sq.adFillPulseFrame and sq.adFillPulseFrame.dfAD_pulse and sq.adFillPulseFrame.dfAD_pulse:IsPlaying() then
+            sq.adFillPulseFrame.dfAD_pulse:Stop()
+            sq.adFillPulseFrame:SetAlpha(1)
+        end
+        if sq.dfAD_wholeAlphaPulse and sq.dfAD_wholeAlphaPulse:IsPlaying() then
+            sq.dfAD_wholeAlphaPulse:Stop()
+            sq:SetAlpha(1)
+        end
+        if sq.dfAD_bounceAnim and sq.dfAD_bounceAnim:IsPlaying() then
+            sq.dfAD_bounceAnim:Stop()
+        end
     end
 
     sq:Show()
@@ -1664,6 +2327,9 @@ function Indicators:HideUnusedSquares(frame, activeMap)
             -- Clear stale cooldown (matches bar cleanup pattern)
             if sq.cooldown then
                 sq.cooldown:Hide()
+            end
+            if sq.count then
+                sq.count:SetText("")
             end
         end
     end
@@ -1813,8 +2479,13 @@ local function CreateADBar(frame, auraName)
             if unit and auraInstanceID
                and C_UnitAuras and C_UnitAuras.GetAuraDuration then
                 local durationObj = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
-                if durationObj and durationObj.EvaluateRemainingPercent then
-                    local result = durationObj:EvaluateRemainingPercent(self.dfAD_colorCurve)
+                if durationObj then
+                    local result
+                    if self.dfAD_colorCurveUsesSeconds and durationObj.EvaluateRemainingDuration then
+                        result = durationObj:EvaluateRemainingDuration(self.dfAD_colorCurve)
+                    elseif durationObj.EvaluateRemainingPercent then
+                        result = durationObj:EvaluateRemainingPercent(self.dfAD_colorCurve)
+                    end
                     if result and result.r then
                         self:SetStatusBarColor(result.r, result.g, result.b)
                         return
@@ -1845,7 +2516,14 @@ local function CreateADBar(frame, auraName)
                     end
                 end
                 if self.dfAD_expiringEnabled and self.dfAD_expiringThreshold then
-                    if pct <= (self.dfAD_expiringThreshold / 100) then
+                    local isExp
+                    if self.dfAD_expiringThresholdMode == "SECONDS" then
+                        local remaining = max(0, exp - GetTime())
+                        isExp = remaining <= self.dfAD_expiringThreshold
+                    else
+                        isExp = pct <= (self.dfAD_expiringThreshold / 100)
+                    end
+                    if isExp then
                         local ec = self.dfAD_expiringColor
                         if ec then
                             barR = ec.r or 1
@@ -1929,6 +2607,7 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
     if expiringEnabled == nil then expiringEnabled = false end
     bar.dfAD_expiringEnabled = expiringEnabled
     bar.dfAD_expiringThreshold = config.expiringThreshold or 30
+    bar.dfAD_expiringThresholdMode = config.expiringThresholdMode
     bar.dfAD_expiringColor = config.expiringColor or { r = 1, g = 0.2, b = 0.2 }
 
     -- Store unit + auraInstanceID for API-based color evaluation
@@ -1943,46 +2622,54 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
     -- ========================================
     -- COLOR CURVE (pre-built for OnUpdate)
     -- Single curve handles gradient + expiring without secret comparisons.
-    -- OnUpdate evaluates: durationObj:EvaluateRemainingPercent(curve) → SetStatusBarColor
+    -- OnUpdate evaluates: durationObj:EvaluateRemainingPercent/Duration(curve) → SetStatusBarColor
     -- ========================================
+    local useSeconds = config.expiringThresholdMode == "SECONDS"
     local needsColorCurve = barColorByTime or expiringEnabled
     if needsColorCurve and C_CurveUtil and C_CurveUtil.CreateColorCurve then
         local curve = C_CurveUtil.CreateColorCurve()
         local expiringColor = config.expiringColor or { r = 1, g = 0.2, b = 0.2 }
-        local expiringThreshold = (config.expiringThreshold or 30) / 100
+        local expiringThresholdRaw = config.expiringThreshold or 30
+        -- For curve building, convert to the appropriate scale
+        local expiringThreshold = useSeconds and expiringThresholdRaw or (expiringThresholdRaw / 100)
 
         if expiringEnabled and barColorByTime then
-            -- Composite: expiring color below threshold, gradient above
+            -- Composite: when using seconds mode with gradient, fall back to
+            -- percentage curve (gradient is inherently percentage-based).
+            -- The manual fallback path handles seconds expiring separately.
+            local pctThreshold = useSeconds and 0.3 or expiringThreshold
             curve:SetType(Enum.LuaCurveType.Linear)
             local ecR = expiringColor.r or 1
             local ecG = expiringColor.g or 0.2
             local ecB = expiringColor.b or 0.2
             -- Expiring zone (flat color up to threshold)
             curve:AddPoint(0, CreateColor(ecR, ecG, ecB, 1))
-            if expiringThreshold > 0.002 then
-                curve:AddPoint(expiringThreshold - 0.001, CreateColor(ecR, ecG, ecB, 1))
+            if pctThreshold > 0.002 then
+                curve:AddPoint(pctThreshold - 0.001, CreateColor(ecR, ecG, ecB, 1))
             end
             -- Compute gradient color at threshold for smooth transition
             local gR, gG, gB
-            if expiringThreshold < 0.3 then
-                local t = expiringThreshold / 0.3
+            if pctThreshold < 0.3 then
+                local t = pctThreshold / 0.3
                 gR, gG, gB = 1, 0.5 * t, 0
-            elseif expiringThreshold < 0.5 then
-                local t = (expiringThreshold - 0.3) / 0.2
+            elseif pctThreshold < 0.5 then
+                local t = (pctThreshold - 0.3) / 0.2
                 gR, gG, gB = 1, 0.5 + 0.5 * t, 0
             else
-                local t = (expiringThreshold - 0.5) / 0.5
+                local t = (pctThreshold - 0.5) / 0.5
                 gR, gG, gB = 1 - t, 1, 0
             end
-            curve:AddPoint(expiringThreshold, CreateColor(gR, gG, gB, 1))
+            curve:AddPoint(pctThreshold, CreateColor(gR, gG, gB, 1))
             -- Add gradient key points above threshold
-            if expiringThreshold < 0.3 then
+            if pctThreshold < 0.3 then
                 curve:AddPoint(0.3, CreateColor(1, 0.5, 0, 1))
             end
-            if expiringThreshold < 0.5 then
+            if pctThreshold < 0.5 then
                 curve:AddPoint(0.5, CreateColor(1, 1, 0, 1))
             end
             curve:AddPoint(1, CreateColor(0, 1, 0, 1))
+            -- Composite always uses percent evaluation (gradient needs it)
+            bar.dfAD_colorCurveUsesSeconds = false
 
         elseif expiringEnabled then
             -- Expiring only: step from expiring color to fill color
@@ -1991,16 +2678,23 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
             local ecG = expiringColor.g or 0.2
             local ecB = expiringColor.b or 0.2
             curve:AddPoint(0, CreateColor(ecR, ecG, ecB, 1))
-            curve:AddPoint(expiringThreshold, CreateColor(fillR, fillG, fillB, 1))
-            curve:AddPoint(1, CreateColor(fillR, fillG, fillB, 1))
+            if useSeconds then
+                curve:AddPoint(expiringThreshold, CreateColor(fillR, fillG, fillB, 1))
+                curve:AddPoint(600, CreateColor(fillR, fillG, fillB, 1))  -- 10min cap
+            else
+                curve:AddPoint(expiringThreshold, CreateColor(fillR, fillG, fillB, 1))
+                curve:AddPoint(1, CreateColor(fillR, fillG, fillB, 1))
+            end
+            bar.dfAD_colorCurveUsesSeconds = useSeconds
 
         elseif barColorByTime then
-            -- Gradient only: red → orange → yellow → green
+            -- Gradient only: red → orange → yellow → green (always percent)
             curve:SetType(Enum.LuaCurveType.Linear)
             curve:AddPoint(0, CreateColor(1, 0, 0, 1))
             curve:AddPoint(0.3, CreateColor(1, 0.5, 0, 1))
             curve:AddPoint(0.5, CreateColor(1, 1, 0, 1))
             curve:AddPoint(1, CreateColor(0, 1, 0, 1))
+            bar.dfAD_colorCurveUsesSeconds = false
         end
 
         bar.dfAD_colorCurve = curve
@@ -2015,8 +2709,13 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
     if bar.dfAD_colorCurve and frame.unit and auraData.auraInstanceID
        and C_UnitAuras and C_UnitAuras.GetAuraDuration then
         local durationObj = C_UnitAuras.GetAuraDuration(frame.unit, auraData.auraInstanceID)
-        if durationObj and durationObj.EvaluateRemainingPercent then
-            local result = durationObj:EvaluateRemainingPercent(bar.dfAD_colorCurve)
+        if durationObj then
+            local result
+            if bar.dfAD_colorCurveUsesSeconds and durationObj.EvaluateRemainingDuration then
+                result = durationObj:EvaluateRemainingDuration(bar.dfAD_colorCurve)
+            elseif durationObj.EvaluateRemainingPercent then
+                result = durationObj:EvaluateRemainingPercent(bar.dfAD_colorCurve)
+            end
             if result and result.r then
                 bar:SetStatusBarColor(result.r, result.g, result.b)
             else
@@ -2146,11 +2845,45 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
         if durationColorByTime == nil then durationColorByTime = true end
     end
 
-    -- Store color-by-time flag for OnUpdate to read
+    local durationHideAboveEnabled = config.durationHideAboveEnabled
+    if durationHideAboveEnabled == nil then durationHideAboveEnabled = (defaults and defaults.durationHideAboveEnabled) or false end
+    local durationHideAboveThreshold = config.durationHideAboveThreshold or (defaults and defaults.durationHideAboveThreshold) or 10
+
+    -- Store flags for OnUpdate to read
     bar.dfAD_durationColorByTime = durationColorByTime
+    bar.dfAD_durationHideAboveEnabled = durationHideAboveEnabled
+    bar.dfAD_durationHideAboveThreshold = durationHideAboveThreshold
 
     if showDuration and hasDuration then
         local durationSize = 10 * durationScale
+
+        -- Compute hide-above alpha (initial evaluation)
+        local hideAlpha = 1
+        if durationHideAboveEnabled then
+            local usedHideAPI = false
+            if frame.unit and auraData.auraInstanceID
+               and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+                local dObj = C_UnitAuras.GetAuraDuration(frame.unit, auraData.auraInstanceID)
+                if dObj and dObj.EvaluateRemainingDuration then
+                    local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                    if hideCurve then
+                        local hideResult = dObj:EvaluateRemainingDuration(hideCurve)
+                        if hideResult then
+                            hideAlpha = hideResult.a or (hideResult.GetAlpha and hideResult:GetAlpha()) or 1
+                        end
+                        usedHideAPI = true
+                    end
+                end
+            end
+            if not usedHideAPI then
+                local exp = auraData.expirationTime
+                local dur = auraData.duration
+                if exp and dur and not issecretvalue(exp) and not issecretvalue(dur) and dur > 0 then
+                    local remaining = max(0, exp - GetTime())
+                    hideAlpha = remaining > durationHideAboveThreshold and 0 or 1
+                end
+            end
+        end
 
         if usedTimerDuration and bar.durationCooldown then
             -- COMBAT PATH: Use native cooldown countdown text (secret-safe)
@@ -2178,14 +2911,26 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
 
             -- Style and position the native countdown text
             if bar.nativeCooldownText then
-                if not bar.nativeTextReparented and bar.textOverlay then
-                    bar.nativeCooldownText:SetParent(bar.textOverlay)
+                -- Create wrapper frame for parent-level alpha control
+                if not bar.durationHideWrapper and bar.textOverlay then
+                    bar.durationHideWrapper = CreateFrame("Frame", nil, bar.textOverlay)
+                    bar.durationHideWrapper:SetAllPoints(bar.textOverlay)
+                    bar.durationHideWrapper:SetFrameLevel(bar.textOverlay:GetFrameLevel())
+                    bar.durationHideWrapper:EnableMouse(false)
+                end
+                if not bar.nativeTextReparented and bar.durationHideWrapper then
+                    bar.nativeCooldownText:SetParent(bar.durationHideWrapper)
                     bar.nativeTextReparented = true
                 end
                 DF:SafeSetFont(bar.nativeCooldownText, durationFont, durationSize, durationOutline)
                 bar.nativeCooldownText:ClearAllPoints()
                 bar.nativeCooldownText:SetPoint(durationAnchor, bar, durationAnchor, durationX, durationY)
                 bar.nativeCooldownText:Show()
+
+                -- Apply hide-above alpha on the wrapper frame (immune to Blizzard resets)
+                if bar.durationHideWrapper then
+                    bar.durationHideWrapper:SetAlpha(hideAlpha)
+                end
 
                 if not durationColorByTime then
                     bar.nativeCooldownText:SetTextColor(1, 1, 1, 1)
@@ -2200,7 +2945,35 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
                     end
                     local result = durationObj:EvaluateRemainingPercent(DF.durationColorCurve)
                     if result and result.r then
-                        bar.nativeCooldownText:SetTextColor(result.r, result.g, result.b)
+                        bar.nativeCooldownText:SetTextColor(result.r, result.g, result.b, 1)
+                    end
+                end
+
+                -- Register wrapper for ongoing hide-above alpha updates
+                if durationHideAboveEnabled and bar.durationHideWrapper then
+                    local hideCurve = BuildDurationHideCurve(durationHideAboveThreshold)
+                    if hideCurve then
+                        RegisterExpiring(bar.durationHideWrapper, {
+                            unit = frame.unit,
+                            auraInstanceID = auraData and auraData.auraInstanceID,
+                            threshold = durationHideAboveThreshold,
+                            thresholdMode = "SECONDS",
+                            duration = auraData and auraData.duration,
+                            expirationTime = auraData and auraData.expirationTime,
+                            colorCurve = hideCurve,
+                            applyResult = function(el, result)
+                                local a = result.a or (result.GetAlpha and result:GetAlpha()) or 1
+                                el:SetAlpha(a)
+                            end,
+                            applyManual = function(el, isExp)
+                                el:SetAlpha(isExp and 1 or 0)
+                            end,
+                        })
+                    end
+                else
+                    if bar.durationHideWrapper then
+                        UnregisterExpiring(bar.durationHideWrapper)
+                        bar.durationHideWrapper:SetAlpha(1)
                     end
                 end
             end
@@ -2212,6 +2985,10 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
             end
             if bar.nativeCooldownText then
                 bar.nativeCooldownText:Hide()
+            end
+            if bar.durationHideWrapper then
+                UnregisterExpiring(bar.durationHideWrapper)
+                bar.durationHideWrapper:SetAlpha(1)
             end
 
             DF:SafeSetFont(bar.duration, durationFont, durationSize, durationOutline)
@@ -2231,15 +3008,20 @@ function Indicators:ApplyBar(frame, config, auraData, defaults, auraName, priori
                 bar.duration:SetText("")
             end
 
-            if not durationColorByTime then
-                bar.duration:SetTextColor(1, 1, 1, 1)
-            end
+            bar.duration:SetAlpha(hideAlpha)
+            bar.duration:SetTextColor(1, 1, 1, 1)
             bar.duration:Show()
         end
     else
         if bar.duration then bar.duration:Hide() end
         if bar.durationCooldown then bar.durationCooldown:Hide() end
-        if bar.nativeCooldownText then bar.nativeCooldownText:Hide() end
+        if bar.nativeCooldownText then
+            bar.nativeCooldownText:Hide()
+        end
+        if bar.durationHideWrapper then
+            UnregisterExpiring(bar.durationHideWrapper)
+            bar.durationHideWrapper:SetAlpha(1)
+        end
     end
 
     -- Ensure mouse doesn't block clicks on the unit frame
