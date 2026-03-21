@@ -399,6 +399,16 @@ function DF:GetFrameDB(frame)
     if frame and frame.isRaidFrame then
         return DF:GetRaidDB()
     else
+        -- DEBUG: Catch flat raid children returning party DB
+        if frame and frame.dfIsHeaderChild then
+            local parent = frame:GetParent()
+            local parentName = parent and parent:GetName() or ""
+            if parentName:find("FlatRaid") or parentName:find("Raid") then
+                DF:DebugError("FLAT_SIZE", "GetFrameDB returning PARTY DB for %s (isRaidFrame=%s, parent=%s)",
+                    frame:GetName() or "?", tostring(frame.isRaidFrame), parentName)
+                DF:DebugWarn("FLAT_SIZE", "  Stack: %s", debugstack(2, 5, 0) or "?")
+            end
+        end
         return DF:GetDB()
     end
 end

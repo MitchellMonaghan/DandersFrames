@@ -487,7 +487,29 @@ function FlatRaidFrames:CreateFrames()
         end
     end
     DebugPrint("Created", childCount, "child frames, sized to", frameWidth, "x", frameHeight)
-    
+
+    -- ============================================================
+    -- DEBUG: Hook SetSize on flat raid children to catch wrong dimensions
+    -- Shows in debug console under FLAT_SIZE category
+    -- ============================================================
+    for i = 1, 40 do
+        local child = self.header:GetAttribute("child" .. i)
+        if child and not child.dfSetSizeHooked then
+            child.dfSetSizeHooked = true
+            hooksecurefunc(child, "SetSize", function(self, w, h)
+                local raidDb = DF:GetRaidDB()
+                local expectedW = raidDb and raidDb.frameWidth or 80
+                local expectedH = raidDb and raidDb.frameHeight or 40
+                -- Log if dimensions don't match raid DB (tolerance of 2px for pixel-perfect rounding)
+                if math.abs(w - expectedW) > 2 or math.abs(h - expectedH) > 2 then
+                    DF:DebugError("FLAT_SIZE", "SetSize(%d, %d) on %s — expected (%d, %d), isRaid=%s",
+                        w, h, self:GetName() or "?", expectedW, expectedH, tostring(self.isRaidFrame))
+                    DF:DebugWarn("FLAT_SIZE", "  Stack: %s", debugstack(2, 5, 0) or "?")
+                end
+            end)
+        end
+    end
+
     -- Now switch to nameList mode and set initial nameList
     self.header:SetAttribute("sortMethod", "NAMELIST")
     self.header:SetAttribute("groupFilter", nil)  -- Clear groupFilter, nameList takes over
