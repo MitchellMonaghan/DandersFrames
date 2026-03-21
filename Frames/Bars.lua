@@ -68,7 +68,7 @@ function DF:ApplyResourceBarLayout(frame)
     if not frame then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- The power bar is created in Frames/Create.lua
     if not frame.dfPowerBar then return end
@@ -213,7 +213,7 @@ function DF:UpdateResourceBar(frame)
     if not frame or not frame.unit then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db.resourceBarEnabled then return end
     if not frame.dfPowerBar or not frame.dfPowerBar:IsShown() then return end
     
@@ -1665,7 +1665,7 @@ function DF:UpdateName(frame)
     if not frame or not frame.unit then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local name = DF:GetUnitName(frame.unit)
     
     -- Truncate name if needed (UTF-8 aware)
@@ -1732,7 +1732,7 @@ function DF:UpdateRoleIcon(frame, source)
     if not frame or not frame.unit or not frame.roleIcon then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     local role = UnitGroupRolesAssigned(frame.unit)
     
@@ -1837,7 +1837,7 @@ function DF:UpdateLeaderIcon(frame)
     if not frame or not frame.unit or not frame.leaderIcon then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.leaderIconEnabled then
@@ -1891,7 +1891,7 @@ function DF:UpdateRaidTargetIcon(frame)
     if not frame or not frame.unit or not frame.raidTargetIcon then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.raidTargetIconEnabled then
@@ -1959,7 +1959,7 @@ function DF:UpdateReadyCheckIcon(frame)
     if not frame or not frame.unit or not frame.readyCheckIcon then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.readyCheckIconEnabled then
@@ -2027,7 +2027,7 @@ function DF:ScheduleReadyCheckHide(frame)
     if not frame or not frame.readyCheckIcon then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local delay = db.readyCheckIconPersist or 6  -- Default 6 seconds
     
     -- Cancel any existing timer for this frame
@@ -2049,7 +2049,7 @@ function DF:UpdateCenterStatusIcon(frame)
     if not frame or not frame.unit then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Update new individual icons
     if DF.UpdateSummonIcon then DF:UpdateSummonIcon(frame) end

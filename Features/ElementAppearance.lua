@@ -68,7 +68,7 @@ end
 
 -- Get the appropriate database for this frame
 local function GetDB(frame)
-    return frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    return DF:GetFrameDB(frame)
 end
 
 -- Get current range status for a unit

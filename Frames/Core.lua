@@ -394,21 +394,31 @@ end)
 -- HELPER FUNCTIONS
 -- ============================================================
 
+-- External lookup table for raid frame status
+-- WoW 12.0's SecureGroupHeader_Update (C code) clears custom Lua fields on child
+-- frames during template processing. This table lives OUTSIDE the frame object,
+-- so the secure template can't touch it.
+DF.raidFrameRegistry = DF.raidFrameRegistry or setmetatable({}, {__mode = "k"})
+
+-- Register a frame as a raid frame (call from InitializeHeaderChild and FlatRaidFrames)
+function DF:RegisterRaidFrame(frame)
+    if frame then
+        self.raidFrameRegistry[frame] = true
+        frame.isRaidFrame = true  -- Also set the field (fast path if it sticks)
+    end
+end
+
+-- Check if a frame is a raid frame (checks external registry first, then field)
+function DF:IsRaidFrame(frame)
+    if not frame then return false end
+    return frame.isRaidFrame or self.raidFrameRegistry[frame] or false
+end
+
 -- Helper to get correct DB based on frame type
 function DF:GetFrameDB(frame)
-    if frame and frame.isRaidFrame then
+    if frame and DF:IsRaidFrame(frame) then
         return DF:GetRaidDB()
     else
-        -- DEBUG: Catch flat raid children returning party DB
-        if frame and frame.dfIsHeaderChild then
-            local parent = frame:GetParent()
-            local parentName = parent and parent:GetName() or ""
-            if parentName:find("FlatRaid") or parentName:find("Raid") then
-                DF:DebugError("FLAT_SIZE", "GetFrameDB returning PARTY DB for %s (isRaidFrame=%s, parent=%s)",
-                    frame:GetName() or "?", tostring(frame.isRaidFrame), parentName)
-                DF:DebugWarn("FLAT_SIZE", "  Stack: %s", debugstack(2, 5, 0) or "?")
-            end
-        end
         return DF:GetDB()
     end
 end

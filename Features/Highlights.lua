@@ -432,7 +432,7 @@ function DF:UpdateHighlights(frame, forceSelection, forceAggro)
     if DF.PerfTest and not DF.PerfTest.enableHighlights then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db then return end
     
     local unit = frame.unit

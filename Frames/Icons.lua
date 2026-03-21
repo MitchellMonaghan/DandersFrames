@@ -189,7 +189,7 @@ local function GetOrCreateDefensiveBarIcon(frame, index)
         if not self:IsShown() then return end
         local anchorFrame = self.unitFrame
         if not anchorFrame then return end
-        local iconDb = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local iconDb = DF:GetFrameDB(anchorFrame)
         if not iconDb.tooltipDefensiveEnabled then return end
         if iconDb.tooltipDefensiveDisableInCombat and InCombatLockdown() then return end
         if self.auraData and self.auraData.auraInstanceID then
@@ -662,7 +662,7 @@ function DF:UpdateMissingBuffIcon(frame)
     end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if feature is disabled
     if not db.missingBuffIconEnabled then
@@ -884,7 +884,7 @@ function DF:UpdateDefensiveBar(frame)
     end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local unit = frame.unit
     
     -- Check if feature is enabled
@@ -1333,7 +1333,7 @@ function DF:UpdateAuras(frame)
     if DF.PerfTest and not DF.PerfTest.enableAuras then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     if db.showBuffs then
         DF:UpdateAuraIcons(frame, frame.buffIcons, "HELPFUL", db.buffMax or 4)
@@ -1390,7 +1390,7 @@ function DF:UpdateAuraClickThrough()
     
     local function updateFrameClickThrough(frame)
         if not frame then return end
-        local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(frame)
         
         -- Update buff icons
         if frame.buffIcons then
@@ -1543,7 +1543,7 @@ function DF:UpdateAuraIcons(frame, icons, filter, maxAuras)
     
     local unit = frame.unit
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local index = 1
     local auraSlot = 1
     

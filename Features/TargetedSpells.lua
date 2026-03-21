@@ -719,7 +719,7 @@ local function CreateSingleIcon(parent, index)
         -- Handle interrupted animation (needs to run every frame for smooth animation)
         if self.isInterrupted then
             self.interruptTimer = (self.interruptTimer or 0) + elapsed
-            local db = self.unitFrame and (self.unitFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()) or DF:GetDB()
+            local db = self.unitFrame and DF:GetFrameDB(self.unitFrame) or DF:GetDB()
             local duration = db.targetedSpellInterruptedDuration or 0.5
             
             if self.interruptTimer >= duration then
@@ -823,7 +823,7 @@ end
 local function PositionIcons(frame)
     if not frame or not frame.targetedSpellIcons or not frame.dfActiveTargetedSpells then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     local iconSize = db.targetedSpellSize or 28
     local scale = db.targetedSpellScale or 1.0
@@ -1137,7 +1137,7 @@ function DF:ShowTargetedSpellIcon(frame, casterKey, casterUnit, texture, spellNa
     -- PERF TEST: Skip if disabled
     if DF.PerfTest and not DF.PerfTest.enableTargetedSpells then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db.targetedSpellEnabled then return end
     
     EnsureIconPool(frame, 5)
@@ -1368,7 +1368,7 @@ end
 function DF:UpdateTargetedSpellLayout(frame)
     if not frame or not frame.targetedSpellIcons then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Apply settings to all active icons
     for _, icon in ipairs(frame.targetedSpellIcons) do
@@ -1660,7 +1660,7 @@ local function HandleCastStop(casterUnit, wasInterrupted)
         if not icon or not icon.isActive then return end
         
         -- Check frame-specific db for raid frames
-        local frameDb = frame.isRaidFrame and DF:GetRaidDB() or db
+        local frameDb = DF:IsRaidFrame(frame) and DF:GetRaidDB() or db
         
         if wasInterrupted and frameDb.targetedSpellShowInterrupted then
             -- Show interrupted visual

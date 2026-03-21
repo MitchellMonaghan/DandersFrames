@@ -344,7 +344,7 @@ function DF:UpdatePetHealth(frame)
     if not frame or not frame.unit then return end
     
     local unit = frame.unit
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if pet exists
     if not UnitExists(unit) then 
@@ -451,7 +451,7 @@ function DF:ApplyPetFrameStyle(frame)
     if not frame then return end
     if InCombatLockdown() then return end
 
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
 
     -- Calculate size - optionally match owner's dimensions (only in ATTACHED mode)
     local width = db.petFrameWidth or 80
@@ -537,7 +537,7 @@ function DF:UpdatePetName(frame)
     local name = UnitName(frame.unit)
     if name then
         -- Truncate long names
-        local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(frame)
         local maxLen = db.petNameMaxLength or 12
         if #name > maxLen then
             name = name:sub(1, maxLen) .. "..."
@@ -549,7 +549,7 @@ end
 function DF:UpdatePetFrame(frame)
     if not frame then return end
 
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
 
     -- Check if owner is dead - hide pet frame if so
     local ownerUnit = frame.unit:gsub("pet", "")
@@ -614,7 +614,7 @@ function DF:UpdatePetFrameTestMode(frame)
     
     -- Update health text if shown
     if frame.healthText then
-        local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(frame)
         if db.petShowHealth then
             local maxHealth = 50000
             local currentHealth = math.floor(maxHealth * healthPercent)
@@ -676,7 +676,7 @@ end
 function DF:PositionPetFrame(frame)
     if not frame then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if we're using grouped mode
     if db.petGroupMode == "GROUPED" then

@@ -686,7 +686,7 @@ function DF:ApplyDispelOverlayAppearance(frame)
     local overlay = frame.dfDispelOverlay
     if not overlay:IsShown() then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db then return end
     
     local gradientStyle = db.dispelGradientStyle or "FULL"
@@ -1342,7 +1342,7 @@ function DF:UpdateDispelOverlay(frame)
     end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if in test mode first (allows preview even when dispel overlay is disabled)
     local isRaidFrame = frame.isRaidFrame

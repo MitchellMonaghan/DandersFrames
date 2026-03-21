@@ -167,7 +167,7 @@ function DF:SetupPrivateAuraAnchors(frame)
     end
     
     local unit = frame.unit
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Clear existing anchors first
     DF:ClearPrivateAuraAnchors(frame)
@@ -417,7 +417,7 @@ function DF:ReanchorPrivateAuras(frame)
     if DF.PerfTest and not DF.PerfTest.enablePrivateAuras then return end
     
     local newUnit = frame.unit
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db or not db.bossDebuffsEnabled then return end
     
     -- Idempotency guard: skip if anchors already monitoring this unit (Grid2-style).
@@ -568,7 +568,7 @@ end
 local function UpdateFramePositions(frame)
     if not frame or not frame.bossDebuffContainers or #frame.bossDebuffContainers == 0 then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local spacing = db.bossDebuffsSpacing or 2
     local growth = db.bossDebuffsGrowth or "RIGHT"
     local anchor = db.bossDebuffsAnchor or "LEFT"
@@ -608,7 +608,7 @@ function DF:UpdateAllPrivateAuraFrameLevel()
     QueueOrExecute("frameLevel", function()
         local function update(frame)
             if not frame or not frame.bossDebuffContainers then return end
-            local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+            local db = DF:GetFrameDB(frame)
             local frameLevel = db.bossDebuffsFrameLevel or 50
             local baseLevel = frame:GetFrameLevel()
             for _, container in ipairs(frame.bossDebuffContainers) do
@@ -626,7 +626,7 @@ function DF:UpdateAllPrivateAuraVisibility()
     QueueOrExecute("visibility", function()
         local function update(frame)
             if not frame or not frame.bossDebuffContainers then return end
-            local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+            local db = DF:GetFrameDB(frame)
             local enabled = db.bossDebuffsEnabled
             for _, container in ipairs(frame.bossDebuffContainers) do
                 if enabled then
@@ -968,7 +968,7 @@ SlashCmdList["DFBOSSDEBUFFS"] = function(msg)
                 DF:ClearPrivateAuraAnchors(frame)
                 
                 -- Force setup bypassing enabled check
-                local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+                local db = DF:GetFrameDB(frame)
                 print("    DB bossDebuffsEnabled: " .. tostring(db.bossDebuffsEnabled))
                 
                 -- Temporarily force enable

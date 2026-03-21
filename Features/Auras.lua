@@ -576,7 +576,7 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     -- Skip Blizzard cache population when Direct mode is active for this unit
     local modeFrame = DF.unitFrameMap and DF.unitFrameMap[unit]
     if modeFrame then
-        local modeDb = modeFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local modeDb = DF:GetFrameDB(modeFrame)
         if modeDb and modeDb.auraSourceMode == "DIRECT" then return end
     end
 
@@ -1351,7 +1351,7 @@ end
 function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
     local unit = frame.unit
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     local auras
     if auraType == "BUFF" then
@@ -1660,7 +1660,7 @@ function DF:UpdateAuraIcons_Enhanced(frame, icons, auraType, maxAuras)
     frame[countKey] = displayedCount
     
     -- Reposition icons if using center growth (now that we know the count)
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local prefix = auraType == "BUFF" and "buff" or "debuff"
     local growth = db[prefix .. "Growth"] or (auraType == "BUFF" and "LEFT_UP" or "RIGHT_UP")
     local primary = strsplit("_", growth)
@@ -1685,7 +1685,7 @@ end
 
 function DF:UpdateAuraIconsDirect(frame, icons, auraType, maxAuras)
     local unit = frame.unit
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Quick out: no cache = no approved auras = hide everything
     local cache = DF.BlizzardAuraCache[unit]
@@ -2051,7 +2051,7 @@ end
 function DF:RepositionCenterGrowthIcons(frame, icons, auraType, visibleCount)
     if not frame or not icons or visibleCount <= 0 then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local prefix = auraType == "BUFF" and "buff" or "debuff"
     
     local size = db[prefix .. "Size"] or 18
@@ -2156,7 +2156,7 @@ function DF:UpdateAuras_Enhanced(frame)
     if DF.PerfTest and not DF.PerfTest.enableAuras then return end
 
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
 
     -- Aura Designer runs when enabled; standard buffs can coexist if showBuffs is on.
     local adEnabled = DF:IsAuraDesignerEnabled(frame)

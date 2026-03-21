@@ -63,7 +63,7 @@ end
 function DF:ApplyHealthFadeAlpha(frame)
     if not frame or not frame.unit then return false end
 
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db or not db.healthFadeEnabled then return false end
 
     -- Skip in test mode (test mode handles its own fade)
@@ -120,7 +120,7 @@ function DF:UpdateHealthFade(frame)
     if DF.PerfTest and not DF.PerfTest.enableHealthFade then return end
     if DF.testMode or DF.raidTestMode then return end
 
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db or not db.healthFadeEnabled then
         if frame.dfHealthFadeActive then
             frame.dfHealthFadeActive = false
@@ -154,7 +154,7 @@ function DF:UpdatePetHealthFade(frame)
     if not frame or not frame.unit then return end
     if not UnitExists(frame.unit) then return end
 
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db or not db.healthFadeEnabled then
         frame.dfHealthFadeActive = false
         frame:SetAlpha(1.0)

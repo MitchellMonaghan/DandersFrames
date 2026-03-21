@@ -539,6 +539,11 @@ function DF:InitializeHeaderChild(frame)
     frame.isPinnedFrame = isPinned
     frame.dfIsRaidCombinedChild = isRaidCombined
 
+    -- Register in external lookup table (immune to WoW's secure template clearing fields)
+    if isRaid and DF.RegisterRaidFrame then
+        DF:RegisterRaidFrame(frame)
+    end
+
     DF:Debug("LAYOUT", "InitializeHeaderChild: parent=%s isRaid=%s isArena=%s isPinned=%s",
         frame:GetParent() and frame:GetParent():GetName() or "nil",
         tostring(isRaid), tostring(isArena), tostring(isPinned))
@@ -762,7 +767,7 @@ function DF:InitializeHeaderChild(frame)
     -- Sets dfIsHovered flag and updates highlights
     -- ========================================
     frame:HookScript("OnEnter", function(self)
-        local frameDb = self.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local frameDb = DF:GetFrameDB(self)
 
         -- Set hover state and update highlights
         self.dfIsHovered = true

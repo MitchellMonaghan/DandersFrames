@@ -44,22 +44,6 @@ function DF:ApplyFrameLayout(frame)
     if not skipResize then
         local frameWidth = db.frameWidth or 120
         local frameHeight = db.frameHeight or 50
-        -- DEBUG: Log flat raid children getting wrong dimensions
-        if frame.dfIsHeaderChild then
-            local parent = frame:GetParent()
-            local parentName = parent and parent:GetName() or ""
-            if parentName:find("FlatRaid") then
-                local raidDb = DF:GetRaidDB()
-                local expectedW = raidDb and raidDb.frameWidth or 80
-                local expectedH = raidDb and raidDb.frameHeight or 40
-                if math.abs(frameWidth - expectedW) > 2 or math.abs(frameHeight - expectedH) > 2 then
-                    DF:DebugError("FLAT_SIZE", "ApplyFrameLayout on %s: applying %dx%d, expected %dx%d, isRaid=%s, db.frameWidth=%s",
-                        frame:GetName() or "?", frameWidth, frameHeight, expectedW, expectedH,
-                        tostring(frame.isRaidFrame), tostring(db.frameWidth))
-                    DF:DebugWarn("FLAT_SIZE", "  Stack: %s", debugstack(2, 5, 0) or "?")
-                end
-            end
-        end
         DF:SetPixelPerfectSize(frame, frameWidth, frameHeight, db)
     end
     
@@ -529,8 +513,9 @@ function DF:UpdateUnitFrame(frame, source)
     if not frame or not frame.unit then return end
     
     -- Skip if in test mode (test mode has its own update)
-    if frame.isRaidFrame and DF.raidTestMode then return end
-    if not frame.isRaidFrame and DF.testMode then return end
+    local isRaid = DF:IsRaidFrame(frame)
+    if isRaid and DF.raidTestMode then return end
+    if not isRaid and DF.testMode then return end
     
     local unit = frame.unit
     if not UnitExists(unit) then return end
@@ -943,8 +928,9 @@ function DF:UpdateHealthFast(frame)
     if not frame or not frame.unit then return end
 
     -- Skip if in test mode
-    if frame.isRaidFrame and DF.raidTestMode then return end
-    if not frame.isRaidFrame and DF.testMode then return end
+    local isRaidHF = DF:IsRaidFrame(frame)
+    if isRaidHF and DF.raidTestMode then return end
+    if not isRaidHF and DF.testMode then return end
 
     local unit = frame.unit
     if not UnitExists(unit) then return end

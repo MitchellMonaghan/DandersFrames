@@ -240,7 +240,7 @@ end
 function DF:UpdateSummonIcon(frame)
     if not frame or not frame.unit or not frame.summonIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.summonIconEnabled then
@@ -347,7 +347,7 @@ end
 function DF:UpdateResurrectionIcon(frame)
     if not frame or not frame.unit or not frame.resurrectionIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     if not db.resurrectionIconEnabled then
         frame.resurrectionIcon:Hide()
@@ -585,7 +585,7 @@ end)
 function DF:UpdatePhasedIcon(frame)
     if not frame or not frame.unit or not frame.phasedIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.phasedIconEnabled then
@@ -651,7 +651,7 @@ end
 function DF:UpdateAFKIcon(frame)
     if not frame or not frame.unit or not frame.afkIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.afkIconEnabled then
@@ -735,7 +735,7 @@ end
 function DF:UpdateVehicleIcon(frame)
     if not frame or not frame.unit or not frame.vehicleIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.vehicleIconEnabled then
@@ -782,7 +782,7 @@ local raidRoleCache = {}
 function DF:UpdateRaidRoleIcon(frame)
     if not frame or not frame.unit or not frame.raidRoleIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.raidRoleIconEnabled then
@@ -992,7 +992,7 @@ end)
 function DF:UpdateReadyCheckIconEnhanced(frame)
     if not frame or not frame.unit or not frame.readyCheckIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.readyCheckIconEnabled then
@@ -1068,7 +1068,7 @@ end
 function DF:UpdateRoleIconEnhanced(frame)
     if not frame or not frame.unit or not frame.roleIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled (support both old and new settings)
     local enabled = db.roleIconEnabled
@@ -1138,7 +1138,7 @@ end
 function DF:UpdateLeaderIconEnhanced(frame)
     if not frame or not frame.unit or not frame.leaderIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.leaderIconEnabled then
@@ -1203,7 +1203,7 @@ end
 function DF:UpdateRaidTargetIconEnhanced(frame)
     if not frame or not frame.unit or not frame.raidTargetIcon then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if enabled
     if not db.raidTargetIconEnabled then
