@@ -250,10 +250,19 @@ local provider = {
     Init = function() end,  -- No-op: FrameSort calls provider:Init() on all providers
 }
 
+-- Check if the setting is enabled (without requiring fs to be set)
+local function IsFrameSortSettingEnabled()
+    local db = DF.db
+    if not db then return false end
+    local partyDB = db.party
+    local raidDB = db.raid
+    return (partyDB and partyDB.useFrameSort) or (raidDB and raidDB.useFrameSort)
+end
+
 local function TryRegister()
     if registered then return end
     if not IsFrameSortAvailable() then return end
-    if not DF:IsFrameSortActive() then return end
+    if not IsFrameSortSettingEnabled() then return end
 
     fs = FrameSortApi.v3.Sorting
     fs:RegisterFrameProvider(provider)
@@ -285,7 +294,5 @@ end)
 
 -- Re-register when the setting is toggled on (called from GUI)
 function FrameSortMod:OnSettingChanged()
-    if DF:IsFrameSortActive() then
-        TryRegister()
-    end
+    TryRegister()
 end
