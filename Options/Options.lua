@@ -2532,26 +2532,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local raidSortNote = sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "Raid: Group layout sorts within each group.\nFlat grid layout sorts all players together.", 250), 35)
         raidSortNote.hideOn = function() return GUI.SelectedMode ~= "raid" end
 
-        -- FrameSort integration toggle (only visible when FrameSort addon is installed)
-        if FrameSortApi then
-            sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "FrameSort addon detected. Enable to let FrameSort control frame ordering.\n|cFFFF8800Experimental:|r This feature is new and may not work perfectly in all scenarios. Please report any issues.", 250), 55)
-            sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Use FrameSort Addon", db, "useFrameSort", function()
-                -- Set both modes simultaneously
-                local partyDB = DF:GetDB("party")
-                local raidDB = DF:GetDB("raid")
-                if partyDB then partyDB.useFrameSort = db.useFrameSort end
-                if raidDB then raidDB.useFrameSort = db.useFrameSort end
-                -- Notify the FrameSort module
-                if DF.FrameSort and DF.FrameSort.OnSettingChanged then
-                    DF.FrameSort:OnSettingChanged()
-                end
-                -- Trigger a re-sort so the change takes effect immediately
-                TriggerSortForCurrentMode()
-                -- Refresh options visibility
-                self:RefreshStates()
-            end), 30)
-        end
-
         sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Custom Sorting", db, "sortEnabled", function()
             TriggerSortForCurrentMode()
             UpdateCombatBanner()
@@ -2584,7 +2564,30 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         sortAlpha.hideOn = HideSortOptions
         
         Add(sortOptionsGroup, nil, 1)
-        
+
+        -- ===== FRAMESORT INTEGRATION GROUP (Column 1) =====
+        if FrameSortApi then
+            local frameSortGroup = GUI:CreateSettingsGroup(self.child, 280)
+            frameSortGroup:AddWidget(GUI:CreateHeader(self.child, "FrameSort Integration"), 40)
+            frameSortGroup:AddWidget(GUI:CreateLabel(self.child, "FrameSort addon detected. Enable to let FrameSort control frame ordering.\n\n|cFFFF8800Experimental:|r This feature is new and may not work perfectly in all scenarios. Please report any issues.", 250), 70)
+            frameSortGroup:AddWidget(GUI:CreateCheckbox(self.child, "Use FrameSort Addon", db, "useFrameSort", function()
+                -- Set both modes simultaneously
+                local partyDB = DF:GetDB("party")
+                local raidDB = DF:GetDB("raid")
+                if partyDB then partyDB.useFrameSort = db.useFrameSort end
+                if raidDB then raidDB.useFrameSort = db.useFrameSort end
+                -- Notify the FrameSort module
+                if DF.FrameSort and DF.FrameSort.OnSettingChanged then
+                    DF.FrameSort:OnSettingChanged()
+                end
+                -- Trigger a re-sort so the change takes effect immediately
+                TriggerSortForCurrentMode()
+                -- Refresh options visibility
+                self:RefreshStates()
+            end), 30)
+            Add(frameSortGroup, nil, 1)
+        end
+
         -- ===== SELF POSITION GROUP (Column 1) =====
         local selfPosGroup = GUI:CreateSettingsGroup(self.child, 280)
         selfPosGroup:AddWidget(GUI:CreateHeader(self.child, "Self Position"), 40)
