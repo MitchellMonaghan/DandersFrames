@@ -10,7 +10,7 @@
 ## SavedVariables: DandersFramesDB_v2, DandersFramesClickCastingDB
 ## SavedVariablesPerCharacter: DandersFramesCharDB
 ## AllowAddOnTableAccess: 1
-## OptionalDeps: Masque, LibSharedMedia-3.0, SharedMedia, SharedMedia_MyMedia, SharedMediaAdditionalFonts
+## OptionalDeps: Masque, LibSharedMedia-3.0, SharedMedia, SharedMedia_MyMedia, SharedMediaAdditionalFonts, FrameSort
 
 # Libraries
 Libs\LibStub\LibStub.lua
@@ -70,6 +70,7 @@ Features\HealthFade.lua
 Features\ClassPower.lua
 Features\Sort.lua
 Features\SecureSort.lua
+Features\FrameSort.lua
 Features\Dispel.lua
 Features\MyBuffIndicators.lua
 
