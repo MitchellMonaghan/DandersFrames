@@ -174,14 +174,6 @@ function DF:SetProfile(name)
         print("|cff00ff00DandersFrames:|r Created new profile: " .. name)
     end
     
-    -- Clear auto-profile runtime state (old profile's data becomes stale)
-    if DF.AutoProfilesUI then
-        DF.AutoProfilesUI.activeRuntimeProfile = nil
-        DF.AutoProfilesUI.activeRuntimeContentKey = nil
-        DF.AutoProfilesUI.pendingAutoProfileEval = false
-    end
-    DF.raidOverrides = nil
-
     -- Switch to the profile (update both account-wide and per-character)
     DandersFramesDB_v2.currentProfile = name
     if DandersFramesCharDB then
@@ -190,11 +182,37 @@ function DF:SetProfile(name)
     DF.db = DandersFramesDB_v2.profiles[name]
     DF:WrapDB()
 
-    -- Apply the profile with full refresh
+    -- Apply the profile with full refresh BEFORE clearing runtime state,
+    -- so the raid proxy system has consistent state during secure frame ops
     DF:FullProfileRefresh()
+
+    -- Clear auto-profile runtime state AFTER refresh completes
+    -- (old profile's data is now stale and safe to remove)
+    if DF.AutoProfilesUI then
+        DF.AutoProfilesUI.activeRuntimeProfile = nil
+        DF.AutoProfilesUI.activeRuntimeContentKey = nil
+        DF.AutoProfilesUI.pendingAutoProfileEval = false
+    end
+
+    -- Guard raidOverrides clearing behind combat check — secure header
+    -- attributes may still be in flight during combat lockdown
+    if InCombatLockdown() then
+        DF:Debug("PROFILE", "SetProfile: deferring raidOverrides clear until combat ends")
+        local regenFrame = CreateFrame("Frame")
+        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        regenFrame:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            DF.raidOverrides = nil
+            DF:Debug("PROFILE", "SetProfile: raidOverrides cleared after combat")
+        end)
+    else
+        DF.raidOverrides = nil
+    end
+
     print("|cff00ff00DandersFrames:|r Switched to profile: " .. name)
 
-    -- Re-evaluate auto-profiles for the new profile
+    -- Re-evaluate auto-profiles for the new profile after a short delay
+    -- to allow secure frame operations to settle
     C_Timer.After(0.1, function()
         if DF.AutoProfilesUI then
             DF.AutoProfilesUI:EvaluateAndApply()

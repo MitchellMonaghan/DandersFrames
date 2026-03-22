@@ -55,7 +55,7 @@ local function GetGroupRoster()
     local numMembers = GetNumGroupMembers()
     
     if numMembers == 0 then
-        local name = UnitName("player")
+        local name = GetUnitName("player", true)  -- Returns "Name-Realm"
         roster[name] = name
         table.insert(rosterNames, name)
         return roster, rosterNames
@@ -79,19 +79,16 @@ local function GetGroupRoster()
         end
     else
         -- Party mode
-        local playerName = UnitName("player")
+        local playerName = GetUnitName("player", true)  -- Returns "Name-Realm"
         roster[playerName] = playerName
         table.insert(rosterNames, playerName)
         
         for i = 1, 4 do
             local unit = "party" .. i
             if UnitExists(unit) then
-                local name, realm = UnitName(unit)
-                if name then
-                    local fullName = name
-                    if realm and realm ~= "" then
-                        fullName = name .. "-" .. realm
-                    end
+                local fullName = GetUnitName(unit, true)  -- Returns "Name-Realm", avoids secret value taint
+                if fullName then
+                    local name = fullName:match("([^%-]+)") or fullName
                     roster[fullName] = fullName
                     roster[name] = fullName  -- Map short name too
                     table.insert(rosterNames, fullName)
@@ -144,10 +141,9 @@ function PinnedFrames:AutoPopulateSet(set, roster)
     if numMembers == 0 then
         -- Solo mode
         if set.autoAddDPS then
-            local name = UnitName("player")
-            local realm = GetRealmName()
-            local fullName = name .. "-" .. realm
-            if not existingPlayers[name] then
+            local fullName = GetUnitName("player", true)  -- Returns "Name-Realm"
+            local name = fullName and fullName:match("([^%-]+)") or fullName
+            if name and not existingPlayers[name] then
                 table.insert(set.players, fullName)
                 changed = true
             end
@@ -158,27 +154,28 @@ function PinnedFrames:AutoPopulateSet(set, roster)
     local isRaid = IsInRaid()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or (i == 1 and "player" or "party" .. (i - 1))
-        local name, realm = UnitName(unit)
-        
-        if name and not existingPlayers[name] then
-            realm = realm or GetRealmName()
-            local fullName = name .. "-" .. realm
-            local role = UnitGroupRolesAssigned(unit)
-            if role == "NONE" then role = "DAMAGER" end
-            
-            local shouldAdd = false
-            if set.autoAddTanks and role == "TANK" then
-                shouldAdd = true
-            elseif set.autoAddHealers and role == "HEALER" then
-                shouldAdd = true
-            elseif set.autoAddDPS and role == "DAMAGER" then
-                shouldAdd = true
-            end
-            
-            if shouldAdd then
-                table.insert(set.players, fullName)
-                existingPlayers[name] = true
-                changed = true
+        local fullName = GetUnitName(unit, true)  -- Returns "Name-Realm", avoids secret value taint
+
+        if fullName then
+            local shortName = fullName:match("([^%-]+)") or fullName
+            if not existingPlayers[shortName] then
+                local role = UnitGroupRolesAssigned(unit)
+                if role == "NONE" then role = "DAMAGER" end
+
+                local shouldAdd = false
+                if set.autoAddTanks and role == "TANK" then
+                    shouldAdd = true
+                elseif set.autoAddHealers and role == "HEALER" then
+                    shouldAdd = true
+                elseif set.autoAddDPS and role == "DAMAGER" then
+                    shouldAdd = true
+                end
+
+                if shouldAdd then
+                    table.insert(set.players, fullName)
+                    existingPlayers[shortName] = true
+                    changed = true
+                end
             end
         end
     end
@@ -208,7 +205,17 @@ end
 function PinnedFrames:ProcessAllSets()
     local hlDB = GetPinnedDB()
     if not hlDB or not hlDB.sets then return false end
-    
+
+    -- Skip processing if no sets are enabled (avoids unnecessary work in arena)
+    local anyEnabled = false
+    for i = 1, 2 do
+        if hlDB.sets[i] and hlDB.sets[i].enabled then
+            anyEnabled = true
+            break
+        end
+    end
+    if not anyEnabled then return false end
+
     local roster = GetGroupRoster()
     local changed = false
     
@@ -1370,9 +1377,7 @@ function PinnedFrames:Test()
         return
     end
     
-    local playerName = UnitName("player")
-    local playerRealm = GetRealmName()
-    local fullName = playerName .. "-" .. playerRealm
+    local fullName = GetUnitName("player", true)  -- Returns "Name-Realm"
     
     -- Add player if not already in list
     local found = false

@@ -965,16 +965,19 @@ function FlatRaidFrames:UpdateSorting()
         -- Complex mode: use nameList for full control over order
         local nameList = self:BuildSortedNameList()
         DebugPrint("  Using nameList mode:", nameList ~= "" and nameList or "(empty)")
-        
+
         -- Set attributes for nameList mode
-        -- Clear groupBy first to prevent triggering updates with old settings
+        -- CRITICAL ORDER (#543): Set nameList/sortMethod FIRST, then clear groupBy attrs.
+        -- If we clear groupBy/groupFilter first, the header enters an invalid intermediate
+        -- state where stale group-header children (and their Blizzard PrivateAuraAnchor
+        -- children) cause "calling 'Hide' on bad self" errors during the Hide/Show toggle.
+        header:SetAttribute("nameList", nameList)
+        header:SetAttribute("sortMethod", "NAMELIST")
         header:SetAttribute("groupBy", nil)
         header:SetAttribute("groupingOrder", nil)
         header:SetAttribute("groupFilter", nil)
-        header:SetAttribute("nameList", nameList)
-        header:SetAttribute("sortMethod", "NAMELIST")
     end
-    
+
     -- Force header to recalculate by toggling visibility
     if header:IsShown() then
         header:Hide()
@@ -1020,7 +1023,12 @@ end
 
 function FlatRaidFrames:SetEnabled(enabled)
     DebugPrint("SetEnabled:", enabled)
-    
+
+    -- Guard against re-entrant calls: SetEnabled(false) calls UpdateRaidHeaderVisibility
+    -- which can call SetEnabled again, causing infinite recursion
+    if self._settingEnabled then return end
+    self._settingEnabled = true
+
     if not self.header then
         if enabled then
             self:CreateFrames()
@@ -1028,16 +1036,18 @@ function FlatRaidFrames:SetEnabled(enabled)
         -- If still no header after creation attempt, bail
         if not self.header then
             DebugPrint("SetEnabled: no header available")
+            self._settingEnabled = nil
             return
         end
     end
-    
+
     if InCombatLockdown() then
         self.pendingVisibility = enabled
         DebugPrint("Visibility change deferred (combat)")
+        self._settingEnabled = nil
         return
     end
-    
+
     local header = self.header
 
     if enabled then
@@ -1057,6 +1067,7 @@ function FlatRaidFrames:SetEnabled(enabled)
                     if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
                 end
             end
+            self._settingEnabled = nil
             return
         end
 
@@ -1147,6 +1158,8 @@ function FlatRaidFrames:SetEnabled(enabled)
             DF:UpdateRaidHeaderVisibility()
         end
     end
+
+    self._settingEnabled = nil
 end
 
 -- ============================================================

@@ -3412,17 +3412,28 @@ function AutoProfilesUI:RemoveRuntimeProfile()
     if not self.activeRuntimeProfile then return end
     DF:Debug("LAYOUT", "RemoveRuntimeProfile: deactivating \"%s\" (%s)", self.activeRuntimeProfile.name or "?", self.activeRuntimeContentKey or "?")
 
-    -- Clear overlay — proxy falls through to real table immediately
-    DF.raidOverrides = nil
-
-    -- Clear runtime state
-    self.activeRuntimeProfile = nil
-    self.activeRuntimeContentKey = nil
-
-    -- Refresh all frames to reflect global settings
+    -- Refresh all frames FIRST while proxy state is still consistent,
+    -- then clear overlay and runtime state afterward
     if DF.FullProfileRefresh then
         DF:FullProfileRefresh()
     end
+
+    -- Clear overlay and runtime state AFTER refresh completes
+    if InCombatLockdown() then
+        DF:Debug("LAYOUT", "RemoveRuntimeProfile: deferring raidOverrides clear until combat ends")
+        local regenFrame = CreateFrame("Frame")
+        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        regenFrame:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            DF.raidOverrides = nil
+            DF:Debug("LAYOUT", "RemoveRuntimeProfile: raidOverrides cleared after combat")
+        end)
+    else
+        DF.raidOverrides = nil
+    end
+
+    self.activeRuntimeProfile = nil
+    self.activeRuntimeContentKey = nil
 
     print("|cff00ff00DandersFrames:|r Auto-profile deactivated, using global settings")
 
