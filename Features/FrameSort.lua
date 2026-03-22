@@ -301,8 +301,30 @@ function FrameSortMod:OnSettingChanged()
             OnFrameSortRequest(provider)
         end
     else
-        -- Toggled OFF: re-apply DF's built-in sorting for all frame types
+        -- Toggled OFF: clear FrameSort's stale nameList/sortMethod from all headers,
+        -- then re-apply DF's built-in sorting for all frame types
         if not InCombatLockdown() then
+            -- Clear attributes FrameSort set on all headers so DF's sort
+            -- functions can cleanly re-apply groupBy or their own nameList
+            local headers = {}
+            if DF.partyHeader then headers[#headers + 1] = DF.partyHeader end
+            if DF.arenaHeader then headers[#headers + 1] = DF.arenaHeader end
+            if DF.FlatRaidFrames and DF.FlatRaidFrames.header then
+                headers[#headers + 1] = DF.FlatRaidFrames.header
+            end
+            if DF.raidSeparatedHeaders then
+                for i = 1, 8 do
+                    if DF.raidSeparatedHeaders[i] then
+                        headers[#headers + 1] = DF.raidSeparatedHeaders[i]
+                    end
+                end
+            end
+            for _, header in ipairs(headers) do
+                header:SetAttribute("nameList", nil)
+                header:SetAttribute("sortMethod", nil)
+            end
+
+            -- Now re-apply DF's built-in sorting
             if DF.ApplyPartyGroupSorting then
                 DF:ApplyPartyGroupSorting()
             end
