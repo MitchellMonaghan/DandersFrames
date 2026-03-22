@@ -1151,9 +1151,10 @@ function DF:SnapToGrid(x, y)
     local gridSize = db.gridSize or 20
     local snapThreshold = gridSize / 2
     
-    -- Get frame dimensions for edge/center snapping
-    local frameWidth = container:GetWidth()
-    local frameHeight = container:GetHeight()
+    -- Get frame dimensions for edge/center snapping (account for scale)
+    local frameScale = container:GetScale() or 1
+    local frameWidth = container:GetWidth() * frameScale
+    local frameHeight = container:GetHeight() * frameScale
     
     -- Calculate edges and center positions relative to frame center
     local leftEdge = x - frameWidth / 2
