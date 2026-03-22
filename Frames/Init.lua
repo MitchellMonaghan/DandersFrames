@@ -755,7 +755,7 @@ function DF:CreateRaidMoverFrame()
             -- Snap preview if enabled
             local snapDb = DF:GetRaidDB()
             if snapDb.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown() then
-                DF:UpdateSnapPreview(self)
+                DF:UpdateSnapPreview(self, raidDragOffsetX, raidDragOffsetY)
             end
         end)
     end)

@@ -89,7 +89,7 @@ function DF:CreateMoverFrame()
             -- Snap preview if enabled
             local snapDb = DF:GetDB()
             if snapDb.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown() then
-                DF:UpdateSnapPreview(DF.container)
+                DF:UpdateSnapPreview(DF.container, dragOffsetX, dragOffsetY)
             end
         end)
     end)
@@ -1043,10 +1043,11 @@ function DF:CalculateSnapPreview(x, y, container)
     end
     local gridSize = db.gridSize or 20
     local snapThreshold = gridSize / 2
-    
-    -- Get frame dimensions
-    local frameWidth = container:GetWidth()
-    local frameHeight = container:GetHeight()
+
+    -- Get frame dimensions (account for scale — GetWidth/GetHeight return logical size)
+    local frameScale = container:GetScale() or 1
+    local frameWidth = container:GetWidth() * frameScale
+    local frameHeight = container:GetHeight() * frameScale
     
     -- Calculate edges
     local leftEdge = x - frameWidth / 2
@@ -1094,14 +1095,20 @@ function DF:CalculateSnapPreview(x, y, container)
 end
 
 -- Update snap preview lines position
-function DF:UpdateSnapPreview(container)
+function DF:UpdateSnapPreview(container, overrideX, overrideY)
     if not DF.gridFrame or not DF.gridFrame:IsShown() then return end
-    
-    local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
-    local centerX, centerY = container:GetCenter()
-    local x = centerX - screenWidth / 2
-    local y = centerY - screenHeight / 2
-    
+
+    local x, y
+    if overrideX and overrideY then
+        -- Use caller-provided position (avoids GetCenter ambiguity on scaled frames)
+        x, y = overrideX, overrideY
+    else
+        local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
+        local centerX, centerY = container:GetCenter()
+        x = centerX - screenWidth / 2
+        y = centerY - screenHeight / 2
+    end
+
     local snapLineX, snapLineY = DF:CalculateSnapPreview(x, y, container)
     
     -- Update vertical preview line
