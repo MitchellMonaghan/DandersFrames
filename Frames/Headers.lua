@@ -3902,6 +3902,9 @@ function DF:ApplyRaidGroupSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
 
+    -- FrameSort integration: yield sorting to FrameSort when active
+    if DF:IsFrameSortActive() then return end
+
     -- Suppress repositioning FIRST, before any attribute changes that could
     -- trigger SecureGroupHeader child re-anchoring → OnShow → position snippet.
     -- Without this, UpdateRaidHeaderLayoutAttributes (called by UpdateRaidPositionAttributes
@@ -5742,12 +5745,15 @@ end
 function DF:ApplyPartyGroupSorting()
     if InCombatLockdown() then return end
     if not DF.partyHeader then return end
-    
+
     -- Skip in arena: party header is hidden (arena uses arenaHeader with raid units).
     -- The Hide/Show re-evaluate trick below would re-show the party header,
     -- causing it to overlap with the arena header in the same container.
     if DF.GetContentType and DF:GetContentType() == "arena" then return end
-    
+
+    -- FrameSort integration: yield sorting to FrameSort when active
+    if DF:IsFrameSortActive() then return end
+
     local db = DF:GetDB()
     local selfPosition = db.sortSelfPosition or "FIRST"
     local sortEnabled = db.sortEnabled
@@ -5879,7 +5885,10 @@ end
 function DF:ApplyArenaHeaderSorting()
     if InCombatLockdown() then return end
     if not DF.arenaHeader then return end
-    
+
+    -- FrameSort integration: yield sorting to FrameSort when active
+    if DF:IsFrameSortActive() then return end
+
     local db = DF:GetDB()
     local selfPosition = db.sortSelfPosition or "FIRST"
     local sortEnabled = db.sortEnabled

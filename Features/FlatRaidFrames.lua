@@ -875,6 +875,9 @@ function FlatRaidFrames:UpdateSorting()
         return
     end
 
+    -- FrameSort integration: yield sorting to FrameSort when active
+    if DF:IsFrameSortActive() then return end
+
     DF:Debug("FLATRAID", "UpdateSorting: starting")
 
     local db = GetRaidDB()
