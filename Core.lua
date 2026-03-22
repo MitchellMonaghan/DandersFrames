@@ -4723,8 +4723,10 @@ function DF:FullProfileRefresh()
     
     -- === UPDATE PARTY CONTAINER POSITION AND SIZE ===
     if DF.container then
+        local scale = partyDB.frameScale or 1.0
+        DF.container:SetScale(scale)
         DF.container:ClearAllPoints()
-        DF.container:SetPoint("CENTER", UIParent, "CENTER", partyDB.anchorX or 0, partyDB.anchorY or 0)
+        DF.container:SetPoint("CENTER", UIParent, "CENTER", (partyDB.anchorX or 0) / scale, (partyDB.anchorY or 0) / scale)
 
         -- Recalculate container size for new profile's frame dimensions/orientation
         -- (mirrors SetPartyOrientation in Headers.lua)
@@ -4741,8 +4743,10 @@ function DF:FullProfileRefresh()
 
     -- === UPDATE RAID CONTAINER POSITION ===
     if DF.raidContainer then
+        local scale = raidDB.frameScale or 1.0
+        DF.raidContainer:SetScale(scale)
         DF.raidContainer:ClearAllPoints()
-        DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", raidDB.raidAnchorX or 0, raidDB.raidAnchorY or 0)
+        DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", (raidDB.raidAnchorX or 0) / scale, (raidDB.raidAnchorY or 0) / scale)
     end
     
     -- === FORCE UPDATE INDIVIDUAL FRAMES VIA ITERATORS ===

@@ -1881,11 +1881,14 @@ end
 function DF:UpdateContainerPosition()
     local db = DF:GetDB()
     local x, y = db.anchorX or 0, db.anchorY or 0
-    
+    local scale = db.frameScale or 1.0
+
+    DF.container:SetScale(scale)
     DF.container:ClearAllPoints()
-    DF.container:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    
+    DF.container:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
+
     -- Also update mover if visible (use SetAllPoints to preserve size)
+    -- Mover is a child of container, inherits scale automatically
     if DF.moverFrame and DF.moverFrame:IsShown() then
         DF.moverFrame:ClearAllPoints()
         DF.moverFrame:SetAllPoints(DF.container)
@@ -1893,30 +1896,36 @@ function DF:UpdateContainerPosition()
 
     -- Also update test container if visible
     if DF.testPartyContainer then
+        DF.testPartyContainer:SetScale(scale)
         DF.testPartyContainer:ClearAllPoints()
-        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
 end
 
 function DF:UpdateRaidContainerPosition()
     if not DF.raidContainer then return end
-    
+
     local db = DF:GetRaidDB()
     local x, y = db.raidAnchorX or 0, db.raidAnchorY or 0
-    
+    local scale = db.frameScale or 1.0
+
+    DF.raidContainer:SetScale(scale)
     DF.raidContainer:ClearAllPoints()
-    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    
+    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
+
     -- Also update mover if visible
+    -- Raid mover is parented to UIParent, needs explicit scale + compensation
     if DF.raidMoverFrame and DF.raidMoverFrame:IsShown() then
+        DF.raidMoverFrame:SetScale(scale)
         DF.raidMoverFrame:ClearAllPoints()
-        DF.raidMoverFrame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.raidMoverFrame:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
-    
+
     -- Also update test container if visible
     if DF.testRaidContainer then
+        DF.testRaidContainer:SetScale(scale)
         DF.testRaidContainer:ClearAllPoints()
-        DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
 end
 

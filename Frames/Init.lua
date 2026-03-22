@@ -74,7 +74,9 @@ function DF:InitializeFrames()
     
     -- Create container (needed for headers and movers)
     DF.container = CreateFrame("Frame", "DandersFramesContainer", UIParent)
-    DF.container:SetPoint("CENTER", UIParent, "CENTER", db.anchorX or 0, db.anchorY or 0)
+    local partyScale = db.frameScale or 1.0
+    DF.container:SetScale(partyScale)
+    DF.container:SetPoint("CENTER", UIParent, "CENTER", (db.anchorX or 0) / partyScale, (db.anchorY or 0) / partyScale)
     DF.container:SetSize(500, 200)
     
     -- Create mover frame
@@ -106,7 +108,9 @@ function DF:InitializeRaidFrames()
     -- Create raid container
     -- NOTE: Using SecureFrameTemplate so secure code can SetPoint relative to this frame
     DF.raidContainer = CreateFrame("Frame", "DandersRaidFramesContainer", UIParent, "SecureFrameTemplate")
-    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", db.raidAnchorX or 0, db.raidAnchorY or 0)
+    local raidScale = db.frameScale or 1.0
+    DF.raidContainer:SetScale(raidScale)
+    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", (db.raidAnchorX or 0) / raidScale, (db.raidAnchorY or 0) / raidScale)
     DF.raidContainer:SetSize(400, 300)
     DF.raidContainer:SetMovable(true)
     DF.raidContainer:Hide()  -- Hidden by default, shown when in raid
@@ -679,7 +683,9 @@ function DF:CreateRaidMoverFrame()
     
     -- Set initial position from db
     local raidDb = DF:GetRaidDB()
-    mover:SetPoint("CENTER", UIParent, "CENTER", raidDb.raidAnchorX or 0, raidDb.raidAnchorY or 0)
+    local raidMoverScale = raidDb.frameScale or 1.0
+    mover:SetScale(raidMoverScale)
+    mover:SetPoint("CENTER", UIParent, "CENTER", (raidDb.raidAnchorX or 0) / raidMoverScale, (raidDb.raidAnchorY or 0) / raidMoverScale)
     
     mover:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
