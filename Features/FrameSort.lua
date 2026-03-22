@@ -292,7 +292,29 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
--- Re-register when the setting is toggled on (called from GUI)
+-- Called from GUI when the setting is toggled (called from GUI)
 function FrameSortMod:OnSettingChanged()
-    TryRegister()
+    if IsFrameSortSettingEnabled() then
+        -- Toggled ON: register and immediately apply FrameSort's order
+        TryRegister()
+        if registered and not InCombatLockdown() then
+            OnFrameSortRequest(provider)
+        end
+    else
+        -- Toggled OFF: re-apply DF's built-in sorting for all frame types
+        if not InCombatLockdown() then
+            if DF.ApplyPartyGroupSorting then
+                DF:ApplyPartyGroupSorting()
+            end
+            if DF.ApplyArenaHeaderSorting then
+                DF:ApplyArenaHeaderSorting()
+            end
+            if DF.ApplyRaidGroupSorting then
+                DF:ApplyRaidGroupSorting()
+            end
+            if DF.FlatRaidFrames and DF.FlatRaidFrames.UpdateSorting then
+                DF.FlatRaidFrames:UpdateSorting()
+            end
+        end
+    end
 end
