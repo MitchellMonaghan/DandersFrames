@@ -558,18 +558,6 @@ local function GetFrameForUnit(unit)
     return foundFrame
 end
 
--- Check if a spell is "important" using the new API
--- Returns a secret boolean that must be used with SetAlphaFromBoolean
-local function IsSpellImportant(spellID)
-    if not spellID then return false end
-    if C_Spell and C_Spell.IsSpellImportant then
-        -- This returns a secret boolean - can't use in if statements
-        -- Must use SetAlphaFromBoolean on a frame
-        local ok, result = pcall(C_Spell.IsSpellImportant, spellID)
-        if ok then return result end
-    end
-    return false
-end
 
 -- ============================================================
 -- ICON CREATION AND POOLING
@@ -965,7 +953,7 @@ local function ApplyIconSettings(icon, db, spellID)
     -- When importantOnly is enabled, use SetAlphaFromBoolean to hide non-important spells
     if icon.importanceFilterFrame then
         if importantOnly and spellID then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             icon.importanceFilterFrame:SetAlphaFromBoolean(isImportant)
         else
             -- Not filtering, show everything
@@ -992,7 +980,7 @@ local function ApplyIconSettings(icon, db, spellID)
         TargetedSpellAnimator_UpdateState()
         
         if highlightImportant and spellID and highlightStyle ~= "none" then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             
             if highlightStyle == "glow" then
                 -- Glow effect using edge borders with ADD blend mode
@@ -1515,10 +1503,7 @@ local function ProcessCastInternal(casterUnit, isChannel)
     
     -- Store isImportant secret
     if C_Spell and C_Spell.IsSpellImportant and spellID then
-        local ok, result = pcall(C_Spell.IsSpellImportant, spellID)
-        if ok then
-            secrets.isImportant = result
-        end
+        secrets.isImportant = C_Spell.IsSpellImportant(spellID)
     end
     
     DF.castHistorySecrets[entryID] = secrets
@@ -2104,7 +2089,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
     -- Important spell filter
     if icon.importanceFilterFrame then
         if importantOnly and spellID then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             icon.importanceFilterFrame:SetAlphaFromBoolean(isImportant)
         else
             icon.importanceFilterFrame:SetAlpha(1)
@@ -2130,7 +2115,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
         TargetedSpellAnimator_UpdateState()
         
         if highlightImportant and spellID and highlightStyle ~= "none" then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             
             if highlightStyle == "glow" then
                 -- Glow effect using edge borders with ADD blend mode

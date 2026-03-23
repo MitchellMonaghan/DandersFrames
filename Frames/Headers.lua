@@ -2187,6 +2187,7 @@ function DF:CreateRaidPositionHandler()
     handler:SetAttribute("groupsperrow", db.raidGroupsPerRow or 8)
     handler:SetAttribute("rowcolspacing", db.raidRowColSpacing or 30)
     handler:SetAttribute("grouprowgrowth", db.raidGroupRowGrowth or "START")
+    handler:SetAttribute("flatmodeactive", (not db.raidUseGroups) and 1 or 0)
 
     -- Initialize display order attributes (default 1-8)
     local displayOrder = db.raidGroupDisplayOrder or {1, 2, 3, 4, 5, 6, 7, 8}
@@ -2205,6 +2206,11 @@ function DF:CreateRaidPositionHandler()
         -- Batch mode: skip repositioning until all group counts are synced
         local suppress = handler:GetAttribute("suppressreposition")
         if suppress and suppress == 1 then return end
+
+        -- Flat mode: flat raid manages its own container sizing — grouped
+        -- repositioning must not stomp on it
+        local flatActive = handler:GetAttribute("flatmodeactive")
+        if flatActive and flatActive == 1 then return end
 
         -- Get all group refs explicitly (no string concat in loop)
         local group1 = handler:GetFrameRef("group1")
@@ -3399,6 +3405,15 @@ function DF:TriggerRaidPosition()
     if InCombatLockdown() then
         DF:Debug("POSITION", "TriggerRaidPosition: deferred (combat)")
         DF.pendingRaidPositionTrigger = true
+        return
+    end
+
+    -- Skip grouped-mode repositioning when flat raid mode is active.
+    -- The grouped secure snippet resizes the shared raidContainer for the 8-group grid,
+    -- which stomps on FlatRaidFrames' own container sizing and causes visual jumping.
+    local raidDb = DF:GetRaidDB()
+    if raidDb and not raidDb.raidUseGroups then
+        DF:Debug("POSITION", "TriggerRaidPosition: skipped (flat mode active)")
         return
     end
 
@@ -5260,29 +5275,18 @@ function DF:PositionRaidHeaders()
     end
 end
 
--- Update all raid frame sizes based on settings
-function DF:UpdateRaidFrameSizes()
+-- Update grouped raid frame sizes (separated headers only)
+function DF:UpdateRaidGroupFrameSizes()
     if InCombatLockdown() then return end
-    
-    -- Debug: trace what's calling this function with FULL stack
-    if DF.debugFlatLayout then
-        print("|cFFFF00FF[DF Flat Debug]|r ========== UpdateRaidFrameSizes ==========")
-        print(debugstack(2, 10, 0) or "unknown")
-    end
-    
+
     local db = DF:GetRaidDB()
     local frameWidth = db.frameWidth or 80
     local frameHeight = db.frameHeight or 40
-    local spacing = db.frameSpacing or 2
-    
-    if DF.debugFlatLayout then
-        print("|cFFFF00FF[DF Flat Debug]|r   frameWidth=" .. frameWidth .. " frameHeight=" .. frameHeight .. " spacing=" .. spacing)
-    end
-    
+
     if DF.debugHeaders then
-        print("|cFF00FF00[DF Headers]|r UpdateRaidFrameSizes: width=" .. frameWidth .. " height=" .. frameHeight .. " spacing=" .. spacing)
+        print("|cFF00FF00[DF Headers]|r UpdateRaidGroupFrameSizes: width=" .. frameWidth .. " height=" .. frameHeight)
     end
-    
+
     -- Update raidPlayerHeader frame (legacy, may not exist)
     if DF.raidPlayerHeader then
         local child = DF.raidPlayerHeader:GetAttribute("child1")
@@ -5290,14 +5294,12 @@ function DF:UpdateRaidFrameSizes()
             child:SetSize(frameWidth, frameHeight)
         end
     end
-    
-    -- Update separated headers - just set child frame sizes
-    -- Positioning attributes (point, yOffset, sortDir) are handled by secure handler
+
+    -- Update separated headers child frame sizes
     if DF.raidSeparatedHeaders then
         for g = 1, 8 do
             local header = DF.raidSeparatedHeaders[g]
             if header then
-                -- Update all child frames in this group
                 for i = 1, 5 do
                     local child = header:GetAttribute("child" .. i)
                     if child then
@@ -5307,12 +5309,24 @@ function DF:UpdateRaidFrameSizes()
             end
         end
     end
-    
-    -- Update FlatRaidFrames header (flat layout)
+
+    -- Reposition headers with new sizes (triggers secure handler)
+    DF:PositionRaidHeaders()
+end
+
+-- Update flat raid frame sizes (FlatRaidFrames header only)
+function DF:UpdateRaidFlatFrameSizes()
+    if InCombatLockdown() then return end
+
+    local db = DF:GetRaidDB()
+    local frameWidth = db.frameWidth or 80
+    local frameHeight = db.frameHeight or 40
+
+    if DF.debugFlatLayout then
+        print("|cFFFF00FF[DF Flat Debug]|r UpdateRaidFlatFrameSizes: " .. frameWidth .. " x " .. frameHeight)
+    end
+
     if DF.FlatRaidFrames and DF.FlatRaidFrames.header then
-        if DF.debugFlatLayout then
-            print("|cFFFF00FF[DF Flat Debug]|r   Setting child frame sizes to " .. frameWidth .. " x " .. frameHeight)
-        end
         for i = 1, 40 do
             local child = DF.FlatRaidFrames.header:GetAttribute("child" .. i)
             if child then
@@ -5320,16 +5334,18 @@ function DF:UpdateRaidFrameSizes()
             end
         end
     end
-    
-    if DF.debugFlatLayout then
-        print("|cFFFF00FF[DF Flat Debug]|r   -> Now calling PositionRaidHeaders...")
-    end
-    
-    -- Reposition headers with new sizes (triggers secure handler for separated mode)
+
+    -- Reposition flat layout with new sizes
     DF:PositionRaidHeaders()
-    
-    if DF.debugFlatLayout then
-        print("|cFFFF00FF[DF Flat Debug]|r ============================================")
+end
+
+-- Update all raid frame sizes (both modes) — kept for backward compatibility
+function DF:UpdateRaidFrameSizes()
+    local db = DF:GetRaidDB()
+    if db.raidUseGroups then
+        DF:UpdateRaidGroupFrameSizes()
+    else
+        DF:UpdateRaidFlatFrameSizes()
     end
 end
 
@@ -6934,11 +6950,11 @@ function DF:ApplyHeaderSettings()
     local selfPosition = db.sortSelfPosition or "FIRST"
     DF:SetPartyOrientation(horizontal, growFrom, selfPosition)
     
-    -- Raid orientation
-    -- For separated groups mode: always use vertical (groups are columns)
-    -- For combined mode: use the setting
+    -- Raid orientation — only configure the ACTIVE mode's headers.
+    -- Touching inactive headers triggers SecureGroupHeader attribute churn
+    -- (OnAttributeChanged, OnShow/OnHide hooks) that can stomp container sizing.
     local raidHorizontal = (raidDb.growDirection == "HORIZONTAL")
-    
+
     if raidDb.raidUseGroups then
         -- Separated mode: use growthAnchor for groups
         local raidGrowFrom = raidDb.growthAnchor or "START"
@@ -6951,12 +6967,12 @@ function DF:ApplyHeaderSettings()
         end
         DF:SetRaidOrientation(raidHorizontal, raidGrowFrom)
     end
-    
+
     -- Re-hook any new children that may have been created
     DF:HookPartyChildrenForRepositioning()
-    
+
     -- Note: OnShow/OnHide hooks will handle dynamic repositioning when children change
-    
+
     -- Apply sorting from settings
     -- NOTE: Party sorting is handled by ApplyPartyGroupSorting (called from SetPartyOrientation)
     -- NOTE: Arena sorting is NOT applied here — it's handled by ProcessRosterUpdate (via GRU).
@@ -6965,7 +6981,7 @@ function DF:ApplyHeaderSettings()
     --       causing groupBy/nameList to filter out players who haven't loaded yet.
     -- NOTE: Raid separated headers sorting is handled by ApplyRaidGroupSorting
     -- NOTE: Raid flat/combined header sorting is handled by ApplyRaidFlatSorting
-    
+
     -- Arena: skip raid sorting entirely (arena orientation was already applied above)
     local contentType = DF.GetContentType and DF:GetContentType()
     if contentType == "arena" then
@@ -6975,19 +6991,14 @@ function DF:ApplyHeaderSettings()
         end
         return
     end
-    
-    -- Update raid frame sizes from settings
-    if DF.debugFlatLayout then
-        print("|cFFFF00FF[DF Flat Debug]|r   -> calling UpdateRaidFrameSizes...")
-    end
-    DF:UpdateRaidFrameSizes()
-    
-    -- Apply sorting based on layout mode
+
+    -- Update raid frame sizes — only for the active mode's headers.
+    -- Sizing inactive grouped headers triggers attribute churn on hidden children.
     if raidDb.raidUseGroups then
-        -- Group-based layout: apply sorting to separated headers
+        DF:UpdateRaidGroupFrameSizes()
         DF:ApplyRaidGroupSorting()
     else
-        -- Flat layout: apply sorting to combined header
+        DF:UpdateRaidFlatFrameSizes()
         if DF.debugFlatLayout then
             print("|cFFFF00FF[DF Flat Debug]|r   -> calling ApplyRaidFlatSorting...")
         end

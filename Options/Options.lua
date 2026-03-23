@@ -1675,6 +1675,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 if set.locked == nil then set.locked = false end
                 if set.showLabel == nil then set.showLabel = false end
                 if set.players == nil then set.players = {} end
+                if set.manualPlayers == nil then set.manualPlayers = {} end
             end
         end
         
@@ -2398,7 +2399,17 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             self.child,
             function() return GetCurrentSet().players end,
             function(players)
-                GetCurrentSet().players = players
+                local set = GetCurrentSet()
+                set.players = players
+                -- Sync manualPlayers: every player currently in the list via GUI is manual.
+                -- Rebuild the lookup to match exactly what's in the list now.
+                if not set.manualPlayers then set.manualPlayers = {} end
+                local newManual = {}
+                for _, name in ipairs(players) do
+                    -- Preserve existing manual entries, add any new ones
+                    newManual[name] = true
+                end
+                set.manualPlayers = newManual
                 if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
                     -- Deep copy the players array for the override
                     local copy = {}

@@ -1823,6 +1823,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -1842,6 +1843,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -1867,6 +1869,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -1886,6 +1889,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -3032,6 +3036,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -3051,6 +3056,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -3076,6 +3082,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -3095,6 +3102,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },

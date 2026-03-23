@@ -1053,7 +1053,28 @@ function FlatRaidFrames:SetEnabled(enabled)
 
     local header = self.header
 
+    -- Tell the grouped-mode secure position handler whether flat mode is active
+    -- so it won't resize the shared raidContainer with grouped-grid dimensions
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("flatmodeactive", enabled and 1 or 0)
+    end
+
     if enabled then
+        -- ALWAYS hide separated headers when enabling flat mode, even on the fast path.
+        -- Auto layout can switch from grouped→flat between frames, leaving grouped headers
+        -- visible from the prior mode. Without this, both layouts render on top of each other.
+        if DF.raidSeparatedHeaders then
+            for i = 1, 8 do
+                local sepHeader = DF.raidSeparatedHeaders[i]
+                if sepHeader then
+                    sepHeader:Hide()
+                    if DF.SetHeaderChildrenEventsEnabled then
+                        DF:SetHeaderChildrenEventsEnabled(sepHeader, false)
+                    end
+                end
+            end
+        end
+
         -- When already visible, only refresh child sizes and isRaidFrame flag
         -- (skip the heavy Hide/Show + UpdateNameList cycle to avoid double-work
         -- since ApplyRaidFlatSorting will follow from ProcessRosterUpdate).
@@ -1075,20 +1096,6 @@ function FlatRaidFrames:SetEnabled(enabled)
         end
 
         DF:Debug("FLATRAID", "SetEnabled(true): performing full setup")
-
-        -- CRITICAL: Hide separated headers (group-based layout) when enabling flat mode
-        -- This prevents having two sets of frames visible
-        if DF.raidSeparatedHeaders then
-            for i = 1, 8 do
-                local sepHeader = DF.raidSeparatedHeaders[i]
-                if sepHeader then
-                    sepHeader:Hide()
-                    if DF.SetHeaderChildrenEventsEnabled then
-                        DF:SetHeaderChildrenEventsEnabled(sepHeader, false)
-                    end
-                end
-            end
-        end
 
         -- 1. Apply layout attributes (skip 4-step refresh - UpdateNameList rebuilds below)
         self:ApplyLayoutSettings(true)
