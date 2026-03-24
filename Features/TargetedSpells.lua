@@ -772,8 +772,31 @@ local function EnsureIconPool(frame, count)
     end
     
     count = count or 5  -- Default pool size
-    
-    for i = #frame.targetedSpellIcons + 1, count do
+
+    local existing = #frame.targetedSpellIcons
+    if existing >= count then return end
+
+    -- Raid frames: create only 1 icon now, stagger the rest to avoid
+    -- "script ran too long" when 40 frames each create 5 icons simultaneously
+    if frame.isRaidFrame and existing == 0 then
+        frame.targetedSpellIcons[1] = CreateSingleIcon(frame.targetedSpellContainer, 1)
+        frame.targetedSpellIcons[1].unitFrame = frame
+        -- Schedule remaining icons one-per-timer-tick
+        if not frame.dfIconPoolStaggered then
+            frame.dfIconPoolStaggered = true
+            for i = 2, count do
+                C_Timer.After(0.05 * (i - 1), function()
+                    if not frame.targetedSpellIcons then return end
+                    if #frame.targetedSpellIcons >= i then return end
+                    frame.targetedSpellIcons[i] = CreateSingleIcon(frame.targetedSpellContainer, i)
+                    frame.targetedSpellIcons[i].unitFrame = frame
+                end)
+            end
+        end
+        return
+    end
+
+    for i = existing + 1, count do
         -- Parent icons to the OOR container, not directly to frame
         frame.targetedSpellIcons[i] = CreateSingleIcon(frame.targetedSpellContainer, i)
         frame.targetedSpellIcons[i].unitFrame = frame
