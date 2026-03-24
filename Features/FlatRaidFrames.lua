@@ -484,10 +484,11 @@ function FlatRaidFrames:CreateFrames()
             childCount = childCount + 1
             child:SetSize(frameWidth, frameHeight)
             child.isRaidFrame = true
+            if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
         end
     end
     DebugPrint("Created", childCount, "child frames, sized to", frameWidth, "x", frameHeight)
-    
+
     -- Now switch to nameList mode and set initial nameList
     self.header:SetAttribute("sortMethod", "NAMELIST")
     self.header:SetAttribute("groupFilter", nil)  -- Clear groupFilter, nameList takes over
@@ -690,6 +691,7 @@ function FlatRaidFrames:ApplyLayoutSettings(skipRefresh)
             if child then
                 child:ClearAllPoints()
                 child.isRaidFrame = true
+                if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
             end
         end
         
@@ -740,6 +742,7 @@ function FlatRaidFrames:RefreshLayout()
         if child then
             child:SetSize(frameWidth, frameHeight)
             child.isRaidFrame = true
+            if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
         end
     end
     
@@ -872,6 +875,9 @@ function FlatRaidFrames:UpdateSorting()
         return
     end
 
+    -- FrameSort integration: yield sorting to FrameSort when active
+    if DF:IsFrameSortActive() then return end
+
     DF:Debug("FLATRAID", "UpdateSorting: starting")
 
     local db = GetRaidDB()
@@ -966,16 +972,19 @@ function FlatRaidFrames:UpdateSorting()
         -- Complex mode: use nameList for full control over order
         local nameList = self:BuildSortedNameList()
         DebugPrint("  Using nameList mode:", nameList ~= "" and nameList or "(empty)")
-        
+
         -- Set attributes for nameList mode
-        -- Clear groupBy first to prevent triggering updates with old settings
+        -- CRITICAL ORDER (#543): Set nameList/sortMethod FIRST, then clear groupBy attrs.
+        -- If we clear groupBy/groupFilter first, the header enters an invalid intermediate
+        -- state where stale group-header children (and their Blizzard PrivateAuraAnchor
+        -- children) cause "calling 'Hide' on bad self" errors during the Hide/Show toggle.
+        header:SetAttribute("nameList", nameList)
+        header:SetAttribute("sortMethod", "NAMELIST")
         header:SetAttribute("groupBy", nil)
         header:SetAttribute("groupingOrder", nil)
         header:SetAttribute("groupFilter", nil)
-        header:SetAttribute("nameList", nameList)
-        header:SetAttribute("sortMethod", "NAMELIST")
     end
-    
+
     -- Force header to recalculate by toggling visibility
     if header:IsShown() then
         header:Hide()
@@ -985,11 +994,6 @@ function FlatRaidFrames:UpdateSorting()
     -- Resize innerContainer to fit visible frames
     -- Note: Call directly, no delays (combat safety)
     self:ResizeInnerContainer()
-    
-    -- Schedule private aura reanchor after all attribute changes settle (combat-safe)
-    if DF.SchedulePrivateAuraReanchor then
-        DF:SchedulePrivateAuraReanchor()
-    end
 end
 
 -- Alias for backward compatibility
@@ -1021,7 +1025,12 @@ end
 
 function FlatRaidFrames:SetEnabled(enabled)
     DebugPrint("SetEnabled:", enabled)
-    
+
+    -- Guard against re-entrant calls: SetEnabled(false) calls UpdateRaidHeaderVisibility
+    -- which can call SetEnabled again, causing infinite recursion
+    if self._settingEnabled then return end
+    self._settingEnabled = true
+
     if not self.header then
         if enabled then
             self:CreateFrames()
@@ -1029,19 +1038,42 @@ function FlatRaidFrames:SetEnabled(enabled)
         -- If still no header after creation attempt, bail
         if not self.header then
             DebugPrint("SetEnabled: no header available")
+            self._settingEnabled = nil
             return
         end
     end
-    
+
     if InCombatLockdown() then
         self.pendingVisibility = enabled
         DebugPrint("Visibility change deferred (combat)")
+        self._settingEnabled = nil
         return
     end
-    
+
     local header = self.header
 
+    -- Tell the grouped-mode secure position handler whether flat mode is active
+    -- so it won't resize the shared raidContainer with grouped-grid dimensions
+    if DF.raidPositionHandler then
+        DF.raidPositionHandler:SetAttribute("flatmodeactive", enabled and 1 or 0)
+    end
+
     if enabled then
+        -- ALWAYS hide separated headers when enabling flat mode, even on the fast path.
+        -- Auto layout can switch from grouped→flat between frames, leaving grouped headers
+        -- visible from the prior mode. Without this, both layouts render on top of each other.
+        if DF.raidSeparatedHeaders then
+            for i = 1, 8 do
+                local sepHeader = DF.raidSeparatedHeaders[i]
+                if sepHeader then
+                    sepHeader:Hide()
+                    if DF.SetHeaderChildrenEventsEnabled then
+                        DF:SetHeaderChildrenEventsEnabled(sepHeader, false)
+                    end
+                end
+            end
+        end
+
         -- When already visible, only refresh child sizes and isRaidFrame flag
         -- (skip the heavy Hide/Show + UpdateNameList cycle to avoid double-work
         -- since ApplyRaidFlatSorting will follow from ProcessRosterUpdate).
@@ -1055,26 +1087,14 @@ function FlatRaidFrames:SetEnabled(enabled)
                 if child then
                     child:SetSize(frameWidth, frameHeight)
                     child.isRaidFrame = true
+                    if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
                 end
             end
+            self._settingEnabled = nil
             return
         end
 
         DF:Debug("FLATRAID", "SetEnabled(true): performing full setup")
-
-        -- CRITICAL: Hide separated headers (group-based layout) when enabling flat mode
-        -- This prevents having two sets of frames visible
-        if DF.raidSeparatedHeaders then
-            for i = 1, 8 do
-                local sepHeader = DF.raidSeparatedHeaders[i]
-                if sepHeader then
-                    sepHeader:Hide()
-                    if DF.SetHeaderChildrenEventsEnabled then
-                        DF:SetHeaderChildrenEventsEnabled(sepHeader, false)
-                    end
-                end
-            end
-        end
 
         -- 1. Apply layout attributes (skip 4-step refresh - UpdateNameList rebuilds below)
         self:ApplyLayoutSettings(true)
@@ -1089,9 +1109,10 @@ function FlatRaidFrames:SetEnabled(enabled)
             if child then
                 child:SetSize(frameWidth, frameHeight)
                 child.isRaidFrame = true
+                if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
             end
         end
-        
+
         -- 3. Update nameList (this will do Hide/Show to refresh with FRESH data)
         self:UpdateNameList()
         
@@ -1146,6 +1167,8 @@ function FlatRaidFrames:SetEnabled(enabled)
             DF:UpdateRaidHeaderVisibility()
         end
     end
+
+    self._settingEnabled = nil
 end
 
 -- ============================================================

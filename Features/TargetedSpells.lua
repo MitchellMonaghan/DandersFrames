@@ -558,18 +558,6 @@ local function GetFrameForUnit(unit)
     return foundFrame
 end
 
--- Check if a spell is "important" using the new API
--- Returns a secret boolean that must be used with SetAlphaFromBoolean
-local function IsSpellImportant(spellID)
-    if not spellID then return false end
-    if C_Spell and C_Spell.IsSpellImportant then
-        -- This returns a secret boolean - can't use in if statements
-        -- Must use SetAlphaFromBoolean on a frame
-        local ok, result = pcall(C_Spell.IsSpellImportant, spellID)
-        if ok then return result end
-    end
-    return false
-end
 
 -- ============================================================
 -- ICON CREATION AND POOLING
@@ -719,7 +707,7 @@ local function CreateSingleIcon(parent, index)
         -- Handle interrupted animation (needs to run every frame for smooth animation)
         if self.isInterrupted then
             self.interruptTimer = (self.interruptTimer or 0) + elapsed
-            local db = self.unitFrame and (self.unitFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()) or DF:GetDB()
+            local db = self.unitFrame and DF:GetFrameDB(self.unitFrame) or DF:GetDB()
             local duration = db.targetedSpellInterruptedDuration or 0.5
             
             if self.interruptTimer >= duration then
@@ -823,7 +811,7 @@ end
 local function PositionIcons(frame)
     if not frame or not frame.targetedSpellIcons or not frame.dfActiveTargetedSpells then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     local iconSize = db.targetedSpellSize or 28
     local scale = db.targetedSpellScale or 1.0
@@ -965,7 +953,7 @@ local function ApplyIconSettings(icon, db, spellID)
     -- When importantOnly is enabled, use SetAlphaFromBoolean to hide non-important spells
     if icon.importanceFilterFrame then
         if importantOnly and spellID then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             icon.importanceFilterFrame:SetAlphaFromBoolean(isImportant)
         else
             -- Not filtering, show everything
@@ -992,7 +980,7 @@ local function ApplyIconSettings(icon, db, spellID)
         TargetedSpellAnimator_UpdateState()
         
         if highlightImportant and spellID and highlightStyle ~= "none" then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             
             if highlightStyle == "glow" then
                 -- Glow effect using edge borders with ADD blend mode
@@ -1137,7 +1125,7 @@ function DF:ShowTargetedSpellIcon(frame, casterKey, casterUnit, texture, spellNa
     -- PERF TEST: Skip if disabled
     if DF.PerfTest and not DF.PerfTest.enableTargetedSpells then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db.targetedSpellEnabled then return end
     
     EnsureIconPool(frame, 5)
@@ -1368,7 +1356,7 @@ end
 function DF:UpdateTargetedSpellLayout(frame)
     if not frame or not frame.targetedSpellIcons then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Apply settings to all active icons
     for _, icon in ipairs(frame.targetedSpellIcons) do
@@ -1515,10 +1503,7 @@ local function ProcessCastInternal(casterUnit, isChannel)
     
     -- Store isImportant secret
     if C_Spell and C_Spell.IsSpellImportant and spellID then
-        local ok, result = pcall(C_Spell.IsSpellImportant, spellID)
-        if ok then
-            secrets.isImportant = result
-        end
+        secrets.isImportant = C_Spell.IsSpellImportant(spellID)
     end
     
     DF.castHistorySecrets[entryID] = secrets
@@ -1660,7 +1645,7 @@ local function HandleCastStop(casterUnit, wasInterrupted)
         if not icon or not icon.isActive then return end
         
         -- Check frame-specific db for raid frames
-        local frameDb = frame.isRaidFrame and DF:GetRaidDB() or db
+        local frameDb = DF:IsRaidFrame(frame) and DF:GetRaidDB() or db
         
         if wasInterrupted and frameDb.targetedSpellShowInterrupted then
             -- Show interrupted visual
@@ -2104,7 +2089,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
     -- Important spell filter
     if icon.importanceFilterFrame then
         if importantOnly and spellID then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             icon.importanceFilterFrame:SetAlphaFromBoolean(isImportant)
         else
             icon.importanceFilterFrame:SetAlpha(1)
@@ -2130,7 +2115,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
         TargetedSpellAnimator_UpdateState()
         
         if highlightImportant and spellID and highlightStyle ~= "none" then
-            local isImportant = IsSpellImportant(spellID)
+            local isImportant = C_Spell.IsSpellImportant(spellID)
             
             if highlightStyle == "glow" then
                 -- Glow effect using edge borders with ADD blend mode

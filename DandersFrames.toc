@@ -3,14 +3,14 @@
 ## Notes: Custom party/raid frames for WoW Midnight 12.0
 ## X-Credits: Some optimization patterns informed by studying Grid2 and other community addons. Secret aura tracking techniques from Harrek's Advanced Raid Frames (used with permission).
 ## Author: Danders
-## Version: v4.1.3-alpha.15
+## Version: v4.1.5-alpha.1
 ## X-Curse-Project-ID: 1389690
 ## X-Wago-ID: RNL9B46o
 ## IconTexture: Interface\AddOns\DandersFrames\Media\DF_Icon
 ## SavedVariables: DandersFramesDB_v2, DandersFramesClickCastingDB
 ## SavedVariablesPerCharacter: DandersFramesCharDB
 ## AllowAddOnTableAccess: 1
-## OptionalDeps: Masque, LibSharedMedia-3.0, SharedMedia, SharedMedia_MyMedia, SharedMediaAdditionalFonts
+## OptionalDeps: Masque, LibSharedMedia-3.0, SharedMedia, SharedMedia_MyMedia, SharedMediaAdditionalFonts, FrameSort
 
 # Libraries
 Libs\LibStub\LibStub.lua
@@ -70,6 +70,7 @@ Features\HealthFade.lua
 Features\ClassPower.lua
 Features\Sort.lua
 Features\SecureSort.lua
+Features\FrameSort.lua
 Features\Dispel.lua
 Features\MyBuffIndicators.lua
 

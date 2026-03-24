@@ -402,7 +402,7 @@ function DF:ApplyMyBuffIndicatorAppearance(frame)
     if not frame or not frame.dfMyBuffOverlay then return end
     if not frame.dfMyBuffOverlay:IsShown() then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db then return end
     
     -- Re-apply the overlay to update OOR state
@@ -476,7 +476,7 @@ end
 function DF:UpdateMyBuffIndicator(frame)
     if not frame then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if in test mode first (allows preview even when feature is disabled)
     local isRaidFrame = frame.isRaidFrame

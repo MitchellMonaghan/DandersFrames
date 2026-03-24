@@ -38,7 +38,7 @@ function DF:ApplyFrameLayout(frame)
     local skipResize = isSecureChild and InCombatLockdown()
     
     local db = DF:GetFrameDB(frame)
-    
+
     -- Frame size (with pixel-perfect support)
     -- Skip during combat for secure frames
     if not skipResize then
@@ -536,8 +536,9 @@ function DF:UpdateUnitFrame(frame, source)
     if not frame or not frame.unit then return end
     
     -- Skip if in test mode (test mode has its own update)
-    if frame.isRaidFrame and DF.raidTestMode then return end
-    if not frame.isRaidFrame and DF.testMode then return end
+    local isRaid = DF:IsRaidFrame(frame)
+    if isRaid and DF.raidTestMode then return end
+    if not isRaid and DF.testMode then return end
     
     local unit = frame.unit
     if not UnitExists(unit) then return end
@@ -870,19 +871,23 @@ function DF:UpdateUnitFrame(frame, source)
         if showPower then
             local power = UnitPower(unit)
             local maxPower = UnitPowerMax(unit)
-            
-            -- StatusBar API handles secret values internally via SetMinMaxValues/SetValue
-            -- No need to compare values - just pass them directly
-            frame.dfPowerBar:SetMinMaxValues(0, maxPower)
-            frame.dfPowerBar:SetValue(power)
-            
-            local powerType, powerToken = UnitPowerType(unit)
-            local powerColor = DF:GetPowerColor(powerToken, powerType)
-            frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
-            frame.dfPowerBar:Show()
-            -- Let the appearance system handle alpha (OOR, dead, element-specific)
-            if DF.UpdatePowerBarAppearance then
-                DF:UpdatePowerBarAppearance(frame)
+
+            -- Secret value guard: UnitPowerMax/UnitPower return secret values for arena opponents
+            -- SetMinMaxValues cannot handle secret values, so hide the bar when they appear
+            if type(power) ~= "number" or type(maxPower) ~= "number" then
+                frame.dfPowerBar:Hide()
+            else
+                frame.dfPowerBar:SetMinMaxValues(0, maxPower)
+                frame.dfPowerBar:SetValue(power)
+
+                local powerType, powerToken = UnitPowerType(unit)
+                local powerColor = DF:GetPowerColor(powerToken, powerType)
+                frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+                frame.dfPowerBar:Show()
+                -- Let the appearance system handle alpha (OOR, dead, element-specific)
+                if DF.UpdatePowerBarAppearance then
+                    DF:UpdatePowerBarAppearance(frame)
+                end
             end
         else
             frame.dfPowerBar:Hide()
@@ -957,8 +962,9 @@ function DF:UpdateHealthFast(frame)
     if not frame or not frame.unit then return end
 
     -- Skip if in test mode
-    if frame.isRaidFrame and DF.raidTestMode then return end
-    if not frame.isRaidFrame and DF.testMode then return end
+    local isRaidHF = DF:IsRaidFrame(frame)
+    if isRaidHF and DF.raidTestMode then return end
+    if not isRaidHF and DF.testMode then return end
 
     local unit = frame.unit
     if not UnitExists(unit) then return end
@@ -1176,12 +1182,17 @@ function DF:UpdatePower(frame)
     
     local power = UnitPower(unit)
     local maxPower = UnitPowerMax(unit)
-    
-    -- StatusBar API handles secret values internally via SetMinMaxValues/SetValue
-    -- No need to compare values - just pass them directly
+
+    -- Secret value guard: UnitPowerMax/UnitPower return secret values for arena opponents
+    -- SetMinMaxValues cannot handle secret values, so hide the bar when they appear
+    if type(power) ~= "number" or type(maxPower) ~= "number" then
+        frame.dfPowerBar:Hide()
+        return
+    end
+
     frame.dfPowerBar:SetMinMaxValues(0, maxPower)
     frame.dfPowerBar:SetValue(power)
-    
+
     -- Update color
     local powerType, powerToken = UnitPowerType(unit)
     local powerColor = DF:GetPowerColor(powerToken, powerType)

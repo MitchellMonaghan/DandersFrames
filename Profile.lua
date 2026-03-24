@@ -174,14 +174,6 @@ function DF:SetProfile(name)
         print("|cff00ff00DandersFrames:|r Created new profile: " .. name)
     end
     
-    -- Clear auto-profile runtime state (old profile's data becomes stale)
-    if DF.AutoProfilesUI then
-        DF.AutoProfilesUI.activeRuntimeProfile = nil
-        DF.AutoProfilesUI.activeRuntimeContentKey = nil
-        DF.AutoProfilesUI.pendingAutoProfileEval = false
-    end
-    DF.raidOverrides = nil
-
     -- Switch to the profile (update both account-wide and per-character)
     DandersFramesDB_v2.currentProfile = name
     if DandersFramesCharDB then
@@ -190,11 +182,37 @@ function DF:SetProfile(name)
     DF.db = DandersFramesDB_v2.profiles[name]
     DF:WrapDB()
 
-    -- Apply the profile with full refresh
+    -- Apply the profile with full refresh BEFORE clearing runtime state,
+    -- so the raid proxy system has consistent state during secure frame ops
     DF:FullProfileRefresh()
+
+    -- Clear auto-profile runtime state AFTER refresh completes
+    -- (old profile's data is now stale and safe to remove)
+    if DF.AutoProfilesUI then
+        DF.AutoProfilesUI.activeRuntimeProfile = nil
+        DF.AutoProfilesUI.activeRuntimeContentKey = nil
+        DF.AutoProfilesUI.pendingAutoProfileEval = false
+    end
+
+    -- Guard raidOverrides clearing behind combat check — secure header
+    -- attributes may still be in flight during combat lockdown
+    if InCombatLockdown() then
+        DF:Debug("PROFILE", "SetProfile: deferring raidOverrides clear until combat ends")
+        local regenFrame = CreateFrame("Frame")
+        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        regenFrame:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            DF.raidOverrides = nil
+            DF:Debug("PROFILE", "SetProfile: raidOverrides cleared after combat")
+        end)
+    else
+        DF.raidOverrides = nil
+    end
+
     print("|cff00ff00DandersFrames:|r Switched to profile: " .. name)
 
-    -- Re-evaluate auto-profiles for the new profile
+    -- Re-evaluate auto-profiles for the new profile after a short delay
+    -- to allow secure frame operations to settle
     C_Timer.After(0.1, function()
         if DF.AutoProfilesUI then
             DF.AutoProfilesUI:EvaluateAndApply()
@@ -369,6 +387,10 @@ function DF:ExportProfile(categories, frameTypes, profileName)
         if DF.db.raidAutoProfiles then
             exportData.raidAutoProfiles = DF:DeepCopy(DF.db.raidAutoProfiles)
         end
+        -- Include aura blacklist
+        if DF.db.auraBlacklist then
+            exportData.auraBlacklist = DF:DeepCopy(DF.db.auraBlacklist)
+        end
         exportData.categories = nil
     else
         -- Selective category export
@@ -384,6 +406,10 @@ function DF:ExportProfile(categories, frameTypes, profileName)
         for _, cat in ipairs(categories) do categorySet[cat] = true end
         if categorySet.autoLayout and DF.db.raidAutoProfiles then
             exportData.raidAutoProfiles = DF:DeepCopy(DF.db.raidAutoProfiles)
+        end
+        -- Aura blacklist: top-level key, include with auras category
+        if categorySet.auras and DF.db.auraBlacklist then
+            exportData.auraBlacklist = DF:DeepCopy(DF.db.auraBlacklist)
         end
     end
 
@@ -581,6 +607,7 @@ function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTy
             raidAutoProfiles = DF:DeepCopy(DF.db.raidAutoProfiles or DF.RaidAutoProfilesDefaults),
             classColors = DF:DeepCopy(DF.db.classColors or {}),
             powerColors = DF:DeepCopy(DF.db.powerColors or {}),
+            auraBlacklist = DF:DeepCopy(DF.db.auraBlacklist or { buffs = {}, debuffs = {} }),
             linkedSections = {},
         }
 
@@ -616,6 +643,10 @@ function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTy
         if importData.raidAutoProfiles then
             DF.db.raidAutoProfiles = importData.raidAutoProfiles
         end
+        -- Import aura blacklist if present
+        if importData.auraBlacklist then
+            DF.db.auraBlacklist = importData.auraBlacklist
+        end
     else
         -- Selective import: merge only selected categories
         local categoriesToImport = selectedCategories or importInfo.detectedCategories
@@ -631,6 +662,10 @@ function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTy
         for _, cat in ipairs(categoriesToImport) do importCategorySet[cat] = true end
         if importCategorySet.autoLayout and importData.raidAutoProfiles then
             DF.db.raidAutoProfiles = importData.raidAutoProfiles
+        end
+        -- Aura blacklist: top-level key, import with auras category
+        if importCategorySet.auras and importData.auraBlacklist then
+            DF.db.auraBlacklist = importData.auraBlacklist
         end
     end
     

@@ -1,8 +1,27 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-03-20T15:16:39Z"
+DF.BUILD_DATE = "2026-03-23T15:34:08Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [4.1.5] - 2026-03-24
+
+### Bug Fixes
+* (Grouped Raids) Fix hidden groups sometimes showing frames when players join or are moved into them — hidden group headers are now fully neutralized (attributes cleared) so they can never claim or display units
+* (Auras) Remove private aura reanchor system — tokens auto-resolve in Midnight and the reanchor APIs are now combat-locked
+* (Auras) Use SetCooldownFromDurationObject for secret-safe aura cooldowns
+
+## [4.1.4] - 2026-03-23
+
+### New Features
+* **Frame Scale** — new slider in Layout settings to scale party and raid frames (0.5x–2.0x). Movers, snap-to-grid, and drag all work correctly at any scale. Scale is per-profile and applies to containers, movers, and test frames.
+* (Pinned Frames) **Auto-Update by Role** — when auto-add role filters are active (tanks, healers, DPS), players whose role no longer matches are automatically removed. Manually added players and offline players are never auto-removed.
+
+### Bug Fixes
+* (Flat Raids) Fix raid anchor moving when respeccing or dying — grouped-mode positioning was resizing the shared container when flat mode was active
+* (Flat Raids) Fix frames overlapping with grouped headers when auto layout switches from grouped to flat mode
+* (Pinned Frames) Fix frames drifting towards bottom-left when changing scale
+* (Pinned Frames) Fix drag speed mismatch at non-1.0 scale — frames now track the cursor 1:1 at any scale
 
 ## [4.1.3] - 2026-03-17
 
@@ -11,6 +30,7 @@ DF.CHANGELOG_TEXT = [===[
 * (Aura Designer) **Show When Missing + Expiring** — when both are enabled, the indicator stays hidden while the buff is active, appears during the expiring window, then shows with normal appearance once the buff drops off
 * (Auras) **Growth Direction Control** — replaced the single growth dropdown with a three-part control (Orientation, Wrap, Direction) for clearer configuration
 * (Aura Designer) **Sound Alerts** — per-indicator sound alerts that play when an aura appears, expires, or is missing. Supports all LibSharedMedia sounds, adjustable volume, loop/one-shot modes, and a global "Mute All Sound Alerts" toggle in the Aura Designer banner. Includes a searchable sound dropdown picker.
+* (Sorting) **[Experimental] FrameSort Addon Integration** — added support for the FrameSort addon. When enabled in General > Sorting, FrameSort controls frame ordering for party, raid (flat and grouped), and arena frames. Requires the FrameSort addon to be installed separately.
 
 ### Bug Fixes
 * (Raid Frames) **Major fix** for raid frames jumping/shifting position when players join, leave, or when loading into LFR/BGs — completely reworked the reposition pipeline to batch all updates into a single authoritative reposition, with a settling debounce for instance loading

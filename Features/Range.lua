@@ -609,7 +609,7 @@ function DF:UpdatePetRange(frame)
     if not frame or not frame.unit then return end
     if not UnitExists(frame.unit) then return end
     
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db then return end
     
     local ownerUnit = frame.ownerUnit

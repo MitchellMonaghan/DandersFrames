@@ -165,7 +165,7 @@ local function DetectClassPower()
     if not candidateType then return nil end
 
     local maxPower = UnitPowerMax("player", candidateType)
-    if maxPower and maxPower > 0 then
+    if type(maxPower) == "number" and maxPower > 0 then
         return candidateType, POWER_TYPE_TOKENS[candidateType], maxPower
     end
 
@@ -289,7 +289,8 @@ local function UpdatePips()
     local current = UnitPower("player", activePowerType) or 0
     local maxPower = UnitPowerMax("player", activePowerType) or 0
 
-    if maxPower == 0 then
+    -- Secret value guard: if values aren't numbers, hide pips
+    if type(current) ~= "number" or type(maxPower) ~= "number" or maxPower == 0 then
         pipContainer:Hide()
         return
     end
@@ -533,7 +534,7 @@ local function Refresh()
 
     local powerType, powerToken, maxPower = DetectClassPower()
 
-    if not powerType or not maxPower or maxPower == 0 then
+    if not powerType or not maxPower or type(maxPower) ~= "number" or maxPower == 0 then
         activePowerType = nil
         activePowerToken = nil
         if pipContainer then pipContainer:Hide() end

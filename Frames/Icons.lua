@@ -20,6 +20,7 @@ local UnitExists = UnitExists
 local InCombatLockdown = InCombatLockdown
 local GetPlayerAuraBySpellID = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
 local GetUnitAuraBySpellID = C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
+local issecretvalue = issecretvalue or function() return false end
 
 -- ============================================================
 -- MISSING BUFF CACHING (cached lookup optimization)
@@ -104,13 +105,27 @@ local function SetDefensiveTexture()
     state.textureSet = true
 end
 
--- Module-level function for SetCooldownFromExpirationTime pcall
+-- Module-level function for cooldown pcall (secret-safe via Duration objects)
 local function SetDefensiveCooldown()
     local state = DefensiveBarState
     local cooldown = state.frame.defensiveIcon.cooldown
+    -- Use Duration object pipeline for secret-safe cooldown display
+    if state.unit and state.auraInstanceID
+       and C_UnitAuras.GetAuraDuration
+       and cooldown.SetCooldownFromDurationObject then
+        local durationObj = C_UnitAuras.GetAuraDuration(state.unit, state.auraInstanceID)
+        if durationObj then
+            cooldown:SetCooldownFromDurationObject(durationObj)
+            return
+        end
+    end
+    -- Fallback for non-secret values (test mode)
     local auraData = state.auraData
-    if cooldown.SetCooldownFromExpirationTime and auraData.expirationTime and auraData.duration then
-        cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
+    if auraData and auraData.expirationTime and auraData.duration
+       and not issecretvalue(auraData.expirationTime) and not issecretvalue(auraData.duration) then
+        if cooldown.SetCooldownFromExpirationTime then
+            cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
+        end
     end
 end
 
@@ -189,7 +204,7 @@ local function GetOrCreateDefensiveBarIcon(frame, index)
         if not self:IsShown() then return end
         local anchorFrame = self.unitFrame
         if not anchorFrame then return end
-        local iconDb = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local iconDb = DF:GetFrameDB(anchorFrame)
         if not iconDb.tooltipDefensiveEnabled then return end
         if iconDb.tooltipDefensiveDisableInCombat and InCombatLockdown() then return end
         if self.auraData and self.auraData.auraInstanceID then
@@ -273,9 +288,21 @@ local function RenderDefensiveBarIcon(icon, unit, auraInstanceID, db, iconSize, 
     end
     icon.auraData.auraInstanceID = auraInstanceID
 
-    -- Cooldown
+    -- Cooldown (secret-safe via Duration objects)
     pcall(function()
-        if icon.cooldown.SetCooldownFromExpirationTime and auraData.expirationTime and auraData.duration then
+        if unit and auraInstanceID
+           and C_UnitAuras.GetAuraDuration
+           and icon.cooldown.SetCooldownFromDurationObject then
+            local durationObj = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
+            if durationObj then
+                icon.cooldown:SetCooldownFromDurationObject(durationObj)
+                return
+            end
+        end
+        -- Fallback for non-secret values
+        if auraData.expirationTime and auraData.duration
+           and not issecretvalue(auraData.expirationTime) and not issecretvalue(auraData.duration)
+           and icon.cooldown.SetCooldownFromExpirationTime then
             icon.cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
         end
     end)
@@ -662,7 +689,7 @@ function DF:UpdateMissingBuffIcon(frame)
     end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Check if feature is disabled
     if not db.missingBuffIconEnabled then
@@ -884,7 +911,7 @@ function DF:UpdateDefensiveBar(frame)
     end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local unit = frame.unit
     
     -- Check if feature is enabled
@@ -1333,7 +1360,7 @@ function DF:UpdateAuras(frame)
     if DF.PerfTest and not DF.PerfTest.enableAuras then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     if db.showBuffs then
         DF:UpdateAuraIcons(frame, frame.buffIcons, "HELPFUL", db.buffMax or 4)
@@ -1390,7 +1417,7 @@ function DF:UpdateAuraClickThrough()
     
     local function updateFrameClickThrough(frame)
         if not frame then return end
-        local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(frame)
         
         -- Update buff icons
         if frame.buffIcons then
@@ -1543,7 +1570,7 @@ function DF:UpdateAuraIcons(frame, icons, filter, maxAuras)
     
     local unit = frame.unit
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local index = 1
     local auraSlot = 1
     
@@ -1636,9 +1663,23 @@ function DF:UpdateAuraIcons(frame, icons, filter, maxAuras)
                     auraIcon.auraData.auraInstanceID = auraInstanceID
                 end)
                 
-                -- Set cooldown - don't compare values, just try to call
+                -- Set cooldown (secret-safe via Duration objects)
                 pcall(function()
-                    auraIcon.cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
+                    if unit and auraInstanceID
+                       and C_UnitAuras.GetAuraDuration
+                       and auraIcon.cooldown.SetCooldownFromDurationObject then
+                        local durationObj = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
+                        if durationObj then
+                            auraIcon.cooldown:SetCooldownFromDurationObject(durationObj)
+                            return
+                        end
+                    end
+                    -- Fallback for non-secret values
+                    if auraData.expirationTime and auraData.duration
+                       and not issecretvalue(auraData.expirationTime) and not issecretvalue(auraData.duration)
+                       and auraIcon.cooldown.SetCooldownFromExpirationTime then
+                        auraIcon.cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
+                    end
                 end)
                 
                 -- Show/hide cooldown based on whether aura expires

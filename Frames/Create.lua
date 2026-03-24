@@ -97,7 +97,7 @@ function DF:ShowBindingTooltip(anchorFrame)
     if not CC or not CC.db or not CC.db.bindings then return end
 
     -- Read settings from frame db (party/raid independent)
-    local db = DF.GetFrameDB and DF:GetFrameDB(anchorFrame) or (anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB())
+    local db = DF:GetFrameDB(anchorFrame)
     if not db.tooltipBindingEnabled then return end
 
     local inCombat = InCombatLockdown()
@@ -966,7 +966,7 @@ function DF:CreateFrameElementsExtended(frame, db)
         local anchorFrame = self.unitFrame
         if not anchorFrame then return end
         
-        local iconDb = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local iconDb = DF:GetFrameDB(anchorFrame)
         
         if not iconDb.tooltipDefensiveEnabled then return end
         if iconDb.tooltipDefensiveDisableInCombat and InCombatLockdown() then return end
@@ -1691,7 +1691,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
         local anchorFrame = self.unitFrame
         if not anchorFrame then return end
         
-        local db = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(anchorFrame)
         
         if not db.tooltipDefensiveEnabled then return end
         if db.tooltipDefensiveDisableInCombat and InCombatLockdown() then return end
@@ -2013,7 +2013,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
     
     -- Helper function to position tooltip based on settings
     local function PositionFrameTooltip(anchorFrame)
-        local db = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(anchorFrame)
         local anchor = db.tooltipFrameAnchor or "DEFAULT"
         local anchorPos = db.tooltipFrameAnchorPos or "BOTTOMRIGHT"
         local offsetX = db.tooltipFrameX or 0
@@ -2058,7 +2058,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
         local anchorFrame = icon.unitFrame
         if not anchorFrame then return end
 
-        local db = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(anchorFrame)
         local auraType = icon.auraType  -- "BUFF", "DEBUFF", or "DEFENSIVE"
 
         -- Per-type tooltip enable + combat checks
@@ -2137,7 +2137,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
     -- Use HookScript (not SetScript) to preserve SecureHandlerEnterLeaveTemplate's _onenter/_onleave
     -- SetScript would override the template's handler and break click-casting keyboard bindings
     frame:HookScript("OnEnter", function(self)
-        local db = self.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(self)
 
         -- Always: set hover state and update highlights
         self.dfIsHovered = true
@@ -2436,7 +2436,7 @@ function DF:CreateAuraIcon(parent, index, auraType)
     -- Helper function to position aura tooltip based on settings
     local function PositionAuraTooltip(auraIcon, isBuff)
         local anchorFrame = auraIcon.unitFrame
-        local db = anchorFrame and anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = anchorFrame and DF:GetFrameDB(anchorFrame) or DF:GetDB()
         local anchor, anchorPos, offsetX, offsetY
         
         if isBuff then
@@ -2473,7 +2473,7 @@ function DF:CreateAuraIcon(parent, index, auraType)
         local anchorFrame = self.unitFrame
         if not anchorFrame then return end
         
-        local db = anchorFrame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+        local db = DF:GetFrameDB(anchorFrame)
         local isBuff = self.auraType == "BUFF"
         
         -- Check if tooltips are enabled for this aura type

@@ -1091,6 +1091,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         sizeGroup:AddWidget(GUI:CreateSlider(self.child, "Frame Width", 60, 300, 1, db, "frameWidth", UpdateFrames, function() DF:LightweightUpdateFrameSize() end, true), 55)
         sizeGroup:AddWidget(GUI:CreateSlider(self.child, "Frame Height", 20, 300, 1, db, "frameHeight", UpdateFrames, function() DF:LightweightUpdateFrameSize() end, true), 55)
         sizeGroup:AddWidget(GUI:CreateSlider(self.child, "Frame Padding", 0, 10, 1, db, "framePadding", UpdateFrames, function() DF:LightweightUpdateFrameSize() end, true), 55)
+        sizeGroup:AddWidget(GUI:CreateSlider(self.child, "Frame Scale", 0.5, 2.0, 0.05, db, "frameScale", function() DF:UpdateContainerPosition() DF:UpdateRaidContainerPosition() UpdateFrames() end, function() DF:LightweightUpdateFrameScale() end, true), 55)
         local frameSpacingSlider = sizeGroup:AddWidget(GUI:CreateSlider(self.child, "Frame Spacing", -5, 50, 1, db, "frameSpacing", UpdateFrames, function() DF:LightweightUpdateFrameSpacing() end, true), 55)
         frameSpacingSlider.hideOn = function() return GUI.SelectedMode == "raid" and not db.raidUseGroups end
         Add(sizeGroup, nil, 1)
@@ -1104,93 +1105,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         appearanceGroup:AddWidget(GUI:CreateCheckbox(self.child, "Pixel-Perfect Scaling", db, "pixelPerfect", UpdateFrames), 30)
         appearanceGroup:AddWidget(GUI:CreateLabel(self.child, "Snaps sizes and borders to exact pixels for crisp rendering.", 250), 30)
         Add(appearanceGroup, nil, 2)
-
-        -- ===== PERMANENT MOVER GROUP (Column 2) =====
-        local permMoverGroup = GUI:CreateSettingsGroup(self.child, 280)
-        permMoverGroup:AddWidget(GUI:CreateHeader(self.child, "Permanent Mover"), 40)
-
-        permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Permanent Mover", db, "permanentMover", function()
-            DF:UpdatePermanentMoverVisibility()
-        end), 30)
-
-        local moverAnchorValues = {
-            TOPLEFT = "Top Left", TOP = "Top", TOPRIGHT = "Top Right",
-            LEFT = "Left", RIGHT = "Right",
-            BOTTOMLEFT = "Bottom Left", BOTTOM = "Bottom", BOTTOMRIGHT = "Bottom Right",
-        }
-        local permMoverAnchor = permMoverGroup:AddWidget(
-            GUI:CreateDropdown(self.child, "Handle Position", moverAnchorValues, db, "permanentMoverAnchor", function()
-                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
-            end), 55)
-        permMoverAnchor.disableOn = function(d) return not d.permanentMover end
-
-        local attachValues = { CONTAINER = "Container", FIRST = "First Unit", LAST = "Last Unit" }
-        local permAttach = permMoverGroup:AddWidget(
-            GUI:CreateDropdown(self.child, "Attach To", attachValues, db, "permanentMoverAttachTo", function()
-                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
-            end), 55)
-        permAttach.disableOn = function(d) return not d.permanentMover end
-        permAttach.tooltip = "Attach the handle to the container, the first visible unit, or the last visible unit."
-
-        local function PermMoverAnchorUpdate() DF:UpdatePermanentMoverAnchor(GUI.SelectedMode) end
-        local function PermMoverSizeUpdate() DF:UpdatePermanentMoverSize(GUI.SelectedMode) end
-
-        local permOffsetX = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -500, 500, 1, db, "permanentMoverOffsetX", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
-        permOffsetX.disableOn = function(d) return not d.permanentMover end
-
-        local permOffsetY = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset Y", -500, 500, 1, db, "permanentMoverOffsetY", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
-        permOffsetY.disableOn = function(d) return not d.permanentMover end
-
-        local permWidth = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Width", 5, 500, 1, db, "permanentMoverWidth", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
-        permWidth.disableOn = function(d) return not d.permanentMover end
-
-        local permHeight = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Height", 5, 500, 1, db, "permanentMoverHeight", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
-        permHeight.disableOn = function(d) return not d.permanentMover end
-
-        local permHover = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Show on Hover Only", db, "permanentMoverShowOnHover", function()
-            DF:UpdatePermanentMoverVisibility()
-        end), 30)
-        permHover.disableOn = function(d) return not d.permanentMover end
-        permHover.tooltip = "Handle is invisible until you hover over it. Fades in and out smoothly."
-
-        local permCombat = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide in Combat", db, "permanentMoverHideInCombat", function()
-            DF:UpdatePermanentMoverCombatState()
-        end), 30)
-        permCombat.disableOn = function(d) return not d.permanentMover end
-        permCombat.tooltip = "Hides the handle during combat. If disabled, the handle changes color to indicate it is locked."
-
-        local permColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Handle Color", db, "permanentMoverColor", false, function()
-            DF:UpdatePermanentMoverColor(GUI.SelectedMode)
-        end), 35)
-        permColor.disableOn = function(d) return not d.permanentMover end
-
-        local permCombatColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Combat Color", db, "permanentMoverCombatColor", false, nil), 35)
-        permCombatColor.disableOn = function(d) return not d.permanentMover end
-        permCombatColor.tooltip = "Color shown when in combat to indicate the handle is locked."
-
-        -- Quick action dropdowns
-        local actionValues = {}
-        for id, data in pairs(DF.PERM_MOVER_ACTIONS) do
-            actionValues[id] = data.label
-        end
-
-        local permActionLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Left Click", actionValues, db, "permanentMoverActionLeft"), 55)
-        permActionLeft.disableOn = function(d) return not d.permanentMover end
-
-        local permActionRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Right Click", actionValues, db, "permanentMoverActionRight"), 55)
-        permActionRight.disableOn = function(d) return not d.permanentMover end
-
-        local permActionShiftLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Left Click", actionValues, db, "permanentMoverActionShiftLeft"), 55)
-        permActionShiftLeft.disableOn = function(d) return not d.permanentMover end
-
-        local permActionShiftRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Right Click", actionValues, db, "permanentMoverActionShiftRight"), 55)
-        permActionShiftRight.disableOn = function(d) return not d.permanentMover end
-
-        local permPullTimer = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Pull Timer Duration", 3, 30, 1, db, "permanentMoverPullTimerDuration"), 55)
-        permPullTimer.disableOn = function(d) return not d.permanentMover end
-        permPullTimer.tooltip = "Duration in seconds for the Pull Timer quick action."
-
-        Add(permMoverGroup, nil, 2)
 
         -- ===== LAYOUT DIRECTION GROUP (Column 1) =====
         local layoutGroup = GUI:CreateSettingsGroup(self.child, 280)
@@ -1390,7 +1304,94 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         if playersPerRowSlider and playersPerRowSlider.label then
             playersPerRowSlider:HookScript("OnShow", UpdateDynamicLabels)
         end
-        
+
+        -- ===== PERMANENT MOVER GROUP (Column 2) =====
+        local permMoverGroup = GUI:CreateSettingsGroup(self.child, 280)
+        permMoverGroup:AddWidget(GUI:CreateHeader(self.child, "Permanent Mover"), 40)
+
+        permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Permanent Mover", db, "permanentMover", function()
+            DF:UpdatePermanentMoverVisibility()
+        end), 30)
+
+        local moverAnchorValues = {
+            TOPLEFT = "Top Left", TOP = "Top", TOPRIGHT = "Top Right",
+            LEFT = "Left", RIGHT = "Right",
+            BOTTOMLEFT = "Bottom Left", BOTTOM = "Bottom", BOTTOMRIGHT = "Bottom Right",
+        }
+        local permMoverAnchor = permMoverGroup:AddWidget(
+            GUI:CreateDropdown(self.child, "Handle Position", moverAnchorValues, db, "permanentMoverAnchor", function()
+                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
+            end), 55)
+        permMoverAnchor.disableOn = function(d) return not d.permanentMover end
+
+        local attachValues = { CONTAINER = "Container", FIRST = "First Unit", LAST = "Last Unit" }
+        local permAttach = permMoverGroup:AddWidget(
+            GUI:CreateDropdown(self.child, "Attach To", attachValues, db, "permanentMoverAttachTo", function()
+                DF:UpdatePermanentMoverAnchor(GUI.SelectedMode)
+            end), 55)
+        permAttach.disableOn = function(d) return not d.permanentMover end
+        permAttach.tooltip = "Attach the handle to the container, the first visible unit, or the last visible unit."
+
+        local function PermMoverAnchorUpdate() DF:UpdatePermanentMoverAnchor(GUI.SelectedMode) end
+        local function PermMoverSizeUpdate() DF:UpdatePermanentMoverSize(GUI.SelectedMode) end
+
+        local permOffsetX = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset X", -500, 500, 1, db, "permanentMoverOffsetX", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
+        permOffsetX.disableOn = function(d) return not d.permanentMover end
+
+        local permOffsetY = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Offset Y", -500, 500, 1, db, "permanentMoverOffsetY", PermMoverAnchorUpdate, PermMoverAnchorUpdate), 55)
+        permOffsetY.disableOn = function(d) return not d.permanentMover end
+
+        local permWidth = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Width", 5, 500, 1, db, "permanentMoverWidth", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
+        permWidth.disableOn = function(d) return not d.permanentMover end
+
+        local permHeight = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Handle Height", 5, 500, 1, db, "permanentMoverHeight", PermMoverSizeUpdate, PermMoverSizeUpdate), 55)
+        permHeight.disableOn = function(d) return not d.permanentMover end
+
+        local permHover = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Show on Hover Only", db, "permanentMoverShowOnHover", function()
+            DF:UpdatePermanentMoverVisibility()
+        end), 30)
+        permHover.disableOn = function(d) return not d.permanentMover end
+        permHover.tooltip = "Handle is invisible until you hover over it. Fades in and out smoothly."
+
+        local permCombat = permMoverGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide in Combat", db, "permanentMoverHideInCombat", function()
+            DF:UpdatePermanentMoverCombatState()
+        end), 30)
+        permCombat.disableOn = function(d) return not d.permanentMover end
+        permCombat.tooltip = "Hides the handle during combat. If disabled, the handle changes color to indicate it is locked."
+
+        local permColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Handle Color", db, "permanentMoverColor", false, function()
+            DF:UpdatePermanentMoverColor(GUI.SelectedMode)
+        end), 35)
+        permColor.disableOn = function(d) return not d.permanentMover end
+
+        local permCombatColor = permMoverGroup:AddWidget(GUI:CreateColorPicker(self.child, "Combat Color", db, "permanentMoverCombatColor", false, nil), 35)
+        permCombatColor.disableOn = function(d) return not d.permanentMover end
+        permCombatColor.tooltip = "Color shown when in combat to indicate the handle is locked."
+
+        -- Quick action dropdowns
+        local actionValues = {}
+        for id, data in pairs(DF.PERM_MOVER_ACTIONS) do
+            actionValues[id] = data.label
+        end
+
+        local permActionLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Left Click", actionValues, db, "permanentMoverActionLeft"), 55)
+        permActionLeft.disableOn = function(d) return not d.permanentMover end
+
+        local permActionRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Right Click", actionValues, db, "permanentMoverActionRight"), 55)
+        permActionRight.disableOn = function(d) return not d.permanentMover end
+
+        local permActionShiftLeft = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Left Click", actionValues, db, "permanentMoverActionShiftLeft"), 55)
+        permActionShiftLeft.disableOn = function(d) return not d.permanentMover end
+
+        local permActionShiftRight = permMoverGroup:AddWidget(GUI:CreateDropdown(self.child, "Shift+Right Click", actionValues, db, "permanentMoverActionShiftRight"), 55)
+        permActionShiftRight.disableOn = function(d) return not d.permanentMover end
+
+        local permPullTimer = permMoverGroup:AddWidget(GUI:CreateSlider(self.child, "Pull Timer Duration", 3, 30, 1, db, "permanentMoverPullTimerDuration"), 55)
+        permPullTimer.disableOn = function(d) return not d.permanentMover end
+        permPullTimer.tooltip = "Duration in seconds for the Pull Timer quick action."
+
+        Add(permMoverGroup, nil, 2)
+
         -- See Also links
         AddSpace(20, "both")
         Add(GUI:CreateSeeAlso(self.child, {
@@ -1675,6 +1676,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 if set.locked == nil then set.locked = false end
                 if set.showLabel == nil then set.showLabel = false end
                 if set.players == nil then set.players = {} end
+                if set.manualPlayers == nil then set.manualPlayers = {} end
             end
         end
         
@@ -2398,7 +2400,17 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             self.child,
             function() return GetCurrentSet().players end,
             function(players)
-                GetCurrentSet().players = players
+                local set = GetCurrentSet()
+                set.players = players
+                -- Sync manualPlayers: every player currently in the list via GUI is manual.
+                -- Rebuild the lookup to match exactly what's in the list now.
+                if not set.manualPlayers then set.manualPlayers = {} end
+                local newManual = {}
+                for _, name in ipairs(players) do
+                    -- Preserve existing manual entries, add any new ones
+                    newManual[name] = true
+                end
+                set.manualPlayers = newManual
                 if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
                     -- Deep copy the players array for the override
                     local copy = {}
@@ -2454,6 +2466,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end
         
         local function HideSortOptions(d)
+            if d.useFrameSort and FrameSortApi then return true end
             return not d.sortEnabled
         end
         
@@ -2535,7 +2548,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         
         local raidSortNote = sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, "Raid: Group layout sorts within each group.\nFlat grid layout sorts all players together.", 250), 35)
         raidSortNote.hideOn = function() return GUI.SelectedMode ~= "raid" end
-        
+
         sortOptionsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Custom Sorting", db, "sortEnabled", function()
             TriggerSortForCurrentMode()
             UpdateCombatBanner()
@@ -2578,7 +2591,30 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         sortAlpha.hideOn = HideRoleSortOptions
         
         Add(sortOptionsGroup, nil, 1)
-        
+
+        -- ===== FRAMESORT INTEGRATION GROUP (Column 1) =====
+        if FrameSortApi then
+            local frameSortGroup = GUI:CreateSettingsGroup(self.child, 280)
+            frameSortGroup:AddWidget(GUI:CreateHeader(self.child, "FrameSort Integration"), 40)
+            frameSortGroup:AddWidget(GUI:CreateLabel(self.child, "FrameSort addon detected. Enable to let FrameSort control frame ordering.\n\n|cFFFF8800Experimental:|r This feature is new and may not work perfectly in all scenarios. Please report any issues.", 250), 70)
+            frameSortGroup:AddWidget(GUI:CreateCheckbox(self.child, "Use FrameSort Addon", db, "useFrameSort", function()
+                -- Set both modes simultaneously
+                local partyDB = DF:GetDB("party")
+                local raidDB = DF:GetDB("raid")
+                if partyDB then partyDB.useFrameSort = db.useFrameSort end
+                if raidDB then raidDB.useFrameSort = db.useFrameSort end
+                -- Notify the FrameSort module
+                if DF.FrameSort and DF.FrameSort.OnSettingChanged then
+                    DF.FrameSort:OnSettingChanged()
+                end
+                -- Trigger a re-sort so the change takes effect immediately
+                TriggerSortForCurrentMode()
+                -- Refresh options visibility
+                self:RefreshStates()
+            end), 30)
+            Add(frameSortGroup, nil, 1)
+        end
+
         -- ===== SELF POSITION GROUP (Column 1) =====
         local selfPosGroup = GUI:CreateSettingsGroup(self.child, 280)
         selfPosGroup:AddWidget(GUI:CreateHeader(self.child, "Self Position"), 40)

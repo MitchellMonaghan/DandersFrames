@@ -55,7 +55,7 @@ local function GetGroupRoster()
     local numMembers = GetNumGroupMembers()
     
     if numMembers == 0 then
-        local name = UnitName("player")
+        local name = GetUnitName("player", true)  -- Returns "Name-Realm"
         roster[name] = name
         table.insert(rosterNames, name)
         return roster, rosterNames
@@ -79,19 +79,16 @@ local function GetGroupRoster()
         end
     else
         -- Party mode
-        local playerName = UnitName("player")
+        local playerName = GetUnitName("player", true)  -- Returns "Name-Realm"
         roster[playerName] = playerName
         table.insert(rosterNames, playerName)
         
         for i = 1, 4 do
             local unit = "party" .. i
             if UnitExists(unit) then
-                local name, realm = UnitName(unit)
-                if name then
-                    local fullName = name
-                    if realm and realm ~= "" then
-                        fullName = name .. "-" .. realm
-                    end
+                local fullName = GetUnitName(unit, true)  -- Returns "Name-Realm", avoids secret value taint
+                if fullName then
+                    local name = fullName:match("([^%-]+)") or fullName
                     roster[fullName] = fullName
                     roster[name] = fullName  -- Map short name too
                     table.insert(rosterNames, fullName)
@@ -128,61 +125,124 @@ end
 -- Auto-populate a single pinned set based on its settings
 function PinnedFrames:AutoPopulateSet(set, roster)
     if not set then return false end
-    
+
     local changed = false
     roster = roster or GetGroupRoster()
-    
+
+    -- Ensure manualPlayers table exists (migration for existing profiles)
+    if not set.manualPlayers then set.manualPlayers = {} end
+
+    local hasAnyAutoFilter = set.autoAddTanks or set.autoAddHealers or set.autoAddDPS
+
     -- Build lookup of current players in set
     local existingPlayers = {}
     for _, p in ipairs(set.players) do
         local name = p:match("([^%-]+)") or p
         existingPlayers[name] = true
     end
-    
+
     -- Get group roster with role info
     local numMembers = GetNumGroupMembers()
     if numMembers == 0 then
-        -- Solo mode
-        if set.autoAddDPS then
-            local name = UnitName("player")
-            local realm = GetRealmName()
-            local fullName = name .. "-" .. realm
-            if not existingPlayers[name] then
-                table.insert(set.players, fullName)
-                changed = true
+        -- Solo mode: player role is always DAMAGER (no group role assignment)
+        local fullName = GetUnitName("player", true)
+        local shortName = fullName and fullName:match("([^%-]+)") or fullName
+
+        -- Auto-add player if DPS filter is on
+        if set.autoAddDPS and shortName and not existingPlayers[shortName] then
+            table.insert(set.players, fullName)
+            changed = true
+        end
+
+        -- Auto-remove: remove non-manual players whose role (DAMAGER) doesn't match filters
+        if hasAnyAutoFilter then
+            for i = #set.players, 1, -1 do
+                local playerName = set.players[i]
+                if not set.manualPlayers[playerName] then
+                    -- Solo player is always DAMAGER
+                    local pShort = playerName:match("([^%-]+)") or playerName
+                    if pShort == shortName then
+                        if not set.autoAddDPS then
+                            table.remove(set.players, i)
+                            changed = true
+                        end
+                    else
+                        -- Not the current player — they left the group
+                        -- CleanOfflinePlayers handles this case
+                    end
+                end
             end
         end
+
         return changed
     end
-    
+
+    -- Build name → role map for the removal pass
+    local rosterRoles = {}  -- shortName -> role
     local isRaid = IsInRaid()
     for i = 1, numMembers do
         local unit = isRaid and ("raid" .. i) or (i == 1 and "player" or "party" .. (i - 1))
-        local name, realm = UnitName(unit)
-        
-        if name and not existingPlayers[name] then
-            realm = realm or GetRealmName()
-            local fullName = name .. "-" .. realm
+        local fullName = GetUnitName(unit, true)
+
+        if fullName then
+            local shortName = fullName:match("([^%-]+)") or fullName
             local role = UnitGroupRolesAssigned(unit)
             if role == "NONE" then role = "DAMAGER" end
-            
-            local shouldAdd = false
-            if set.autoAddTanks and role == "TANK" then
-                shouldAdd = true
-            elseif set.autoAddHealers and role == "HEALER" then
-                shouldAdd = true
-            elseif set.autoAddDPS and role == "DAMAGER" then
-                shouldAdd = true
-            end
-            
-            if shouldAdd then
-                table.insert(set.players, fullName)
-                existingPlayers[name] = true
-                changed = true
+            rosterRoles[shortName] = role
+            rosterRoles[fullName] = role
+
+            -- Auto-add pass: add players matching enabled role filters
+            if not existingPlayers[shortName] then
+                local shouldAdd = false
+                if set.autoAddTanks and role == "TANK" then
+                    shouldAdd = true
+                elseif set.autoAddHealers and role == "HEALER" then
+                    shouldAdd = true
+                elseif set.autoAddDPS and role == "DAMAGER" then
+                    shouldAdd = true
+                end
+
+                if shouldAdd then
+                    table.insert(set.players, fullName)
+                    existingPlayers[shortName] = true
+                    changed = true
+                end
             end
         end
     end
-    
+
+    -- Auto-remove pass: remove players whose role no longer matches any filter
+    -- Only runs when at least one auto-add filter is active
+    if hasAnyAutoFilter then
+        for i = #set.players, 1, -1 do
+            local playerName = set.players[i]
+
+            -- Never remove manually added players
+            if set.manualPlayers[playerName] then
+                -- skip
+            else
+                -- Only evaluate players still in the group
+                -- (offline/left players are handled by CleanOfflinePlayers)
+                local role = rosterRoles[playerName]
+                if role then
+                    local matchesFilter = false
+                    if set.autoAddTanks and role == "TANK" then
+                        matchesFilter = true
+                    elseif set.autoAddHealers and role == "HEALER" then
+                        matchesFilter = true
+                    elseif set.autoAddDPS and role == "DAMAGER" then
+                        matchesFilter = true
+                    end
+
+                    if not matchesFilter then
+                        table.remove(set.players, i)
+                        changed = true
+                    end
+                end
+            end
+        end
+    end
+
     return changed
 end
 
@@ -208,7 +268,17 @@ end
 function PinnedFrames:ProcessAllSets()
     local hlDB = GetPinnedDB()
     if not hlDB or not hlDB.sets then return false end
-    
+
+    -- Skip processing if no sets are enabled (avoids unnecessary work in arena)
+    local anyEnabled = false
+    for i = 1, 2 do
+        if hlDB.sets[i] and hlDB.sets[i].enabled then
+            anyEnabled = true
+            break
+        end
+    end
+    if not anyEnabled then return false end
+
     local roster = GetGroupRoster()
     local changed = false
     
@@ -342,8 +412,10 @@ function PinnedFrames:CreateSetFrames(setIndex)
     local pos = set.position or { point = containerAnchor, x = 0, y = 200 * (setIndex == 1 and 1 or -1) }
     -- If saved anchor doesn't match current growth anchor, convert on first layout pass
     local useAnchor = pos.point or containerAnchor
+    local initScale = set.scale or 1.0
+    container:SetScale(initScale)
     container:ClearAllPoints()
-    container:SetPoint(useAnchor, UIParent, useAnchor, pos.x or 0, pos.y or 0)
+    container:SetPoint(useAnchor, UIParent, useAnchor, (pos.x or 0) / initScale, (pos.y or 0) / initScale)
     
     -- Make draggable when unlocked
     container:SetMovable(true)
@@ -417,20 +489,20 @@ function PinnedFrames:CreateSetFrames(setIndex)
 
         self:SetScript("OnUpdate", function()
             local mx, my = GetCursorPosition()
-            mx = mx / uiScale
-            my = my / uiScale
+            local ps = UIParent:GetEffectiveScale()
+            mx = mx / ps
+            my = my / ps
 
-            -- Calculate delta from start
+            -- Delta in UIParent space — add directly to logical start position
             local deltaX = mx - startMouseX
             local deltaY = my - startMouseY
-
-            -- Apply delta to starting position
             local newX = startPosX + deltaX
             local newY = startPosY + deltaY
 
-            -- Move container using growth-direction anchor
+            -- Divide by scale for SetPoint — WoW multiplies offsets by frame scale internally
+            local s = container:GetScale() or 1
             container:ClearAllPoints()
-            container:SetPoint(anchor, UIParent, anchor, newX, newY)
+            container:SetPoint(anchor, UIParent, anchor, newX / s, newY / s)
         end)
     end)
 
@@ -449,16 +521,16 @@ function PinnedFrames:CreateSetFrames(setIndex)
 
         local deltaX = mx - startMouseX
         local deltaY = my - startMouseY
-
         local finalX = startPosX + deltaX
         local finalY = startPosY + deltaY
 
-        -- Save position with current anchor
+        -- Save logical position (unscaled)
         set.position = { point = anchor, x = finalX, y = finalY }
 
-        -- Ensure container is at final position
+        -- Divide by scale for SetPoint
+        local s = container:GetScale() or 1
         container:ClearAllPoints()
-        container:SetPoint(anchor, UIParent, anchor, finalX, finalY)
+        container:SetPoint(anchor, UIParent, anchor, finalX / s, finalY / s)
     end)
     
     -- Mover shows when unlocked AND enabled
@@ -733,15 +805,19 @@ function PinnedFrames:ApplyLayoutSettings(setIndex)
             local savedAnchor = pos.point or "CENTER"
             if savedAnchor ~= containerAnchorPoint and container:GetLeft() then
                 -- Anchor changed (user changed growth direction) — convert coordinates
+                -- ConvertAnchorPosition returns screen-space offsets (affected by scale),
+                -- so multiply by scale to convert back to logical space for storage
                 local newX, newY = ConvertAnchorPosition(container, savedAnchor, containerAnchorPoint)
                 if newX and newY then
+                    local cs = container:GetScale() or 1
                     pos.point = containerAnchorPoint
-                    pos.x = newX
-                    pos.y = newY
+                    pos.x = newX * cs
+                    pos.y = newY * cs
                 end
             end
             container:ClearAllPoints()
-            container:SetPoint(containerAnchorPoint, UIParent, containerAnchorPoint, pos.x or 0, pos.y or 0)
+            local s = container:GetScale() or 1
+            container:SetPoint(containerAnchorPoint, UIParent, containerAnchorPoint, (pos.x or 0) / s, (pos.y or 0) / s)
             pos.point = containerAnchorPoint
         end
     end
@@ -1370,9 +1446,7 @@ function PinnedFrames:Test()
         return
     end
     
-    local playerName = UnitName("player")
-    local playerRealm = GetRealmName()
-    local fullName = playerName .. "-" .. playerRealm
+    local fullName = GetUnitName("player", true)  -- Returns "Name-Realm"
     
     -- Add player if not already in list
     local found = false

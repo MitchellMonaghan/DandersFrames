@@ -11,7 +11,7 @@ function DF:StyleStatusText(frame)
     if not frame or not frame.statusText then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     
     -- Apply font
     local font = db.statusTextFont or "Fonts\\FRIZQT__.TTF"
@@ -43,7 +43,7 @@ function DF:ApplyDeadFade(frame, statusType, forceApply)
     if frame.dfIsTestFrame then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     if not db.fadeDeadFrames then return end
     
     -- Mark the frame as having dead fade applied
@@ -232,7 +232,7 @@ function DF:ApplyHealthColors(frame)
 
     local unit = frame.unit
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local mode = db.healthColorMode
     local classColorAlpha = db.classColorAlpha or 1.0
     
@@ -311,7 +311,7 @@ function DF:ApplyBarOrientation(frame)
     if not frame or not frame.healthBar then return end
     
     -- Use raid DB for raid frames, party DB for party frames
-    local db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
+    local db = DF:GetFrameDB(frame)
     local mode = db.healthOrientation or "HORIZONTAL"
     
     local orient, reverse

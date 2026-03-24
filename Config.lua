@@ -1132,6 +1132,7 @@ DF.PartyDefaults = {
     frameHeight = 64,
     framePadding = 0,
     frameSpacing = 2,
+    frameScale = 1.0,
     frameWidth = 125,
     gridSize = 25,
     growDirection = "HORIZONTAL",
@@ -1660,6 +1661,7 @@ DF.PartyDefaults = {
     sortRoleOrder = {"TANK", "HEALER", "MELEE", "RANGED"},
     sortSelfPosition = "SORTED",
     sortSeparateMeleeRanged = false,
+    useFrameSort = false,
 
     -- Status Icon & Text
     statusIconFont = "DF Roboto SemiBold",
@@ -1836,6 +1838,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -1855,6 +1858,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -1880,6 +1884,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -1899,6 +1904,7 @@ DF.PartyDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -2354,6 +2360,7 @@ DF.RaidDefaults = {
     frameHeight = 64,
     framePadding = 0,
     frameSpacing = 2,
+    frameScale = 1.0,
     frameWidth = 125,
     gridSize = 25,
     growDirection = "HORIZONTAL",
@@ -2882,6 +2889,7 @@ DF.RaidDefaults = {
     sortRoleOrder = {"TANK", "HEALER", "MELEE", "RANGED"},
     sortSelfPosition = "SORTED",
     sortSeparateMeleeRanged = false,
+    useFrameSort = false,
 
     -- Status Icon & Text
     statusIconFont = "DF Roboto SemiBold",
@@ -3058,6 +3066,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -3077,6 +3086,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },
@@ -3102,6 +3112,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
             [2] = {
                 enabled = false,
@@ -3121,6 +3132,7 @@ DF.RaidDefaults = {
                 autoAddHealers = false,
                 autoAddDPS = false,
                 keepOfflinePlayers = false,
+                manualPlayers = {},
             },
         },
     },

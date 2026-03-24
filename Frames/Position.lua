@@ -43,69 +43,91 @@ function DF:CreateMoverFrame()
     
     DF.moverFrame = mover
     
+    -- Shared drag state between OnDragStart/OnUpdate/OnDragStop
+    local dragOffsetX, dragOffsetY = 0, 0
+
     mover:SetScript("OnDragStart", function(self)
         DF.isDragging = true
-        DF.container:StartMoving()
-        
-        -- Start OnUpdate to sync test container position during drag
+        -- Use saved db position as truth — avoids all GetCenter/GetLeft
+        -- ambiguity on scaled frames. Cursor position in UIParent coords.
+        local db = DF:GetDB()
+        local pScale = UIParent:GetEffectiveScale()
+        local startCursorX, startCursorY = GetCursorPosition()
+        startCursorX = startCursorX / pScale
+        startCursorY = startCursorY / pScale
+        local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
+        -- The frame's visual center in UIParent coords (known from saved position)
+        local frameCX = screenWidth / 2 + (db.anchorX or 0)
+        local frameCY = screenHeight / 2 + (db.anchorY or 0)
+        local cursorOffX = frameCX - startCursorX
+        local cursorOffY = frameCY - startCursorY
+        -- Initialize shared drag state
+        dragOffsetX = db.anchorX or 0
+        dragOffsetY = db.anchorY or 0
+
+        -- Start OnUpdate to track cursor and sync positions during drag
         self:SetScript("OnUpdate", function()
-            local x, y = DF.container:GetCenter()
-            if x and y then
-                local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
-                local offsetX, offsetY = x - screenWidth/2, y - screenHeight/2
-                
-                -- Sync testPartyContainer to container position (for live preview)
-                if DF.testPartyContainer then
-                    DF.testPartyContainer:ClearAllPoints()
-                    DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-                end
+            local cursorX, cursorY = GetCursorPosition()
+            local ps = UIParent:GetEffectiveScale()
+            cursorX = cursorX / ps
+            cursorY = cursorY / ps
+            -- New frame center = cursor + stored offset from cursor to frame center
+            local sw, sh = GetScreenWidth(), GetScreenHeight()
+            dragOffsetX = (cursorX + cursorOffX) - sw / 2
+            dragOffsetY = (cursorY + cursorOffY) - sh / 2
+            -- Apply with frame scale compensation
+            local frameScale = DF.container:GetScale() or 1
+            DF.container:ClearAllPoints()
+            DF.container:SetPoint("CENTER", UIParent, "CENTER", dragOffsetX / frameScale, dragOffsetY / frameScale)
+
+            -- Sync testPartyContainer to container position (for live preview)
+            if DF.testPartyContainer then
+                DF.testPartyContainer:ClearAllPoints()
+                DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", dragOffsetX / frameScale, dragOffsetY / frameScale)
             end
-            
+
             -- Snap preview if enabled
-            local db = DF:GetDB()
-            if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown() then
-                DF:UpdateSnapPreview(DF.container)
+            local snapDb = DF:GetDB()
+            if snapDb.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown() then
+                DF:UpdateSnapPreview(DF.container, dragOffsetX, dragOffsetY)
             end
         end)
     end)
-    
+
     mover:SetScript("OnDragStop", function(self)
-        DF.container:StopMovingOrSizing()
         DF.isDragging = false
-        
+
         -- Stop OnUpdate
         self:SetScript("OnUpdate", nil)
-        
+
         -- Hide snap preview lines
         DF:HideSnapPreview()
-        
-        -- Get current position relative to screen center
-        local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
-        local centerX, centerY = DF.container:GetCenter()
-        local x = centerX - screenWidth / 2
-        local y = centerY - screenHeight / 2
-        
-        -- Snap to grid if enabled - re-read db to ensure current state
+
+        -- Use the last computed offset from OnUpdate (stored in shared upvalues)
+        local x, y = dragOffsetX, dragOffsetY
+
+        -- Snap to grid if enabled
         local db = DF:GetDB()
         if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown() then
             x, y = DF:SnapToGrid(x, y)
         end
-        
+
         -- Apply snapped position
+        local frameScale = DF.container:GetScale() or 1
         DF.container:ClearAllPoints()
-        DF.container:SetPoint("CENTER", UIParent, "CENTER", x, y)
-        
+        DF.container:SetPoint("CENTER", UIParent, "CENTER", x / frameScale, y / frameScale)
+
         -- Sync testPartyContainer to final position
         if DF.testPartyContainer then
             DF.testPartyContainer:ClearAllPoints()
-            DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+            DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x / frameScale, y / frameScale)
         end
-        
+
         -- Save position
         db.anchorPoint = "CENTER"
         db.anchorX = x
         db.anchorY = y
-        
+
         -- Update position panel
         DF:UpdatePositionPanel()
     end)
@@ -456,6 +478,8 @@ function DF:CreatePermanentMover(container, mode)
     end)
 
     -- Drag handlers with combat protection
+    -- Manual cursor tracking instead of StartMoving() — WoW's StartMoving
+    -- doesn't handle scaled frames correctly and causes a position jump
     handle:SetScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
         self.isDragging = true
@@ -463,24 +487,45 @@ function DF:CreatePermanentMover(container, mode)
         self.fadeOut:Stop()
         self.fadeIn:Stop()
         self:SetAlpha(1)
-        container:StartMoving()
 
-        -- Sync test containers live during drag
+        -- Use saved db position as truth — avoids scale ambiguity
+        local dragDb = isRaid and DF:GetRaidDB() or DF:GetDB()
+        local pScale = UIParent:GetEffectiveScale()
+        local startCursorX, startCursorY = GetCursorPosition()
+        startCursorX = startCursorX / pScale
+        startCursorY = startCursorY / pScale
+        local sw, sh = GetScreenWidth(), GetScreenHeight()
+        local anchorX = isRaid and (dragDb.raidAnchorX or 0) or (dragDb.anchorX or 0)
+        local anchorY = isRaid and (dragDb.raidAnchorY or 0) or (dragDb.anchorY or 0)
+        local frameCX = sw / 2 + anchorX
+        local frameCY = sh / 2 + anchorY
+        handle._cursorOffX = frameCX - startCursorX
+        handle._cursorOffY = frameCY - startCursorY
+
+        -- Sync container and test containers live during drag
         self:SetScript("OnUpdate", function()
-            local cx, cy = container:GetCenter()
-            if not cx or not cy then return end
-            local sw, sh = GetScreenWidth(), GetScreenHeight()
-            local ox, oy = cx - sw / 2, cy - sh / 2
+            local cursorX, cursorY = GetCursorPosition()
+            local ps = UIParent:GetEffectiveScale()
+            cursorX = cursorX / ps
+            cursorY = cursorY / ps
+
+            local sww, shh = GetScreenWidth(), GetScreenHeight()
+            local ox = (cursorX + handle._cursorOffX) - sww / 2
+            local oy = (cursorY + handle._cursorOffY) - shh / 2
+
+            local s = container:GetScale() or 1
+            container:ClearAllPoints()
+            container:SetPoint("CENTER", UIParent, "CENTER", ox / s, oy / s)
 
             if isRaid then
                 if DF.testRaidContainer then
                     DF.testRaidContainer:ClearAllPoints()
-                    DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                    DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", ox / s, oy / s)
                 end
             else
                 if DF.testPartyContainer then
                     DF.testPartyContainer:ClearAllPoints()
-                    DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+                    DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", ox / s, oy / s)
                 end
             end
         end)
@@ -488,9 +533,6 @@ function DF:CreatePermanentMover(container, mode)
 
     handle:SetScript("OnDragStop", function(self)
         self.isDragging = false
-        if not InCombatLockdown() then
-            container:StopMovingOrSizing()
-        end
         self:SetScript("OnUpdate", nil)
 
         -- Re-evaluate hover state after drag ends
@@ -504,11 +546,15 @@ function DF:CreatePermanentMover(container, mode)
 
         if InCombatLockdown() then return end
 
+        -- Compute final position from cursor (same math as OnUpdate)
+        -- to avoid GetCenter() ambiguity on scaled frames
+        local ps = UIParent:GetEffectiveScale()
+        local finalCursorX, finalCursorY = GetCursorPosition()
+        finalCursorX = finalCursorX / ps
+        finalCursorY = finalCursorY / ps
         local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
-        local centerX, centerY = container:GetCenter()
-        if not centerX or not centerY then return end
-        local x = centerX - screenWidth / 2
-        local y = centerY - screenHeight / 2
+        local x = (finalCursorX + self._cursorOffX) - screenWidth / 2
+        local y = (finalCursorY + self._cursorOffY) - screenHeight / 2
 
         if isRaid then
             local stopDb = DF:GetRaidDB()
@@ -997,10 +1043,11 @@ function DF:CalculateSnapPreview(x, y, container)
     end
     local gridSize = db.gridSize or 20
     local snapThreshold = gridSize / 2
-    
-    -- Get frame dimensions
-    local frameWidth = container:GetWidth()
-    local frameHeight = container:GetHeight()
+
+    -- Get frame dimensions (account for scale — GetWidth/GetHeight return logical size)
+    local frameScale = container:GetScale() or 1
+    local frameWidth = container:GetWidth() * frameScale
+    local frameHeight = container:GetHeight() * frameScale
     
     -- Calculate edges
     local leftEdge = x - frameWidth / 2
@@ -1048,14 +1095,20 @@ function DF:CalculateSnapPreview(x, y, container)
 end
 
 -- Update snap preview lines position
-function DF:UpdateSnapPreview(container)
+function DF:UpdateSnapPreview(container, overrideX, overrideY)
     if not DF.gridFrame or not DF.gridFrame:IsShown() then return end
-    
-    local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
-    local centerX, centerY = container:GetCenter()
-    local x = centerX - screenWidth / 2
-    local y = centerY - screenHeight / 2
-    
+
+    local x, y
+    if overrideX and overrideY then
+        -- Use caller-provided position (avoids GetCenter ambiguity on scaled frames)
+        x, y = overrideX, overrideY
+    else
+        local screenWidth, screenHeight = GetScreenWidth(), GetScreenHeight()
+        local centerX, centerY = container:GetCenter()
+        x = centerX - screenWidth / 2
+        y = centerY - screenHeight / 2
+    end
+
     local snapLineX, snapLineY = DF:CalculateSnapPreview(x, y, container)
     
     -- Update vertical preview line
@@ -1098,9 +1151,10 @@ function DF:SnapToGrid(x, y)
     local gridSize = db.gridSize or 20
     local snapThreshold = gridSize / 2
     
-    -- Get frame dimensions for edge/center snapping
-    local frameWidth = container:GetWidth()
-    local frameHeight = container:GetHeight()
+    -- Get frame dimensions for edge/center snapping (account for scale)
+    local frameScale = container:GetScale() or 1
+    local frameWidth = container:GetWidth() * frameScale
+    local frameHeight = container:GetHeight() * frameScale
     
     -- Calculate edges and center positions relative to frame center
     local leftEdge = x - frameWidth / 2
@@ -1881,11 +1935,14 @@ end
 function DF:UpdateContainerPosition()
     local db = DF:GetDB()
     local x, y = db.anchorX or 0, db.anchorY or 0
-    
+    local scale = db.frameScale or 1.0
+
+    DF.container:SetScale(scale)
     DF.container:ClearAllPoints()
-    DF.container:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    
+    DF.container:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
+
     -- Also update mover if visible (use SetAllPoints to preserve size)
+    -- Mover is a child of container, inherits scale automatically
     if DF.moverFrame and DF.moverFrame:IsShown() then
         DF.moverFrame:ClearAllPoints()
         DF.moverFrame:SetAllPoints(DF.container)
@@ -1893,30 +1950,36 @@ function DF:UpdateContainerPosition()
 
     -- Also update test container if visible
     if DF.testPartyContainer then
+        DF.testPartyContainer:SetScale(scale)
         DF.testPartyContainer:ClearAllPoints()
-        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
 end
 
 function DF:UpdateRaidContainerPosition()
     if not DF.raidContainer then return end
-    
+
     local db = DF:GetRaidDB()
     local x, y = db.raidAnchorX or 0, db.raidAnchorY or 0
-    
+    local scale = db.frameScale or 1.0
+
+    DF.raidContainer:SetScale(scale)
     DF.raidContainer:ClearAllPoints()
-    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    
+    DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
+
     -- Also update mover if visible
+    -- Raid mover is parented to UIParent, needs explicit scale + compensation
     if DF.raidMoverFrame and DF.raidMoverFrame:IsShown() then
+        DF.raidMoverFrame:SetScale(scale)
         DF.raidMoverFrame:ClearAllPoints()
-        DF.raidMoverFrame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.raidMoverFrame:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
-    
+
     -- Also update test container if visible
     if DF.testRaidContainer then
+        DF.testRaidContainer:SetScale(scale)
         DF.testRaidContainer:ClearAllPoints()
-        DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        DF.testRaidContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
     end
 end
 
@@ -1953,10 +2016,13 @@ function DF:UnlockFrames()
     DF.positionPanelMode = "party"  -- Set mode for position panel
     DF.hideDragOverlay = false  -- Reset overlay toggle on unlock
     
+    local scale = db.frameScale or 1.0
+    DF.container:SetScale(scale)
+
     -- Always use CENTER anchor for positioning
     db.anchorPoint = "CENTER"
     DF.container:ClearAllPoints()
-    DF.container:SetPoint("CENTER", UIParent, "CENTER", db.anchorX or 0, db.anchorY or 0)
+    DF.container:SetPoint("CENTER", UIParent, "CENTER", (db.anchorX or 0) / scale, (db.anchorY or 0) / scale)
     DF.container:Show()  -- Ensure container is visible
     
     -- Ensure container has a reasonable size (might be 0 if headers haven't laid out yet)
@@ -1992,8 +2058,9 @@ function DF:UnlockFrames()
 
     -- Sync testPartyContainer to current position and size
     if DF.testPartyContainer then
+        DF.testPartyContainer:SetScale(scale)
         DF.testPartyContainer:ClearAllPoints()
-        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", db.anchorX or 0, db.anchorY or 0)
+        DF.testPartyContainer:SetPoint("CENTER", UIParent, "CENTER", (db.anchorX or 0) / scale, (db.anchorY or 0) / scale)
         DF.testPartyContainer:SetSize(DF.container:GetSize())
     end
     

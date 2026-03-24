@@ -218,14 +218,20 @@ end
 -- party members (never on the player). Simple unit check.
 local function ParseAugmentationEvokerBuffs(unit, addedAuras)
     if not addedAuras then return end
-    if not UnitIsUnit(unit, "player") then return end
 
     local unitAuras = state.auras[unit]
     if not unitAuras then return end
 
+    local isPlayer = UnitIsUnit(unit, "player")
+
     for _, aura in ipairs(addedAuras) do
-        if unitAuras[aura.auraInstanceID] == "SensePower" then
+        local name = unitAuras[aura.auraInstanceID]
+        if isPlayer and name == "SensePower" then
+            -- Player only gets EbonMight (self-buff), never SensePower
             unitAuras[aura.auraInstanceID] = "EbonMight"
+        elseif not isPlayer and name == "EbonMight" then
+            -- Party members only get SensePower, never EbonMight
+            unitAuras[aura.auraInstanceID] = "SensePower"
         end
     end
 end

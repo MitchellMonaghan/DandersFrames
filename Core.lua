@@ -280,6 +280,42 @@ function DF:LightweightUpdateRaidLayout()
     DF:LightweightUpdateFrameSize()
 end
 
+function DF:LightweightUpdateFrameScale()
+    -- Frame-skip throttle
+    local now = GetTime()
+    if now - lastSizeUpdate < SIZE_UPDATE_INTERVAL then
+        return
+    end
+    lastSizeUpdate = now
+
+    local mode = DF.GUI and DF.GUI.SelectedMode or "party"
+
+    if mode == "raid" then
+        DF:UpdateRaidContainerPosition()
+        if DF.raidTestMode then
+            if DF.RefreshTestFramesWithLayout then
+                DF:RefreshTestFramesWithLayout()
+            end
+        elseif DF.UpdateRaidLayout then
+            DF:UpdateRaidLayout()
+        end
+    else
+        DF:UpdateContainerPosition()
+        if DF.testMode and DF.LightweightPositionPartyTestFrames then
+            local db = DF:GetDB()
+            local testFrameCount = db and db.testFrameCount or 5
+            DF:LightweightPositionPartyTestFrames(testFrameCount)
+        end
+        if DF.UpdateAllPetFrames then
+            DF:UpdateAllPetFrames(true)
+        end
+    end
+
+    -- Update permanent mover anchors (they reference scaled containers)
+    DF:UpdatePermanentMoverAnchor("party")
+    DF:UpdatePermanentMoverAnchor("raid")
+end
+
 -- Update only frame alpha/opacity
 function DF:LightweightUpdateAlpha()
     local mode = DF.GUI and DF.GUI.SelectedMode or "party"
@@ -4709,8 +4745,10 @@ function DF:FullProfileRefresh()
     
     -- === UPDATE PARTY CONTAINER POSITION AND SIZE ===
     if DF.container then
+        local scale = partyDB.frameScale or 1.0
+        DF.container:SetScale(scale)
         DF.container:ClearAllPoints()
-        DF.container:SetPoint("CENTER", UIParent, "CENTER", partyDB.anchorX or 0, partyDB.anchorY or 0)
+        DF.container:SetPoint("CENTER", UIParent, "CENTER", (partyDB.anchorX or 0) / scale, (partyDB.anchorY or 0) / scale)
 
         -- Recalculate container size for new profile's frame dimensions/orientation
         -- (mirrors SetPartyOrientation in Headers.lua)
@@ -4727,8 +4765,10 @@ function DF:FullProfileRefresh()
 
     -- === UPDATE RAID CONTAINER POSITION ===
     if DF.raidContainer then
+        local scale = raidDB.frameScale or 1.0
+        DF.raidContainer:SetScale(scale)
         DF.raidContainer:ClearAllPoints()
-        DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", raidDB.raidAnchorX or 0, raidDB.raidAnchorY or 0)
+        DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", (raidDB.raidAnchorX or 0) / scale, (raidDB.raidAnchorY or 0) / scale)
     end
     
     -- === FORCE UPDATE INDIVIDUAL FRAMES VIA ITERATORS ===
