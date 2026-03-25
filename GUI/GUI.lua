@@ -1909,7 +1909,11 @@ end
 
 -- Decompose "LEFT_UP" into {orientation, wrap, direction}
 local function DecomposeGrowth(growth)
-    local primary, secondary = strsplit("_", growth)
+    local primary, secondary = strsplit("_", growth or "LEFT_UP")
+    if not secondary then
+        -- Malformed value (no underscore) — fall back to LEFT_UP
+        return "HORIZONTAL", "UP", "LEFT"
+    end
     if primary == "CENTER" then
         if secondary == "UP" or secondary == "DOWN" then
             return "HORIZONTAL", secondary, "CENTER"
