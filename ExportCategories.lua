@@ -408,6 +408,7 @@ DF.ExportCategories = {
         "bossDebuffsOverlayClipBorder",
         "bossDebuffsOverlayEnabled",
         "bossDebuffsOverlayFrameLevel",
+        "bossDebuffsOverlayIconRatio",
         "bossDebuffsOverlayMaxSlots",
         "bossDebuffsOverlayScale",
 
