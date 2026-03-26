@@ -43,6 +43,10 @@ Features\Search.lua
 Options\Options.lua
 Options\AutoProfiles.lua
 
+# Popup System (generic wizard & alert popups)
+Popup.lua
+WizardBuilder.lua
+
 # Frame System
 Frames\Core.lua
 Frames\Colors.lua

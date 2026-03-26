@@ -3808,6 +3808,44 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     -- Auras > Aura Filters (master switch for Blizzard vs Direct API mode)
     local pageAuraFilters = CreateSubTab("auras", "auras_filters", "Aura Filters")
     BuildPage(pageAuraFilters, function(self, db, Add, AddSpace, AddSyncPoint)
+        -- Setup wizard banner
+        local banner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+        banner:SetSize(520, 44)
+        if not banner.SetBackdrop then Mixin(banner, BackdropTemplateMixin) end
+        banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        banner:SetBackdropColor(0.15, 0.18, 0.28, 1)
+        local themeColor = GUI.GetThemeColor()
+        banner:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 0.5)
+
+        local bannerIcon = banner:CreateTexture(nil, "OVERLAY")
+        bannerIcon:SetPoint("LEFT", 12, 0)
+        bannerIcon:SetSize(20, 20)
+        bannerIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\help")
+
+        local bannerText = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        bannerText:SetPoint("LEFT", bannerIcon, "RIGHT", 8, 0)
+        bannerText:SetPoint("RIGHT", banner, "RIGHT", -110, 0)
+        bannerText:SetText("Having trouble with buffs or debuffs? Run the setup wizard for guided help.")
+        bannerText:SetTextColor(0.85, 0.85, 0.85)
+        bannerText:SetJustifyH("LEFT")
+
+        local bannerBtn = GUI:CreateButton(banner, "Run Setup Wizard", 105, 28, function()
+            if DF.WizardBuilder then
+                local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                for _, entry in ipairs(builtins) do
+                    if entry.name == "Aura Filter Setup" and entry.build then
+                        local config = entry.build()
+                        if config then DF:ShowPopupWizard(config) end
+                        break
+                    end
+                end
+            end
+        end)
+        bannerBtn:SetPoint("RIGHT", -8, 0)
+
+        Add(banner, 50, "both")
+        AddSpace(4, "both")
+
         -- Copy button at top
         Add(CreateCopyButton(self.child, {"auraSourceMode", "directBuff", "directDebuff"}, "Aura Filters", "auras_filters"), 25, 2)
 
@@ -6992,6 +7030,199 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             {pageId = "profiles_manage", label = "Manage Profiles"},
         }), 30, "both")
     end)
+
+    -- ========================================
+    -- CATEGORY: Wizards
+    -- ========================================
+    -- Wizards category hidden for now (builder still in development)
+    -- CreateCategory("wizards", "Wizards")
+
+    -- Wizards > Setup Wizards (launcher/manager page) — disabled while category is hidden
+    if false then
+    local pageWizards = CreateSubTab("wizards", "wizards_main", "Setup Wizards")
+    BuildPage(pageWizards, function(self, db, Add, AddSpace, AddSyncPoint)
+        -- ============ BUILT-IN WIZARDS ============
+        Add(GUI:CreateHeader(self.child, "Built-in Wizards"), 40, "both")
+
+        -- Built-in wizard registry
+        local builtins = DF.WizardBuilder and DF.WizardBuilder.GetBuiltinWizards and DF.WizardBuilder:GetBuiltinWizards() or {}
+
+        if #builtins == 0 then
+            Add(GUI:CreateLabel(self.child, "No built-in wizards available yet. Check back after updates!", 460), 24, "both")
+        else
+            for _, entry in ipairs(builtins) do
+                local row = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+                row:SetSize(460, 50)
+                if not row.SetBackdrop then Mixin(row, BackdropTemplateMixin) end
+                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+                row:SetBackdropColor(0.14, 0.14, 0.14, 1)
+                row:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
+
+                local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                nameText:SetPoint("TOPLEFT", 12, -8)
+                nameText:SetText(entry.name)
+                nameText:SetTextColor(0.9, 0.9, 0.9)
+
+                local descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                descText:SetPoint("TOPLEFT", 12, -24)
+                descText:SetPoint("RIGHT", row, "RIGHT", -90, 0)
+                descText:SetText(entry.description or "")
+                descText:SetTextColor(0.6, 0.6, 0.6)
+                descText:SetJustifyH("LEFT")
+
+                local runBtn = GUI:CreateButton(row, "Run", 70, 28, function()
+                    if entry.build then
+                        local config = entry.build()
+                        if config then DF:ShowPopupWizard(config) end
+                    end
+                end)
+                runBtn:SetPoint("RIGHT", -8, 0)
+
+                Add(row, 54, "both")
+            end
+        end
+
+        AddSpace(16, "both")
+
+        -- ============ MY WIZARDS ============
+        Add(GUI:CreateHeader(self.child, "My Wizards"), 40, "both")
+
+        local configs = DandersFramesDB_v2 and DandersFramesDB_v2.wizardConfigs or {}
+        local sortedNames = {}
+        for name in pairs(configs) do
+            tinsert(sortedNames, name)
+        end
+        table.sort(sortedNames)
+
+        if #sortedNames == 0 then
+            Add(GUI:CreateLabel(self.child, "No custom wizards yet. Click 'New Wizard' to create one!", 460), 24, "both")
+        else
+            for _, name in ipairs(sortedNames) do
+                local config = configs[name]
+                local row = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+                row:SetSize(460, 50)
+                if not row.SetBackdrop then Mixin(row, BackdropTemplateMixin) end
+                row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+                row:SetBackdropColor(0.14, 0.14, 0.14, 1)
+                row:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
+
+                local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                nameText:SetPoint("TOPLEFT", 12, -8)
+                nameText:SetText(config.title or name)
+                nameText:SetTextColor(0.9, 0.9, 0.9)
+
+                local descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                descText:SetPoint("TOPLEFT", 12, -24)
+                descText:SetPoint("RIGHT", row, "RIGHT", -240, 0)
+                descText:SetText(config.description or "")
+                descText:SetTextColor(0.6, 0.6, 0.6)
+                descText:SetJustifyH("LEFT")
+
+                local btnX = -8
+
+                -- Delete button
+                local delBtn = GUI:CreateButton(row, "Del", 40, 24, function()
+                    if DandersFramesDB_v2 and DandersFramesDB_v2.wizardConfigs then
+                        DandersFramesDB_v2.wizardConfigs[name] = nil
+                    end
+                    pageWizards:Refresh()
+                    if pageWizards.RefreshStates then pageWizards:RefreshStates() end
+                end)
+                delBtn:SetPoint("RIGHT", btnX, 0)
+                btnX = btnX - 44
+
+                -- Export button
+                local exportBtn = GUI:CreateButton(row, "Export", 50, 24, function()
+                    if DF.WizardBuilder then
+                        local str, err = DF.WizardBuilder:ExportWizard(name)
+                        if str then
+                            -- Copy to clipboard via editbox
+                            DF:ShowPopupAlert({
+                                title = "Export Wizard",
+                                message = "Wizard exported! Press Ctrl+C to copy the string below.",
+                                width = 500,
+                            })
+                        else
+                            print("|cffff0000DandersFrames:|r Export failed: " .. (err or "unknown"))
+                        end
+                    end
+                end)
+                exportBtn:SetPoint("RIGHT", delBtn, "LEFT", -4, 0)
+                btnX = btnX - 54
+
+                -- Edit button (opens builder popup)
+                local editBtn = GUI:CreateButton(row, "Edit", 40, 24, function()
+                    if DF.ShowWizardBuilder then
+                        DF:ShowWizardBuilder(name, function()
+                            pageWizards:Refresh()
+                            if pageWizards.RefreshStates then pageWizards:RefreshStates() end
+                        end)
+                    end
+                end)
+                editBtn:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
+                btnX = btnX - 44
+
+                -- Run button
+                local runBtn = GUI:CreateButton(row, "Run", 40, 24, function()
+                    if DF.WizardBuilder then
+                        local wizConfig = DF.WizardBuilder.BuildWizardConfig and DF.WizardBuilder.BuildWizardConfig(config)
+                        if not wizConfig then
+                            -- Fallback: build manually
+                            wizConfig = {
+                                title = config.title or config.name or "Wizard",
+                                width = config.width or 440,
+                                steps = DF:DeepCopy(config.steps),
+                                settingsMap = config.settingsMap,
+                                onComplete = function() DF:Debug("Wizard complete") end,
+                            }
+                        end
+                        DF:ShowPopupWizard(wizConfig)
+                    end
+                end)
+                runBtn:SetPoint("RIGHT", editBtn, "LEFT", -4, 0)
+
+                Add(row, 54, "both")
+            end
+        end
+
+        AddSpace(12, "both")
+
+        -- Action buttons row
+        local btnRow = CreateFrame("Frame", nil, self.child)
+        btnRow:SetSize(460, 30)
+
+        -- New Wizard button
+        local newBtn = GUI:CreateButton(btnRow, "+ New Wizard", 120, 28, function()
+            -- Generate unique name
+            local baseName = "New Wizard"
+            local wizName = baseName
+            local counter = 1
+            local existingConfigs = DandersFramesDB_v2 and DandersFramesDB_v2.wizardConfigs or {}
+            while existingConfigs[wizName] do
+                counter = counter + 1
+                wizName = baseName .. " " .. counter
+            end
+            if DF.ShowWizardBuilder then
+                DF:ShowWizardBuilder(wizName, function()
+                    pageWizards:Refresh()
+                    if pageWizards.RefreshStates then pageWizards:RefreshStates() end
+                end)
+            end
+        end)
+        newBtn:SetPoint("LEFT", 0, 0)
+
+        -- Import button
+        local importBtn = GUI:CreateButton(btnRow, "Import", 80, 28, function()
+            DF:ShowPopupAlert({
+                title = "Import Wizard",
+                message = "Paste a wizard export string in chat with:\n/df importwizard <string>",
+            })
+        end)
+        importBtn:SetPoint("LEFT", newBtn, "RIGHT", 8, 0)
+
+        Add(btnRow, 34, "both")
+    end)
+    end  -- if false (wizards tab hidden)
 
     -- ========================================
     -- CATEGORY: Debug

@@ -3179,7 +3179,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         party = DF:DeepCopy(DF.PartyDefaults),
                         raid = DF:DeepCopy(DF.RaidDefaults),
                     }
-                }
+                },
+                wizardConfigs = {},
+                seenAuraSetupWizard = true,  -- New users don't need the wizard
             }
         end
         
@@ -3222,6 +3224,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Ensure structure exists
         if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
         if not DandersFramesDB_v2.currentProfile then DandersFramesDB_v2.currentProfile = "Default" end
+        if not DandersFramesDB_v2.wizardConfigs then DandersFramesDB_v2.wizardConfigs = {} end
 
         -- Track last seen version for auto-showing changelog on update
         if not DandersFramesDB_v2.lastSeenVersion then
@@ -4194,6 +4197,106 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 else
                     print("|cffff0000DandersFrames:|r Aura timer not available")
                 end
+            elseif msg == "testwizard" then
+                if DF.TestPopupWizard then
+                    DF:TestPopupWizard()
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
+            elseif msg == "testhighlight" then
+                -- Debug: open settings to Frame tab and highlight width/height
+                if not DF.GUIFrame or not DF.GUIFrame:IsShown() then
+                    DF:ToggleGUI()
+                end
+                if DF.GUI and DF.GUI.Tabs and DF.GUI.Tabs["general_frame"] then
+                    DF.GUI.Tabs["general_frame"]:Click()
+                end
+                C_Timer.After(0.3, function()
+                    -- Debug: dump page children info
+                    local page = DF.GUI and DF.GUI.Pages and DF.GUI.Pages["general_frame"]
+                    if page then
+                        print("|cff00ff00DandersFrames:|r Page found, children: " .. (page.children and #page.children or "nil"))
+                        if page.children then
+                            local found = 0
+                            for i, w in ipairs(page.children) do
+                                -- Check direct children
+                                if w.searchEntry and (w.searchEntry.dbKey == "frameWidth" or w.searchEntry.dbKey == "frameHeight") then
+                                    found = found + 1
+                                    print("  [" .. i .. "] dbKey=" .. w.searchEntry.dbKey)
+                                end
+                                -- Check settings group children
+                                if w.isSettingsGroup and w.groupChildren then
+                                    for j, entry in ipairs(w.groupChildren) do
+                                        if entry.widget and entry.widget.searchEntry then
+                                            local dk = entry.widget.searchEntry.dbKey
+                                            if dk == "frameWidth" or dk == "frameHeight" then
+                                                found = found + 1
+                                                print("  [" .. i .. "].group[" .. j .. "] dbKey=" .. dk .. " visible=" .. tostring(entry.widget:IsVisible()))
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            print("  Found " .. found .. " matching widgets")
+                        end
+                    else
+                        print("|cffff0000DandersFrames:|r Page 'general_frame' not found")
+                        if DF.GUI and DF.GUI.Pages then
+                            print("  Available pages:")
+                            for k, _ in pairs(DF.GUI.Pages) do
+                                print("  - " .. tostring(k))
+                            end
+                        end
+                    end
+                    DF:HighlightSettings("general_frame", {"frameWidth", "frameHeight"})
+                end)
+            elseif msg == "testalert" then
+                if DF.TestPopupAlert then
+                    DF:TestPopupAlert()
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
+            elseif msg:match("^importwizard ") then
+                local str = msg:match("^importwizard (.+)$")
+                if str and DF.WizardBuilder then
+                    DF.WizardBuilder:HandleImportCommand(str)
+                else
+                    print("|cffff0000DandersFrames:|r Usage: /df importwizard <string>")
+                end
+            elseif msg == "aurasetup" then
+                -- Launch the Aura Filter Setup wizard
+                if DF.WizardBuilder then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Aura Filter Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
+                    end
+                else
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                end
+            elseif msg == "testbuilder" then
+                -- Test the wizard builder popup
+                if DF.ShowWizardBuilder then
+                    DF:ShowWizardBuilder("Test Builder Wizard", function(name)
+                        DF:Debug("Builder saved wizard: " .. tostring(name))
+                        print("|cff00ff00DandersFrames:|r Wizard '" .. tostring(name) .. "' saved!")
+                    end)
+                else
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                end
+            elseif msg == "testpicker" then
+                -- Test the settings picker mode
+                if DF.EnterSettingsPickerMode then
+                    DF:EnterSettingsPickerMode(function(tabName, dbKey, controlType)
+                        DF:Debug("Picker selected: tab=" .. tostring(tabName) .. " key=" .. tostring(dbKey) .. " type=" .. tostring(controlType))
+                        print("|cff00ff00DandersFrames:|r Picked setting: |cffffffff" .. tostring(dbKey) .. "|r from tab |cffffffff" .. tostring(tabName) .. "|r")
+                    end)
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
             elseif msg == "profiler" then
                 -- Toggle the function profiler UI
                 if DF.Profiler then
@@ -4306,7 +4409,24 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 DF:UpdateRaidGroupLabels()
             end
         end)
-        
+
+        -- Show Aura Filter Setup wizard for existing users on first login after update
+        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenAuraSetupWizard then
+            DandersFramesDB_v2.seenAuraSetupWizard = true
+            C_Timer.After(3, function()
+                if DF.WizardBuilder and not InCombatLockdown() then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Aura Filter Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+
     elseif event == "GROUP_ROSTER_UPDATE" then
         if DF.RosterDebugEvent then DF:RosterDebugEvent("Core.lua:GROUP_ROSTER_UPDATE") end
         
@@ -4887,6 +5007,65 @@ function DF:FullProfileRefresh()
             DF.GUI:RefreshCurrentPage()
         end
     end
+end
+
+-- ============================================================
+-- WIZARD SETTINGS APPLICATION
+-- Used by the popup wizard system to apply data-driven settings
+-- maps from user-created wizards (WizardBuilder)
+-- ============================================================
+
+local strsplit = strsplit
+
+-- Set a DB value using dot-notation path (e.g., "party.frameWidth")
+function DF:SetDBKeyByPath(path, value)
+    local mode, key = path:match("^(%w+)%.(.+)$")
+    if mode and key and DF.db and DF.db[mode] then
+        DF.db[mode][key] = value
+    end
+end
+
+-- Get a DB value using dot-notation path
+function DF:GetDBKeyByPath(path)
+    local mode, key = path:match("^(%w+)%.(.+)$")
+    if mode and key and DF.db and DF.db[mode] then
+        return DF.db[mode][key]
+    end
+    return nil
+end
+
+-- Apply a wizard's settingsMap based on collected answers
+-- settingsMap format: { stepId = { answerValue = { ["mode.dbKey"] = newValue, ... } } }
+function DF:ApplyWizardSettingsMap(settingsMap, answers)
+    if not settingsMap or not answers then return end
+
+    for stepId, answerValue in pairs(answers) do
+        local stepMap = settingsMap[stepId]
+        if stepMap then
+            if type(answerValue) == "table" then
+                -- Multi-select: apply settings for each selected value
+                for _, val in ipairs(answerValue) do
+                    local changes = stepMap[val]
+                    if changes then
+                        for dbKeyPath, newValue in pairs(changes) do
+                            DF:SetDBKeyByPath(dbKeyPath, newValue)
+                        end
+                    end
+                end
+            else
+                -- Single-select: apply settings for the selected value
+                local changes = stepMap[answerValue]
+                if changes then
+                    for dbKeyPath, newValue in pairs(changes) do
+                        DF:SetDBKeyByPath(dbKeyPath, newValue)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Refresh everything after applying settings
+    DF:UpdateAll("WizardApply")
 end
 
 -- ============================================================
