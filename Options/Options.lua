@@ -4564,21 +4564,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if DF.UpdateAllTestBossDebuffs then DF:UpdateAllTestBossDebuffs() end
         end), 30)
         showNumbers.hideOn = function(d) return not d.bossDebuffsEnabled end
-        local textScale = settingsGroup:AddWidget(GUI:CreateSlider(self.child, "Text Scale", 0.1, 5.0, 0.1, db, "bossDebuffsTextScale", nil, function()
-            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
+        local hideTooltip = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, "Hide Tooltip on Mouseover", db, "bossDebuffsHideTooltip", function()
+            if DF.RefreshAllPrivateAuraAnchors then DF:RefreshAllPrivateAuraAnchors() end
             if DF.UpdateAllTestBossDebuffs then DF:UpdateAllTestBossDebuffs() end
-        end, true), 55)
-        textScale.hideOn = function(d) return not d.bossDebuffsEnabled or not d.bossDebuffsShowNumbers end
-        local textOffsetX = settingsGroup:AddWidget(GUI:CreateSlider(self.child, "Text Offset X", -50, 50, 1, db, "bossDebuffsTextOffsetX", nil, function()
-            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
-            if DF.UpdateAllTestBossDebuffs then DF:UpdateAllTestBossDebuffs() end
-        end, true), 55)
-        textOffsetX.hideOn = function(d) return not d.bossDebuffsEnabled or not d.bossDebuffsShowNumbers end
-        local textOffsetY = settingsGroup:AddWidget(GUI:CreateSlider(self.child, "Text Offset Y", -50, 50, 1, db, "bossDebuffsTextOffsetY", nil, function()
-            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
-            if DF.UpdateAllTestBossDebuffs then DF:UpdateAllTestBossDebuffs() end
-        end, true), 55)
-        textOffsetY.hideOn = function(d) return not d.bossDebuffsEnabled or not d.bossDebuffsShowNumbers end
+        end), 30)
+        hideTooltip.hideOn = HideBossDebuffOptions
         Add(settingsGroup, nil, 1)
         
         -- ===== POSITION GROUP (Column 2) =====
