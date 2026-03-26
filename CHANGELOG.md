@@ -1,5 +1,10 @@
 # DandersFrames Changelog
 
+## [4.1.8] - 2026-03-26
+
+### New Features
+* (Auras) Add Aura Filter Setup Wizard — guided setup to help configure aura data source and filter options. Runs automatically on first login after update, or manually via the Aura Filters settings tab
+
 ## [4.1.7] - 2026-03-25
 
 ### Bug Fixes
