@@ -403,7 +403,15 @@ DF.ExportCategories = {
         "bossDebuffsShowCountdown",
         "bossDebuffsShowNumbers",
         "bossDebuffsSpacing",
-        
+
+        -- Boss Debuffs Overlay
+        "bossDebuffsOverlayClipBorder",
+        "bossDebuffsOverlayEnabled",
+        "bossDebuffsOverlayFrameLevel",
+        "bossDebuffsOverlayIconRatio",
+        "bossDebuffsOverlayMaxSlots",
+        "bossDebuffsOverlayScale",
+
         -- Buff Filters
         "buffFilterCancelable",
         "buffFilterMode",
