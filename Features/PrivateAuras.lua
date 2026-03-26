@@ -153,7 +153,15 @@ function DF:SetupPrivateAuraAnchors(frame)
             iconFrame:SetPoint(pointOnCurrent, frame, anchor, offsetX, offsetY)
         else
             local prevFrame = frame.bossDebuffFrames[i - 1]
-            iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, spacing * xMult, spacing * yMult)
+            -- When hideTooltip is on, frames are sub-pixel so chaining loses the
+            -- icon dimension. Compensate by adding icon size to the spacing offset.
+            local gapX = spacing * xMult
+            local gapY = spacing * yMult
+            if hideTooltip then
+                gapX = gapX + iconWidth * math.abs(xMult)
+                gapY = gapY + iconHeight * math.abs(yMult)
+            end
+            iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
 
         iconFrame:Show()
@@ -374,6 +382,9 @@ local function UpdateFramePositions(frame)
     local anchor = db.bossDebuffsAnchor or "LEFT"
     local offsetX = db.bossDebuffsOffsetX or 0
     local offsetY = db.bossDebuffsOffsetY or 0
+    local hideTooltip = db.bossDebuffsHideTooltip or false
+    local iconWidth = db.bossDebuffsIconWidth or 20
+    local iconHeight = db.bossDebuffsIconHeight or 20
 
     local pointOnCurrent, pointOnPrev, xMult, yMult = GetGrowthAnchors(growth)
 
@@ -383,7 +394,13 @@ local function UpdateFramePositions(frame)
             iconFrame:SetPoint(pointOnCurrent, frame, anchor, offsetX, offsetY)
         else
             local prevFrame = frame.bossDebuffFrames[i - 1]
-            iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, spacing * xMult, spacing * yMult)
+            local gapX = spacing * xMult
+            local gapY = spacing * yMult
+            if hideTooltip then
+                gapX = gapX + iconWidth * math.abs(xMult)
+                gapY = gapY + iconHeight * math.abs(yMult)
+            end
+            iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
     end
 end
