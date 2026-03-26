@@ -150,16 +150,25 @@ function DF:SetupPrivateAuraAnchors(frame)
         end
 
         if i == 1 then
-            iconFrame:SetPoint(pointOnCurrent, frame, anchor, offsetX, offsetY)
+            -- When hideTooltip is on, the icon renders centered on a sub-pixel frame.
+            -- Shift by half the icon size in the growth direction so the visible edge
+            -- aligns where it would be with a full-sized frame.
+            local adjX = offsetX
+            local adjY = offsetY
+            if hideTooltip then
+                adjX = adjX + (iconWidth / 2) * xMult
+                adjY = adjY + (iconHeight / 2) * yMult
+            end
+            iconFrame:SetPoint(pointOnCurrent, frame, anchor, adjX, adjY)
         else
             local prevFrame = frame.bossDebuffFrames[i - 1]
             -- When hideTooltip is on, frames are sub-pixel so chaining loses the
-            -- icon dimension. Compensate by adding icon size to the spacing offset.
+            -- icon dimension. Compensate by adding icon size in the growth direction.
             local gapX = spacing * xMult
             local gapY = spacing * yMult
             if hideTooltip then
-                gapX = gapX + iconWidth * math.abs(xMult)
-                gapY = gapY + iconHeight * math.abs(yMult)
+                gapX = gapX + iconWidth * xMult
+                gapY = gapY + iconHeight * yMult
             end
             iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
@@ -391,14 +400,20 @@ local function UpdateFramePositions(frame)
     for i, iconFrame in ipairs(frame.bossDebuffFrames) do
         iconFrame:ClearAllPoints()
         if i == 1 then
-            iconFrame:SetPoint(pointOnCurrent, frame, anchor, offsetX, offsetY)
+            local adjX = offsetX
+            local adjY = offsetY
+            if hideTooltip then
+                adjX = adjX + (iconWidth / 2) * xMult
+                adjY = adjY + (iconHeight / 2) * yMult
+            end
+            iconFrame:SetPoint(pointOnCurrent, frame, anchor, adjX, adjY)
         else
             local prevFrame = frame.bossDebuffFrames[i - 1]
             local gapX = spacing * xMult
             local gapY = spacing * yMult
             if hideTooltip then
-                gapX = gapX + iconWidth * math.abs(xMult)
-                gapY = gapY + iconHeight * math.abs(yMult)
+                gapX = gapX + iconWidth * xMult
+                gapY = gapY + iconHeight * yMult
             end
             iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
