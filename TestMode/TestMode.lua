@@ -2240,8 +2240,11 @@ function DF:UpdateTestBossDebuffs(frame)
 end
 
 -- Create or update the overlay border preview for test mode.
--- Draws a magenta border on the overlay container to simulate
--- what the private aura border ring looks like in combat.
+-- Uses the same iconW / bScale math as the real overlay so slider
+-- changes are reflected immediately.  We approximate the Blizzard
+-- circular glow ring as a sized rectangle with a backdrop edge —
+-- it won't look identical but the dimensions respond to the same
+-- settings, which is what matters for tuning.
 function DF:UpdateTestOverlayBorder(frame)
     if not frame then return end
 
@@ -2255,6 +2258,26 @@ function DF:UpdateTestOverlayBorder(frame)
 
     local container = frame.overlayContainer
     local maxSlots = db.bossDebuffsOverlayMaxSlots or 3
+    local overlayScale = db.bossDebuffsOverlayScale or 1.05
+    local iconRatio = db.bossDebuffsOverlayIconRatio or 2.6
+    local clipBorder = db.bossDebuffsOverlayClipBorder ~= false
+
+    -- Replicate the same math from SetupOverlayAnchors
+    local fw = frame:GetWidth()
+    local fh = frame:GetHeight()
+    if not fw or not fh or fw <= 0 or fh <= 0 then return end
+
+    local iconW = fw * iconRatio / 10
+    local bScale = 10 * overlayScale
+
+    -- The Blizzard border ring extends outward from the icon center.
+    -- Approximate the rendered border width/height from iconW * bScale.
+    -- These are empirical multipliers to roughly match the glow ring.
+    local borderW = iconW * bScale * 0.12
+    local borderH = fh * bScale * 0.06
+
+    -- Edge thickness scales with the border size
+    local edgeSize = math.max(2, math.min(borderW, borderH) * 0.08)
 
     if not frame.testOverlayBorders then
         frame.testOverlayBorders = {}
@@ -2274,7 +2297,8 @@ function DF:UpdateTestOverlayBorder(frame)
 
         border:SetParent(sub)
         border:ClearAllPoints()
-        border:SetAllPoints(container)
+        border:SetPoint("CENTER", container, "CENTER", 0, 0)
+        border:SetSize(borderW, borderH)
         border:SetFrameLevel(sub:GetFrameLevel() + 1)
 
         local borderColors = {
@@ -2286,7 +2310,7 @@ function DF:UpdateTestOverlayBorder(frame)
 
         border:SetBackdrop({
             edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
+            edgeSize = edgeSize,
         })
         border:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
         border:Show()
