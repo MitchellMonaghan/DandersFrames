@@ -14,6 +14,11 @@
 
 ### Bug Fixes
 * (Auras) Fix Blizzard aura mode not repopulating cache when switching from Direct mode — stripped frame events are now restored on mode switch
+* (Auras) Fix profile switch not initializing Direct API aura mode — switching to a profile using Direct API now populates the aura cache immediately
+* (Aura Designer) Fix indicator icons, squares, and bars blocking click-casting in combat — refactored to configure-once pattern so mouse propagation is set outside combat and never reset
+
+### Performance
+* (Aura Designer) Reduce per-event work for indicator updates — static properties (size, strata, fonts, borders, propagation) are now set once on config change instead of every aura event
 
 ## [4.1.8] - 2026-03-26
 

@@ -1,14 +1,49 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-03-24T22:27:56Z"
+DF.BUILD_DATE = "2026-03-27T12:03:22Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
-## [4.1.6] - 2026-03-25
+## [4.1.9] - 2026-03-27
+
+### New Features
+* (Boss Debuffs) **Frame Border Overlay** — adds a border around the entire unit frame when private aura boss debuffs are active. Includes settings for border scale, icon ratio, frame level, max slots, and clip-to-frame. An auto-fit button calculates optimal border size from your frame dimensions
+* (Boss Debuffs) **Overlay Setup Wizard** — guided setup that explains the overlay feature and lets users enable/disable it with image previews. Runs automatically for existing users on first login, or manually via the Boss Debuffs settings tab
+* (Boss Debuffs) **Hide Tooltip** option — shrinks the private aura parent frame to sub-pixel size so hovering over boss debuff icons no longer shows a tooltip, while the icon remains visible
+* (Boss Debuffs) **Test Mode Overlay Preview** — test mode now shows a coloured border approximation of the overlay so you can tune settings without being in combat
 
 ### Changes
-* (Auras) Switch default aura data source to Direct API for all new and existing profiles — provides full control over buff/debuff filtering. Users can switch back to Blizzard mode in settings if preferred.
-* (Auras) Update default Direct API filters: enable Important Spells for buffs, show all debuffs, sort by time remaining
+* (Boss Debuffs) Rewrite private aura system to use a single anchor per icon instead of the dual-anchor approach — simpler, cleaner, and eliminates duplicate text and sizing issues
+* (Boss Debuffs) Remove deprecated settings: text scale/offset, click-casting toggle, debug overlay, and unused scale setting
+
+### Bug Fixes
+* (Auras) Fix Blizzard aura mode not repopulating cache when switching from Direct mode — stripped frame events are now restored on mode switch
+* (Auras) Fix profile switch not initializing Direct API aura mode — switching to a profile using Direct API now populates the aura cache immediately
+* (Aura Designer) Fix indicator icons, squares, and bars blocking click-casting in combat — refactored to configure-once pattern so mouse propagation is set outside combat and never reset
+
+### Performance
+* (Aura Designer) Reduce per-event work for indicator updates — static properties (size, strata, fonts, borders, propagation) are now set once on config change instead of every aura event
+
+## [4.1.8] - 2026-03-26
+
+### New Features
+* (Auras) Add Aura Filter Setup Wizard — guided setup to help configure aura data source and filter options. Runs automatically on first login after update, or manually via the Aura Filters settings tab
+
+## [4.1.7] - 2026-03-25
+
+### Bug Fixes
+* (Auras) Fix Blizzard data source showing no debuffs — Blizzard moved aura data from frame arrays to container objects in the latest update, updated reader to use new Iterate API
+* (Auras) Fix dispel overlay not working in Blizzard data source — use Direct API dispel filter (IsAuraFilteredOutByInstanceID) for secret-safe dispel detection since old dispelDebuffFrames no longer populated
+
+### Changes
+* (Auras) Switch default aura data source to Direct API for all new and existing profiles — provides full control over buff/debuff filtering. Users can switch back to Blizzard mode in settings if preferred
+* (Auras) Update default Direct API filters: show all debuffs, sort buffs and debuffs by time remaining
+
+## [4.1.6] - 2026-03-25
+
+### Bug Fixes
+* (Growth) Fix nil wrap error when growth direction value has no underscore separator
+* (Growth) Add safety fallback for nil wrap in growth direction composer
 
 ## [4.1.5] - 2026-03-24
 
