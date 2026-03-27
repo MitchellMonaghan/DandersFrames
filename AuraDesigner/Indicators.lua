@@ -1320,19 +1320,13 @@ local function GetOrCreateADIcon(frame, auraName)
     return icon
 end
 
-function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, priority)
-    local state = EnsureFrameState(frame)
-    state.activeIcons[auraName] = true
-
+-- ============================================================
+-- ConfigureIcon: static config-driven properties (called once per config change)
+-- Sets size, strata, border, fonts, propagation — anything that
+-- does NOT depend on per-event aura data.
+-- ============================================================
+function Indicators:ConfigureIcon(frame, config, defaults, auraName, priority)
     local icon = GetOrCreateADIcon(frame, auraName)
-
-    -- Store aura data for tooltip lookups (parent-driven via ShowDFAuraTooltip)
-    if auraData then
-        if not icon.auraData then
-            icon.auraData = { auraInstanceID = nil }
-        end
-        icon.auraData.auraInstanceID = auraData.auraInstanceID
-    end
 
     -- Size
     local size = config.size or (defaults and defaults.iconSize) or 24
@@ -1344,17 +1338,6 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     local iconAlpha = config.alpha or 1.0
     icon.dfBaseAlpha = iconAlpha
     icon:SetAlpha(iconAlpha)
-
-    -- Position — each aura has its own anchor, no growth
-    local anchor = config.anchor or "TOPLEFT"
-    local offsetX = config.offsetX or 0
-    local offsetY = config.offsetY or 0
-    -- Compensate for border overhang at frame edges
-    local borderEnabledForPos = config.borderEnabled
-    if borderEnabledForPos == nil then borderEnabledForPos = true end
-    offsetX, offsetY = AdjustOffsetForBorder(anchor, offsetX, offsetY, config.borderInset or 1, borderEnabledForPos)
-    icon:ClearAllPoints()
-    icon:SetPoint(anchor, frame, anchor, offsetX, offsetY)
 
     -- Frame level: base from frame (not contentOverlay) + per-indicator level + small priority tiebreaker
     local level = config.frameLevel or (defaults and defaults.indicatorFrameLevel) or 2
@@ -1370,43 +1353,9 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         icon:SetFrameStrata(frame:GetFrameStrata())
     end
 
-    -- Hide Icon (text-only mode) — hides texture, border, swipe but keeps text
+    -- Hide Icon (text-only mode) flag — stored for UpdateIcon to read
     local hideIcon = config.hideIcon; if hideIcon == nil then hideIcon = defaults and defaults.hideIcon end
-
-    -- Texture
-    if not hideIcon then
-        if auraData.icon then
-            SafeSetTexture(icon, auraData.icon)
-        elseif auraData.spellId and C_Spell and C_Spell.GetSpellTexture then
-            SafeSetTexture(icon, C_Spell.GetSpellTexture(auraData.spellId))
-        end
-        if icon.texture then icon.texture:Show() end
-    else
-        if icon.texture then icon.texture:Hide() end
-    end
-
-    -- Desaturation for Show When Missing mode
-    if icon.texture then
-        local desaturate = config.missingDesaturate and auraData.isMissingAura
-        icon.texture:SetDesaturated(desaturate and true or false)
-    end
-
-    -- Cooldown — uses Duration object pipeline (secret-safe)
-    local hideSwipe = config.hideSwipe; if hideSwipe == nil then hideSwipe = defaults and defaults.hideSwipe end
-    local hasDuration = HasAuraDuration(auraData, frame.unit)
-    if hasDuration then
-        SafeSetCooldown(icon.cooldown, auraData, frame.unit)
-        icon.cooldown:SetDrawSwipe(not hideSwipe and not hideIcon)
-        icon.cooldown:Show()
-    else
-        icon.cooldown:SetDrawSwipe(false)
-        icon.cooldown:Hide()
-        -- Clear stale countdown text (may persist if reparented to durationHideWrapper)
-        if icon.nativeCooldownText then
-            icon.nativeCooldownText:SetText("")
-            icon.nativeCooldownText:Hide()
-        end
-    end
+    icon.dfAD_hideIcon = hideIcon
 
     -- ========================================
     -- BORDER (the black background behind the icon texture)
@@ -1438,12 +1387,13 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     end
 
     -- ========================================
-    -- STACK COUNT
+    -- STACK COUNT — font/style configuration
     -- ========================================
     local showStacks = config.showStacks
     if showStacks == nil then showStacks = true end
     local stackMin = config.stackMinimum or 2
     icon.stackMinimum = stackMin
+    icon.dfAD_showStacks = showStacks
 
     -- Stack font/style (instance → global defaults → hardcoded)
     local stackFont = config.stackFont or (defaults and defaults.stackFont) or "Fonts\\FRIZQT__.TTF"
@@ -1465,32 +1415,10 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         else
             icon.count:SetTextColor(1, 1, 1, 1)
         end
-
-        -- Secret-safe stack display: use Blizzard API when available
-        icon.count:SetText("")
-        icon.count:Hide()
-        if showStacks then
-            local unit = frame.unit
-            local auraInstanceID = auraData.auraInstanceID
-            if unit and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
-                -- Blizzard API: returns pre-formatted display text, handles secrets
-                local stackText = C_UnitAuras.GetAuraApplicationDisplayCount(unit, auraInstanceID, stackMin, 99)
-                if stackText then
-                    icon.count:SetText(stackText)
-                    icon.count:Show()
-                end
-            elseif auraData.stacks then
-                -- Fallback for preview (no unit/auraInstanceID)
-                if not issecretvalue(auraData.stacks) and auraData.stacks >= stackMin then
-                    icon.count:SetText(auraData.stacks)
-                    icon.count:Show()
-                end
-            end
-        end
     end
 
     -- ========================================
-    -- DURATION TEXT (via native cooldown text, same as Auras.lua)
+    -- DURATION TEXT — font/style/flags configuration
     -- ========================================
     local showDuration = config.showDuration
     if showDuration == nil then showDuration = true end
@@ -1511,7 +1439,7 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     if durationHideAboveEnabled == nil then durationHideAboveEnabled = (defaults and defaults.durationHideAboveEnabled) or false end
     local durationHideAboveThreshold = config.durationHideAboveThreshold or (defaults and defaults.durationHideAboveThreshold) or 10
 
-    -- Wire settings to icon properties (read by shared aura timer if registered)
+    -- Store duration config on icon for UpdateIcon to read
     icon.showDuration = showDuration
     icon.durationColorByTime = durationColorByTime
     icon.durationAnchor = durationAnchor
@@ -1519,6 +1447,9 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     icon.durationY = durationY
     icon.durationHideAboveEnabled = durationHideAboveEnabled
     icon.durationHideAboveThreshold = durationHideAboveThreshold
+    icon.dfAD_durationFont = durationFont
+    icon.dfAD_durationScale = durationScale
+    icon.dfAD_durationOutline = durationOutline
     icon.cooldown:SetHideCountdownNumbers(not showDuration)
 
     -- Find native cooldown text if not yet cached (same scan as the shared timer)
@@ -1533,8 +1464,7 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         end
     end
 
-    -- Reparent, style, and position the native countdown text directly
-    -- (AD icons may not be registered with the shared timer, so we do it here)
+    -- Create duration hide wrapper + reparent native text + style + position
     if icon.nativeCooldownText then
         if showDuration then
             -- Reparent to a wrapper frame so we can control visibility via the
@@ -1557,6 +1487,191 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
             -- Position
             icon.nativeCooldownText:ClearAllPoints()
             icon.nativeCooldownText:SetPoint(durationAnchor, icon, durationAnchor, durationX, durationY)
+            icon.nativeCooldownText:Show()
+        else
+            icon.nativeCooldownText:Hide()
+        end
+    end
+
+    -- ========================================
+    -- EXPIRING — animation frame creation + config flags
+    -- ========================================
+    local expiringEnabled = config.expiringEnabled
+    if expiringEnabled == nil then expiringEnabled = false end
+    local expiringPulsate = config.expiringPulsate or false
+
+    -- Lazy-create a wrapper frame for the border texture so we can animate its alpha
+    if expiringPulsate and icon.border then
+        if not icon.adBorderPulseFrame then
+            icon.adBorderPulseFrame = CreateFrame("Frame", nil, icon)
+            icon.adBorderPulseFrame:SetAllPoints(icon)
+            icon.adBorderPulseFrame:SetFrameLevel(icon:GetFrameLevel())
+            icon.adBorderPulseFrame:EnableMouse(false)
+        end
+        if not icon.adBorderReparented then
+            icon.border:SetParent(icon.adBorderPulseFrame)
+            icon.adBorderReparented = true
+        end
+        GetOrCreatePulseAnim(icon.adBorderPulseFrame)
+        icon.adBorderPulseFrame.dfAD_expiringPulsate = true
+    elseif icon.adBorderPulseFrame then
+        icon.adBorderPulseFrame.dfAD_expiringPulsate = false
+        if icon.adBorderPulseFrame.dfAD_pulse and icon.adBorderPulseFrame.dfAD_pulse:IsPlaying() then
+            icon.adBorderPulseFrame.dfAD_pulse:Stop()
+            icon.adBorderPulseFrame:SetAlpha(1)
+        end
+    end
+
+    -- Whole-alpha pulse: animates the entire icon frame's alpha
+    local expiringWholeAlphaPulse = config.expiringWholeAlphaPulse or false
+    if expiringWholeAlphaPulse then GetOrCreateWholeAlphaPulse(icon) end
+    icon.dfAD_expiringWholeAlphaPulse = expiringWholeAlphaPulse
+    if not expiringWholeAlphaPulse and icon.dfAD_wholeAlphaPulse and icon.dfAD_wholeAlphaPulse:IsPlaying() then
+        icon.dfAD_wholeAlphaPulse:Stop()
+        icon:SetAlpha(1)
+    end
+
+    -- Bounce: animates the icon frame position up and down
+    local expiringBounce = config.expiringBounce or false
+    if expiringBounce then GetOrCreateBounceAnim(icon) end
+    icon.dfAD_expiringBounce = expiringBounce
+    if not expiringBounce and icon.dfAD_bounceAnim and icon.dfAD_bounceAnim:IsPlaying() then
+        icon.dfAD_bounceAnim:Stop()
+    end
+
+    -- Store expiring config flags for UpdateIcon to read
+    icon.dfAD_expiringEnabled = expiringEnabled
+    icon.dfAD_expiringColor = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
+    icon.dfAD_expiringThreshold = config.expiringThreshold or 30
+    icon.dfAD_expiringThresholdMode = config.expiringThresholdMode
+    icon.dfAD_expiringPulsate = expiringPulsate
+
+    -- Missing-mode config
+    icon.dfAD_missingDesaturate = config.missingDesaturate
+
+    -- Mouse handling: propagate motion/clicks to parent for tooltips and click-casting
+    -- No combat lockdown guard needed — ConfigureIcon only runs outside combat
+    if icon.SetPropagateMouseMotion then
+        icon:SetPropagateMouseMotion(true)
+    end
+    if icon.SetPropagateMouseClicks then
+        icon:SetPropagateMouseClicks(true)
+    end
+    if icon.SetMouseClickEnabled then
+        icon:SetMouseClickEnabled(false)
+    end
+
+    -- Stamp config version so we know when to re-configure
+    icon.dfAD_configVersion = DF.adConfigVersion or 0
+end
+
+-- ============================================================
+-- UpdateIcon: dynamic aura-data-driven properties (called every UNIT_AURA)
+-- Sets texture, cooldown, stacks, duration text, expiring registration,
+-- and position (position is dynamic because layout groups compute offsets
+-- per-event based on which group members are active).
+-- ============================================================
+function Indicators:UpdateIcon(frame, config, auraData, defaults, auraName, priority)
+    local state = EnsureFrameState(frame)
+    state.activeIcons[auraName] = true
+
+    local icon = GetOrCreateADIcon(frame, auraName)
+
+    -- Store aura data for tooltip lookups (parent-driven via ShowDFAuraTooltip)
+    if auraData then
+        if not icon.auraData then
+            icon.auraData = { auraInstanceID = nil }
+        end
+        icon.auraData.auraInstanceID = auraData.auraInstanceID
+    end
+
+    -- Position — each aura has its own anchor, no growth
+    -- Position is dynamic because layout groups compute offsets per-event
+    local anchor = config.anchor or "TOPLEFT"
+    local offsetX = config.offsetX or 0
+    local offsetY = config.offsetY or 0
+    -- Compensate for border overhang at frame edges
+    local borderEnabledForPos = config.borderEnabled
+    if borderEnabledForPos == nil then borderEnabledForPos = true end
+    offsetX, offsetY = AdjustOffsetForBorder(anchor, offsetX, offsetY, config.borderInset or 1, borderEnabledForPos)
+    icon:ClearAllPoints()
+    icon:SetPoint(anchor, frame, anchor, offsetX, offsetY)
+
+    -- Read stored config flags from ConfigureIcon
+    local hideIcon = icon.dfAD_hideIcon
+
+    -- Texture
+    if not hideIcon then
+        if auraData.icon then
+            SafeSetTexture(icon, auraData.icon)
+        elseif auraData.spellId and C_Spell and C_Spell.GetSpellTexture then
+            SafeSetTexture(icon, C_Spell.GetSpellTexture(auraData.spellId))
+        end
+        if icon.texture then icon.texture:Show() end
+    else
+        if icon.texture then icon.texture:Hide() end
+    end
+
+    -- Desaturation for Show When Missing mode
+    if icon.texture then
+        local desaturate = icon.dfAD_missingDesaturate and auraData.isMissingAura
+        icon.texture:SetDesaturated(desaturate and true or false)
+    end
+
+    -- Cooldown — uses Duration object pipeline (secret-safe)
+    local hideSwipe = config.hideSwipe; if hideSwipe == nil then hideSwipe = defaults and defaults.hideSwipe end
+    local hasDuration = HasAuraDuration(auraData, frame.unit)
+    if hasDuration then
+        SafeSetCooldown(icon.cooldown, auraData, frame.unit)
+        icon.cooldown:SetDrawSwipe(not hideSwipe and not hideIcon)
+        icon.cooldown:Show()
+    else
+        icon.cooldown:SetDrawSwipe(false)
+        icon.cooldown:Hide()
+        -- Clear stale countdown text (may persist if reparented to durationHideWrapper)
+        if icon.nativeCooldownText then
+            icon.nativeCooldownText:SetText("")
+            icon.nativeCooldownText:Hide()
+        end
+    end
+
+    -- ========================================
+    -- STACK COUNT — dynamic display
+    -- ========================================
+    if icon.count then
+        icon.count:SetText("")
+        icon.count:Hide()
+        if icon.dfAD_showStacks then
+            local unit = frame.unit
+            local auraInstanceID = auraData.auraInstanceID
+            local stackMin = icon.stackMinimum
+            if unit and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
+                -- Blizzard API: returns pre-formatted display text, handles secrets
+                local stackText = C_UnitAuras.GetAuraApplicationDisplayCount(unit, auraInstanceID, stackMin, 99)
+                if stackText then
+                    icon.count:SetText(stackText)
+                    icon.count:Show()
+                end
+            elseif auraData.stacks then
+                -- Fallback for preview (no unit/auraInstanceID)
+                if not issecretvalue(auraData.stacks) and auraData.stacks >= stackMin then
+                    icon.count:SetText(auraData.stacks)
+                    icon.count:Show()
+                end
+            end
+        end
+    end
+
+    -- ========================================
+    -- DURATION TEXT — dynamic visibility + color
+    -- ========================================
+    local showDuration = icon.showDuration
+    local durationColorByTime = icon.durationColorByTime
+    local durationHideAboveEnabled = icon.durationHideAboveEnabled
+    local durationHideAboveThreshold = icon.durationHideAboveThreshold
+
+    if icon.nativeCooldownText then
+        if showDuration then
             icon.nativeCooldownText:Show()
 
             -- Compute hide-above alpha (initial evaluation)
@@ -1684,65 +1799,27 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
     end
 
     -- ========================================
-    -- EXPIRING: register with shared ticker
+    -- EXPIRING — register with shared ticker (uses stored config flags)
     -- ========================================
-    local expiringEnabled = config.expiringEnabled
-    if expiringEnabled == nil then expiringEnabled = false end
-    local expiringPulsate = config.expiringPulsate or false
-
-    -- Lazy-create a wrapper frame for the border texture so we can animate its alpha
-    if expiringPulsate and icon.border then
-        if not icon.adBorderPulseFrame then
-            icon.adBorderPulseFrame = CreateFrame("Frame", nil, icon)
-            icon.adBorderPulseFrame:SetAllPoints(icon)
-            icon.adBorderPulseFrame:SetFrameLevel(icon:GetFrameLevel())
-            icon.adBorderPulseFrame:EnableMouse(false)
-        end
-        if not icon.adBorderReparented then
-            icon.border:SetParent(icon.adBorderPulseFrame)
-            icon.adBorderReparented = true
-        end
-        GetOrCreatePulseAnim(icon.adBorderPulseFrame)
-        icon.adBorderPulseFrame.dfAD_expiringPulsate = true
-    elseif icon.adBorderPulseFrame then
-        icon.adBorderPulseFrame.dfAD_expiringPulsate = false
-        if icon.adBorderPulseFrame.dfAD_pulse and icon.adBorderPulseFrame.dfAD_pulse:IsPlaying() then
-            icon.adBorderPulseFrame.dfAD_pulse:Stop()
-            icon.adBorderPulseFrame:SetAlpha(1)
-        end
-    end
-
-    -- Whole-alpha pulse: animates the entire icon frame's alpha
-    local expiringWholeAlphaPulse = config.expiringWholeAlphaPulse or false
-    if expiringWholeAlphaPulse then GetOrCreateWholeAlphaPulse(icon) end
-    icon.dfAD_expiringWholeAlphaPulse = expiringWholeAlphaPulse
-    if not expiringWholeAlphaPulse and icon.dfAD_wholeAlphaPulse and icon.dfAD_wholeAlphaPulse:IsPlaying() then
-        icon.dfAD_wholeAlphaPulse:Stop()
-        icon:SetAlpha(1)
-    end
-
-    -- Bounce: animates the icon frame position up and down
-    local expiringBounce = config.expiringBounce or false
-    if expiringBounce then GetOrCreateBounceAnim(icon) end
-    icon.dfAD_expiringBounce = expiringBounce
-    if not expiringBounce and icon.dfAD_bounceAnim and icon.dfAD_bounceAnim:IsPlaying() then
-        icon.dfAD_bounceAnim:Stop()
-    end
+    local expiringEnabled = icon.dfAD_expiringEnabled
+    local expiringPulsate = icon.dfAD_expiringPulsate
+    local expiringWholeAlphaPulse = icon.dfAD_expiringWholeAlphaPulse
+    local expiringBounce = icon.dfAD_expiringBounce
 
     -- Register if ANY expiring feature is active (color, pulsate, alpha pulse, bounce)
     local anyExpiringFeature = expiringEnabled or expiringPulsate or expiringWholeAlphaPulse or expiringBounce
     if anyExpiringFeature then
-        local ec = config.expiringColor or {r = 1, g = 0.2, b = 0.2}
+        local ec = icon.dfAD_expiringColor
         local oc = {r = 0, g = 0, b = 0}  -- icon border default = black
         local applyColor = expiringEnabled
         RegisterExpiring(icon, {
             unit = frame.unit,
             auraInstanceID = auraData and auraData.auraInstanceID,
-            threshold = config.expiringThreshold or 30,
+            threshold = icon.dfAD_expiringThreshold,
             duration = auraData and auraData.duration,
             expirationTime = auraData and auraData.expirationTime,
-            colorCurve = applyColor and BuildExpiringColorCurve(config.expiringThreshold or 30, ec, oc, config.expiringThresholdMode) or nil,
-            thresholdMode = config.expiringThresholdMode,
+            colorCurve = applyColor and BuildExpiringColorCurve(icon.dfAD_expiringThreshold, ec, oc, icon.dfAD_expiringThresholdMode) or nil,
+            thresholdMode = icon.dfAD_expiringThresholdMode,
             color = ec, originalColor = oc,
             applyResult = function(el, result, entry)
                 -- applyResult only fires when colorCurve is set (i.e. applyColor = true)
@@ -1785,19 +1862,6 @@ function Indicators:ApplyIcon(frame, config, auraData, defaults, auraName, prior
         end
         if icon.dfAD_bounceAnim and icon.dfAD_bounceAnim:IsPlaying() then
             icon.dfAD_bounceAnim:Stop()
-        end
-    end
-
-    -- Mouse handling: propagate motion/clicks to parent for tooltips and click-casting
-    if not InCombatLockdown() then
-        if icon.SetPropagateMouseMotion then
-            icon:SetPropagateMouseMotion(true)
-        end
-        if icon.SetPropagateMouseClicks then
-            icon:SetPropagateMouseClicks(true)
-        end
-        if icon.SetMouseClickEnabled then
-            icon:SetMouseClickEnabled(false)
         end
     end
 
