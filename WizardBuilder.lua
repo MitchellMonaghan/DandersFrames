@@ -2265,7 +2265,7 @@ WB:RegisterBuiltinWizard({
                 {
                     id = "welcome",
                     question = "New Feature: Frame Border Overlay",
-                    description = "This feature adds a glowing border around the entire unit frame when private aura boss debuffs are active.\n\n"
+                    description = "This feature adds a border around the entire unit frame when private aura boss debuffs are active.\n\n"
                         .. "Important: The border will appear for ALL boss debuffs, not just dispellable ones. Non-dispellable debuffs show a solid border.\n\n"
                         .. "The appearance of the border is controlled by Blizzard and cannot be customised — only the size can be adjusted.\n\n"
                         .. "Would you like to set up this feature now?",
@@ -2289,13 +2289,13 @@ WB:RegisterBuiltinWizard({
                             label = "Enable Overlay",
                             value = "enable",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_enabled",
-                            texCoord = {0.07, 0.93, 0, 1},  -- crop transparent padding
+                            texCoord = {0, 1, 0, 0.582},
                         },
                         {
                             label = "Disable Overlay",
                             value = "disable",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_disabled",
-                            texCoord = {0.055, 0.945, 0, 1},  -- crop transparent padding
+                            texCoord = {0, 1, 0, 0.5625},
                         },
                     },
                     next = "summary",
