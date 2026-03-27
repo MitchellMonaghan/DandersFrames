@@ -945,6 +945,10 @@ end
 -- ============================================================
 
 function Engine:PreWarmIndicators(frame)
+    if not Adapter then
+        Adapter = DF.AuraDesigner.Adapter
+    end
+    if not Adapter then return end
     if not Indicators then
         Indicators = DF.AuraDesigner.Indicators
     end
