@@ -2272,9 +2272,9 @@ function DF:UpdateTestOverlayBorder(frame)
 
     -- The Blizzard border ring extends outward from the icon center.
     -- Approximate the rendered border width/height from iconW * bScale.
-    -- These are empirical multipliers to roughly match the glow ring.
-    local borderW = iconW * bScale * 0.12
-    local borderH = fh * bScale * 0.06
+    -- Multipliers calibrated against live overlay screenshots.
+    local borderW = iconW * bScale * 0.085
+    local borderH = fh * bScale * 0.055
 
     -- Edge thickness scales with the border size
     local edgeSize = math.max(2, math.min(borderW, borderH) * 0.08)
