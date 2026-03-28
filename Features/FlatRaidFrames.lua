@@ -1318,8 +1318,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         
         -- Process pending updates
         if FlatRaidFrames.pendingNameListUpdate then
-            FlatRaidFrames:UpdateNameList()
             FlatRaidFrames.pendingNameListUpdate = false
+            C_Timer.After(0, function()
+                if FlatRaidFrames.header and FlatRaidFrames.header:IsShown() then
+                    FlatRaidFrames:UpdateNameList()
+                end
+            end)
         end
         
         if FlatRaidFrames.pendingLayoutUpdate then
