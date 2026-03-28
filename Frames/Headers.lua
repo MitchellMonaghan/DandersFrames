@@ -3486,7 +3486,24 @@ function DF:UpdateRaidGroupOrderAttributes()
     local handler = DF.raidPositionHandler
     
     -- Get the base display order from settings
-    local displayOrder = db.raidGroupDisplayOrder or {1, 2, 3, 4, 5, 6, 7, 8}
+    local displayOrder = db.raidGroupDisplayOrder
+    -- Validate: must be a table with exactly 8 numeric entries covering groups 1-8
+    local isValid = type(displayOrder) == "table"
+    if isValid then
+        local seen = {}
+        for i = 1, 8 do
+            local v = displayOrder[i]
+            if type(v) ~= "number" or v < 1 or v > 8 or seen[v] then
+                isValid = false
+                break
+            end
+            seen[v] = true
+        end
+    end
+    if not isValid then
+        DF:DebugWarn("UpdateRaidGroupOrderAttributes: raidGroupDisplayOrder is invalid or missing, using default order")
+        displayOrder = {1, 2, 3, 4, 5, 6, 7, 8}
+    end
     
     -- Build effective order (possibly with player's group first)
     local effectiveOrder = {}
@@ -3511,7 +3528,11 @@ function DF:UpdateRaidGroupOrderAttributes()
     -- Set attributes for each display position (1-8)
     -- displayorder1 = which group number should be in position 1, etc.
     for displayPos = 1, 8 do
-        local groupNum = effectiveOrder[displayPos] or displayPos
+        local groupNum = effectiveOrder[displayPos]
+        if not groupNum then
+            DF:DebugWarn("UpdateRaidGroupOrderAttributes: effectiveOrder[%d] is nil, falling back", displayPos)
+            groupNum = displayPos
+        end
         handler:SetAttribute("displayorder" .. displayPos, groupNum)
     end
     
@@ -3523,7 +3544,7 @@ function DF:UpdateRaidGroupOrderAttributes()
     
     if DF.debugHeaders then
         local orderStr = table.concat(effectiveOrder, ",")
-        print("|cFF00FF00[DF Headers]|r Group display order: " .. orderStr)
+        DF:Debug("UpdateRaidGroupOrderAttributes: group display order: %s", orderStr)
     end
 end
 
