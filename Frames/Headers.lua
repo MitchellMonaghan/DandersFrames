@@ -8697,7 +8697,7 @@ SlashCmdList["DFHEADERS"] = function(msg)
         local growFrom = db.growthAnchor or "START"
         local selfPos = db.sortSelfPosition or "FIRST"
         -- Use correct anchor based on raid layout mode
-        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.growthAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
+        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.raidGroupAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
         DF:SetPartyOrientation(true, growFrom, selfPos)
         DF:SetRaidOrientation(true, raidGrowFrom)
     
@@ -8707,7 +8707,7 @@ SlashCmdList["DFHEADERS"] = function(msg)
         local growFrom = db.growthAnchor or "START"
         local selfPos = db.sortSelfPosition or "FIRST"
         -- Use correct anchor based on raid layout mode
-        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.growthAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
+        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.raidGroupAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
         DF:SetPartyOrientation(false, growFrom, selfPos)
         DF:SetRaidOrientation(false, raidGrowFrom)
     
