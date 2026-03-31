@@ -9,6 +9,9 @@
 * (Aura Designer) Add collapsible settings groups — indicator settings sections can be collapsed/expanded by clicking the header, with state persisted across sessions
 * (Aura Designer) Add bottom collapse bar to expanded indicator cards and settings groups for quick access
 
+### Improvements
+* (Aura Designer) Add warning messages when Preview Sound has no sound file selected or the file fails to play
+
 ### Bug Fixes
 * (Frames) Fix IteratePinnedFrames error on roster update caused by function used before declaration
 * (Frames) Fix frames staying stuck as offline after a player reconnects

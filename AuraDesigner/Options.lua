@@ -2782,9 +2782,16 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             -- Preview button
             local previewBtn = GUI:CreateButton(parent, "Preview Sound", 120, 22, function()
                 local soundFile = DF:GetSoundPath(proxy.soundLSMKey) or proxy.soundFile
+                if not soundFile or soundFile == "" then
+                    print("|cffff8033DandersFrames:|r No sound file selected. Choose a sound from the dropdown or enter a custom path.")
+                    return
+                end
                 local volume = proxy.volume or 0.8
-                if soundFile and DF.AuraDesigner.SoundEngine then
-                    DF.AuraDesigner.SoundEngine:PlayWithVolume(soundFile, volume)
+                if DF.AuraDesigner.SoundEngine then
+                    local willPlay = DF.AuraDesigner.SoundEngine:PlayWithVolume(soundFile, volume)
+                    if not willPlay then
+                        print("|cffff8033DandersFrames:|r Sound file could not be played: " .. tostring(soundFile))
+                    end
                 end
             end)
             g:AddWidget(previewBtn, 28)
