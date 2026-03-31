@@ -2770,21 +2770,23 @@ function DF:UpdateBlizzardFrameVisibility()
         SafeHideFrame(groupFrame, hideRaidFrames)
     end
     
-    -- Force hide/show a frame using actual Hide() outside combat,
+    -- Force hide/show a frame using actual Hide()/Show() outside combat,
     -- falling back to SetAlpha inside combat to avoid taint.
-    -- When showing, only restore alpha — do NOT call Show() as that triggers
-    -- the hooksecurefunc hooks installed above which would immediately re-hide.
+    -- The hooks on Show() only re-hide when ShouldHideSideMenu() is true,
+    -- so calling Show() here is safe — if we're showing, the setting is on
+    -- and the hook will be a no-op.
     local function ForceHideShow(frame, hide)
         if not frame then return end
         pcall(function()
-            if hide then
-                if InCombatLockdown() then
-                    frame:SetAlpha(0)
-                else
-                    frame:Hide()
-                end
+            if InCombatLockdown() then
+                frame:SetAlpha(hide and 0 or 1)
             else
-                frame:SetAlpha(1)
+                if hide then
+                    frame:Hide()
+                else
+                    frame:SetAlpha(1)
+                    frame:Show()
+                end
             end
         end)
     end
