@@ -4452,7 +4452,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF:UpdateAllFrames()
         end
         -- Re-anchor raid container — spec switch can change layout dimensions
-        if DF.UpdateRaidContainerPosition then
+        -- Must be outside combat: SetScale on the container is protected
+        if DF.UpdateRaidContainerPosition and not InCombatLockdown() then
             DF:UpdateRaidContainerPosition()
         end
         -- Refresh Aura Designer (per-spec aura lists may differ)
