@@ -195,18 +195,16 @@ function DF:ApplyResourceBarLayout(frame)
         if unit and UnitExists(unit) then
             local power = UnitPower(unit)
             local maxPower = UnitPowerMax(unit)
-            if type(power) == "number" and type(maxPower) == "number" and maxPower > 0 then
-                bar:SetMinMaxValues(0, maxPower)
-                bar:SetValue(power)
-                local pType, pToken, altR, altG, altB = UnitPowerType(unit)
-                local info = DF:GetPowerColor(pToken, pType)
-                if info then
-                    bar:SetStatusBarColor(info.r, info.g, info.b, 1)
-                elseif altR then
-                    bar:SetStatusBarColor(altR, altG, altB, 1)
-                else
-                    bar:SetStatusBarColor(0, 0, 1, 1)
-                end
+            bar:SetMinMaxValues(0, maxPower)
+            bar:SetValue(power)
+            local pType, pToken, altR, altG, altB = UnitPowerType(unit)
+            local info = DF:GetPowerColor(pToken, pType)
+            if info then
+                bar:SetStatusBarColor(info.r, info.g, info.b, 1)
+            elseif altR then
+                bar:SetStatusBarColor(altR, altG, altB, 1)
+            else
+                bar:SetStatusBarColor(0, 0, 1, 1)
             end
         end
     end
@@ -239,13 +237,7 @@ function DF:UpdateResourceBar(frame)
     local power = UnitPower(unit)
     local maxPower = UnitPowerMax(unit)
     
-    -- If values are secret (not numbers), hide the bar
-    if type(power) ~= "number" or type(maxPower) ~= "number" then
-        bar:Hide()
-        return
-    end
-    
-    if maxPower > 0 then
+    if maxPower then
         bar:SetMinMaxValues(0, maxPower)
         DF.SetBarValue(bar, power, frame)
         
