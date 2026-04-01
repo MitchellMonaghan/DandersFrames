@@ -5266,12 +5266,21 @@ function DF:UpdateRaidHeaderVisibility(skipReposition)
         DF:Debug("VISIBILITY", "  Raid mode: FLAT (FlatRaidFrames)")
         -- Combined mode (flat layout): use FlatRaidFrames
 
-        -- CRITICAL: Hide separated headers FIRST before enabling FlatRaidFrames
+        -- CRITICAL: Hide separated headers FIRST before enabling FlatRaidFrames.
+        -- Also neutralize their secure attributes so stale groupFilter/nameList/showRaid
+        -- values from the previous grouped layout can't bleed into the next switch.
         if DF.raidSeparatedHeaders then
             for i = 1, 8 do
-                if DF.raidSeparatedHeaders[i] then
-                    DF.raidSeparatedHeaders[i]:Hide()
-                    DF:SetHeaderChildrenEventsEnabled(DF.raidSeparatedHeaders[i], false)
+                local header = DF.raidSeparatedHeaders[i]
+                if header then
+                    header:SetAttribute("showRaid", false)
+                    header:SetAttribute("showParty", false)
+                    header:SetAttribute("showPlayer", false)
+                    header:SetAttribute("nameList", "")
+                    header:SetAttribute("sortMethod", "NAMELIST")
+                    header:SetAttribute("groupFilter", nil)
+                    header:Hide()
+                    DF:SetHeaderChildrenEventsEnabled(header, false)
                 end
             end
         end

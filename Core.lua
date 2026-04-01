@@ -4991,7 +4991,33 @@ function DF:FullProfileRefresh()
     if DF.UpdateHeaderVisibility then
         DF:UpdateHeaderVisibility()
     end
-    
+
+    -- === POST-SWITCH LAYOUT SETTLE ===
+    -- After a profile switch the headers are shown/hidden correctly, but their
+    -- sorting attributes (groupFilter, nameList, sortMethod) may reflect the old
+    -- profile. ApplyRaidGroupSorting rebuilds them from the new profile's settings.
+    -- The deferred TriggerRaidPosition fires after SecureGroupHeaderTemplate has
+    -- finished processing all attribute changes, giving a clean final reposition.
+    local raidDbSettle = DF:GetRaidDB()
+    if IsInRaid() or DF.raidTestMode then
+        if raidDbSettle and raidDbSettle.raidUseGroups then
+            if DF.ApplyRaidGroupSorting then
+                DF:ApplyRaidGroupSorting()
+            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() and DF.TriggerRaidPosition then
+                    DF:TriggerRaidPosition()
+                end
+            end)
+        elseif DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    DF.FlatRaidFrames:UpdateNameList()
+                end
+            end)
+        end
+    end
+
     -- === UPDATE TEST FRAMES IF ACTIVE ===
     -- Use full layout refresh so test frames re-read all settings through the
     -- proxy — picks up runtime auto-layout overrides or restored base values.
