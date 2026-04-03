@@ -2760,20 +2760,20 @@ end
 SLASH_DFARENA1 = "/dfarena"
 SlashCmdList["DFARENA"] = function(msg)
     if InCombatLockdown() then
-        print("|cffff8033DandersFrames:|r Cannot toggle arena mode during combat")
+        print("|cffff8033DandersFrames:|r " .. L["Cannot toggle arena mode during combat"])
         return
     end
     
     DF.forceArenaMode = not DF.forceArenaMode
     
     if DF.forceArenaMode then
-        print("|cffff8033DandersFrames:|r Arena mode |cff00ff00ENABLED|r for testing")
-        print("  - Join a raid group (2-5 players works best)")
-        print("  - Arena header will show using raid1-5 unit IDs")
-        print("  - Uses party frame settings/position")
-        print("  - Type /dfarena again to disable")
+        print("|cffff8033DandersFrames:|r " .. L["Arena mode |cff00ff00ENABLED|r for testing"])
+        print("  - " .. L["Join a raid group (2-5 players works best)"])
+        print("  - " .. L["Arena header will show using raid1-5 unit IDs"])
+        print("  - " .. L["Uses party frame settings/position"])
+        print("  - " .. L["Type /dfarena again to disable"])
     else
-        print("|cffff8033DandersFrames:|r Arena mode |cffff0000DISABLED|r")
+        print("|cffff8033DandersFrames:|r " .. L["Arena mode |cffff0000DISABLED|r"])
     end
     
     -- Apply full header settings (includes orientation, grow from center, etc.)
@@ -3048,13 +3048,13 @@ function DF:CheckElvUICompatibility()
         popup:Hide()
         -- Print the path to chat so they have a reference
         print(" ")
-        print("|cff00ff00DandersFrames:|r To fix the ElvUI compatibility issue:")
-        print("|cff00ff00DandersFrames:|r 1. Open ElvUI config with |cff1784d1/ec|r")
-        print("|cff00ff00DandersFrames:|r 2. Go to |cffffffffUnitFrames|r (left sidebar)")
-        print("|cff00ff00DandersFrames:|r 3. Click |cffffffffGeneral|r at the top")
-        print("|cff00ff00DandersFrames:|r 4. Scroll down to |cffffffffDisabled Blizzard Frames|r")
-        print("|cff00ff00DandersFrames:|r 5. Under |cffffffffGroup Units|r, uncheck |cffff6666Party|r and |cffff6666Raid|r")
-        print("|cff00ff00DandersFrames:|r 6. Click the reload button when prompted")
+        print("|cff00ff00DandersFrames:|r " .. L["To fix the ElvUI compatibility issue:"])
+        print("|cff00ff00DandersFrames:|r " .. L["1. Open ElvUI config with |cff1784d1/ec|r"])
+        print("|cff00ff00DandersFrames:|r " .. L["2. Go to |cffffffffUnitFrames|r (left sidebar)"])
+        print("|cff00ff00DandersFrames:|r " .. L["3. Click |cffffffffGeneral|r at the top"])
+        print("|cff00ff00DandersFrames:|r " .. L["4. Scroll down to |cffffffffDisabled Blizzard Frames|r"])
+        print("|cff00ff00DandersFrames:|r " .. L["5. Under |cffffffffGroup Units|r, uncheck |cffff6666Party|r and |cffff6666Raid|r"])
+        print("|cff00ff00DandersFrames:|r " .. L["6. Click the reload button when prompted"])
         print(" ")
     end)
     
@@ -3697,7 +3697,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     end
                 end
                 if recovered > 0 then
-                    print("|cff00ff00DandersFrames:|r Recovered " .. recovered .. " raid settings from interrupted auto layout editing session.")
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Recovered %d raid settings from interrupted auto layout editing session."], recovered))
                 end
             end
             DF.db.raidAutoEditingRecovery = nil
@@ -3753,7 +3753,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF.DebugConsole:Init()
         end
 
-        print("|cff00ff00DandersFrames|r v" .. DF.VERSION .. " loaded. Type |cffeda55f/df|r for settings, |cffeda55f/df resetgui|r if window is offscreen.")
+        print("|cff00ff00DandersFrames|r " .. format(L["v%s loaded. Type |cffeda55f/df|r for settings, |cffeda55f/df resetgui|r if window is offscreen."], DF.VERSION))
 
         -- ============================================================
         -- CRITICAL: Initialize frames HERE at ADDON_LOADED
@@ -4017,12 +4017,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     end
                     DF.GUIFrame:Show()
                 end
-                print("|cff00ff00DandersFrames:|r GUI reset to default size, scale, and position.")
+                print("|cff00ff00DandersFrames:|r " .. L["GUI reset to default size, scale, and position."])
             elseif msg == "overrides" then
                 if DF.AutoProfilesUI and DF.AutoProfilesUI.PrintOverrides then
                     DF.AutoProfilesUI:PrintOverrides()
                 else
-                    print("|cff00ff00DandersFrames:|r Auto profiles module not loaded.")
+                    print("|cff00ff00DandersFrames:|r " .. L["Auto profiles module not loaded."])
                 end
             elseif msg == "test" then
                 if DF.ToggleTestPanel then DF:ToggleTestPanel() end
@@ -4032,10 +4032,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.DebugConsole then
                     local newState = not DF.DebugConsole:IsEnabled()
                     DF.DebugConsole:SetEnabled(newState)
-                    print("|cff00ff00DandersFrames:|r Debug logging " .. (newState and "enabled" or "disabled"))
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Debug logging %s"], newState and L["enabled"] or L["disabled"]))
                 else
                     DF.debugEnabled = not DF.debugEnabled
-                    print("|cff00ff00DandersFrames:|r Debug mode " .. (DF.debugEnabled and "enabled" or "disabled"))
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Debug mode %s"], DF.debugEnabled and L["enabled"] or L["disabled"]))
                 end
             elseif msg == "console" then
                 -- Open settings directly to Debug Console tab
@@ -4049,14 +4049,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             elseif msg == "debugrole" then
                 DF.debugRoleIcons = not DF.debugRoleIcons
-                print("|cff00ff00DandersFrames:|r Role icon debug " .. (DF.debugRoleIcons and "enabled" or "disabled"))
-                print("  Enter/leave combat to see role icon update logs")
+                print("|cff00ff00DandersFrames:|r " .. format(L["Role icon debug %s"], DF.debugRoleIcons and L["enabled"] or L["disabled"]))
+                print("  " .. L["Enter/leave combat to see role icon update logs"])
             elseif msg == "debugslider" then
                 DF.debugSliderUpdates = not DF.debugSliderUpdates
-                print("|cff00ff00DandersFrames:|r Slider update debug " .. (DF.debugSliderUpdates and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format(L["Slider update debug %s"], DF.debugSliderUpdates and L["enabled"] or L["disabled"]))
                 if DF.debugSliderUpdates then
-                    print("  Drag any slider to see update function calls")
-                    print("  |cff88ff88Green|r = lightweight update, |cffffff00Yellow|r = full update")
+                    print("  " .. L["Drag any slider to see update function calls"])
+                    print("  " .. L["|cff88ff88Green|r = lightweight update, |cffffff00Yellow|r = full update"])
                 end
             elseif msg == "debugrested" then
                 if DF.DebugRestedIndicator then
@@ -4128,68 +4128,68 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.DebugDispel then
                     DF:DebugDispel(unit)
                 else
-                    print("|cffff0000DandersFrames:|r Dispel debug not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Dispel debug not loaded"])
                 end
             elseif msg == "resetconflict" then
                 -- Reset the click-casting conflict warning ignore setting
                 if DandersFramesClickCastingDB then
                     DandersFramesClickCastingDB.ignoreConflictWarning = nil
-                    print("|cff00ff00DandersFrames:|r Click-casting conflict warning has been re-enabled.")
-                    print("|cff00ff00DandersFrames:|r The warning will appear on next reload if conflicts are detected.")
+                    print("|cff00ff00DandersFrames:|r " .. L["Click-casting conflict warning has been re-enabled."])
+                    print("|cff00ff00DandersFrames:|r " .. L["The warning will appear on next reload if conflicts are detected."])
                 else
-                    print("|cffff9900DandersFrames:|r Click-casting database not loaded.")
+                    print("|cffff9900DandersFrames:|r " .. L["Click-casting database not loaded."])
                 end
             elseif msg == "casthistory" or msg == "history" then
                 -- Show cast history (TEST feature for secret values)
                 if DF.ShowCastHistory then
                     DF:ShowCastHistory()
                 else
-                    print("|cffff0000DandersFrames:|r Cast history not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Cast history not available"])
                 end
             elseif msg == "clearhistory" then
                 -- Clear cast history
                 if DF.ClearCastHistory then
                     DF:ClearCastHistory()
                 else
-                    print("|cffff0000DandersFrames:|r Cast history not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Cast history not available"])
                 end
             elseif msg == "headers" or msg == "hdump" then
                 -- Dump header debug info
                 if DF.DumpHeaderInfo then
                     DF:DumpHeaderInfo()
                 else
-                    print("|cffff0000DandersFrames:|r Header info not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Header info not available"])
                 end
             elseif msg == "debugheaders" then
                 -- Toggle header debug mode
                 DF.debugHeaders = not DF.debugHeaders
-                print("|cff00ff00DandersFrames:|r Header debug " .. (DF.debugHeaders and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format(L["Header debug %s"], DF.debugHeaders and L["enabled"] or L["disabled"]))
             elseif msg == "raidbg" then
                 -- Toggle raid group debug backgrounds
                 if DF.ToggleRaidDebugBackgrounds then
                     DF:ToggleRaidDebugBackgrounds()
                 else
-                    print("|cffff0000DandersFrames:|r Raid debug not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Raid debug not available"])
                 end
             elseif msg == "auratimer" then
                 -- Show aura timer stats
                 if DF.PrintAuraTimerStats then
                     DF:PrintAuraTimerStats()
                 else
-                    print("|cffff0000DandersFrames:|r Aura timer not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Aura timer not available"])
                 end
             elseif msg == "auratimer reset" or msg == "auratreset" then
                 -- Reset aura timer stats
                 if DF.ResetAuraTimerStats then
                     DF:ResetAuraTimerStats()
                 else
-                    print("|cffff0000DandersFrames:|r Aura timer not available")
+                    print("|cffff0000DandersFrames:|r " .. L["Aura timer not available"])
                 end
             elseif msg == "testwizard" then
                 if DF.TestPopupWizard then
                     DF:TestPopupWizard()
                 else
-                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
                 end
             elseif msg == "testhighlight" then
                 -- Debug: open settings to Frame tab and highlight width/height
@@ -4242,14 +4242,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.TestPopupAlert then
                     DF:TestPopupAlert()
                 else
-                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
                 end
             elseif msg:match("^importwizard ") then
                 local str = msg:match("^importwizard (.+)$")
                 if str and DF.WizardBuilder then
                     DF.WizardBuilder:HandleImportCommand(str)
                 else
-                    print("|cffff0000DandersFrames:|r Usage: /df importwizard <string>")
+                    print("|cffff0000DandersFrames:|r " .. L["Usage: /df importwizard <string>"])
                 end
             elseif msg == "aurasetup" then
                 -- Launch the Aura Filter Setup wizard
@@ -4263,34 +4263,34 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         end
                     end
                 else
-                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["WizardBuilder not loaded"])
                 end
             elseif msg == "testbuilder" then
                 -- Test the wizard builder popup
                 if DF.ShowWizardBuilder then
                     DF:ShowWizardBuilder("Test Builder Wizard", function(name)
                         DF:Debug("Builder saved wizard: " .. tostring(name))
-                        print("|cff00ff00DandersFrames:|r Wizard '" .. tostring(name) .. "' saved!")
+                        print("|cff00ff00DandersFrames:|r " .. format(L["Wizard '%s' saved!"], tostring(name)))
                     end)
                 else
-                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["WizardBuilder not loaded"])
                 end
             elseif msg == "testpicker" then
                 -- Test the settings picker mode
                 if DF.EnterSettingsPickerMode then
                     DF:EnterSettingsPickerMode(function(tabName, dbKey, controlType)
                         DF:Debug("Picker selected: tab=" .. tostring(tabName) .. " key=" .. tostring(dbKey) .. " type=" .. tostring(controlType))
-                        print("|cff00ff00DandersFrames:|r Picked setting: |cffffffff" .. tostring(dbKey) .. "|r from tab |cffffffff" .. tostring(tabName) .. "|r")
+                        print("|cff00ff00DandersFrames:|r " .. format(L["Picked setting: |cffffffff%s|r from tab |cffffffff%s|r"], tostring(dbKey), tostring(tabName)))
                     end)
                 else
-                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
                 end
             elseif msg == "profiler" then
                 -- Toggle the function profiler UI
                 if DF.Profiler then
                     DF.Profiler:ToggleUI()
                 else
-                    print("|cffff0000DandersFrames:|r Profiler not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Profiler not loaded"])
                 end
             elseif msg == "profile" or msg:match("^profile %d") then
                 -- Quick profile run: /df profile [seconds]
@@ -4298,13 +4298,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     local duration = tonumber(msg:match("(%d+)")) or 10
                     DF.Profiler:QuickProfile(duration)
                 else
-                    print("|cffff0000DandersFrames:|r Profiler not loaded")
+                    print("|cffff0000DandersFrames:|r " .. L["Profiler not loaded"])
                 end
             else
                 if DF.ToggleGUI then
                     DF:ToggleGUI()
                 else
-                    print("|cffff0000DandersFrames:|r GUI not loaded yet.")
+                    print("|cffff0000DandersFrames:|r " .. L["GUI not loaded yet."])
                 end
             end
         end
@@ -4684,7 +4684,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
             
-            print("|cffff9900DandersFrames:|r Test mode ended — entering combat.")
+            print("|cffff9900DandersFrames:|r " .. L["Test mode ended — entering combat."])
             
             -- Switch from test mode state drivers ([combat] conditions) to group
             -- transition drivers ([group:raid] conditions) so frames stay visible
@@ -5153,7 +5153,7 @@ local LDB = LibStub("LibDataBroker-1.1"):NewDataObject("DandersFrames", {
             if db.soloMode ~= nil then
                 db.soloMode = not db.soloMode
                 DF:UpdateAllFrames()
-                print("|cff00ff00DandersFrames:|r Solo mode " .. (db.soloMode and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format(L["Solo mode %s"], db.soloMode and L["enabled"] or L["disabled"]))
             end
         end
     end,
