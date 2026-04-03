@@ -11,6 +11,7 @@ local addonName, DF = ...
 
 local pairs, ipairs, type, tinsert, tremove, wipe = pairs, ipairs, type, table.insert, table.remove, table.wipe
 local format = string.format
+local L = DF.L
 local floor, max, min = math.floor, math.max, math.min
 local CreateFrame = CreateFrame
 local PlaySound = PlaySound
@@ -496,7 +497,7 @@ local function CreatePickerOverlay(widget, tabName, dbKey, controlType, callback
         overlay.bg:SetColorTexture(PICKER_COLOR.r, PICKER_COLOR.g, PICKER_COLOR.b, 0.15)
         overlay.border:SetBackdropBorderColor(PICKER_COLOR.r, PICKER_COLOR.g, PICKER_COLOR.b, 0.8)
         GameTooltip:SetOwner(overlay, "ANCHOR_CURSOR")
-        GameTooltip:SetText("Click to select this setting", 1, 1, 1)
+        GameTooltip:SetText(L["Click to select this setting"], 1, 1, 1)
         GameTooltip:AddLine(dbKey, PICKER_COLOR.r, PICKER_COLOR.g, PICKER_COLOR.b)
         GameTooltip:Show()
     end)
@@ -532,7 +533,7 @@ local function CreatePickerBanner()
 
     banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     banner.text:SetPoint("LEFT", 16, 0)
-    banner.text:SetText("Click a setting to link it to your wizard")
+    banner.text:SetText(L["Click a setting to link it to your wizard"])
     banner.text:SetTextColor(0, 0, 0)
 
     local cancelBtn = CreateFrame("Button", nil, banner, "BackdropTemplate")
@@ -548,7 +549,7 @@ local function CreatePickerBanner()
     cancelBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     cancelBtn.text = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     cancelBtn.text:SetPoint("CENTER")
-    cancelBtn.text:SetText("Cancel")
+    cancelBtn.text:SetText(L["Cancel"])
     cancelBtn:SetScript("OnClick", function()
         DF:CancelSettingsPickerMode()
     end)
@@ -1102,13 +1103,13 @@ local function CreatePopupFrame()
     content:SetPoint("BOTTOMRIGHT", buttonBar, "TOPRIGHT", -CONTENT_PADDING, CONTENT_PADDING)
 
     -- Back button (wizard)
-    local backBtn = CreatePopupButton(buttonBar, "Back", 80, 26)
+    local backBtn = CreatePopupButton(buttonBar, L["Back"], 80, 26)
     backBtn:SetPoint("LEFT", 8, 0)
     backBtn:Hide()
     f.BackButton = backBtn
 
     -- Next/Apply button (wizard)
-    local nextBtn = CreatePopupButton(buttonBar, "Next", 80, 26)
+    local nextBtn = CreatePopupButton(buttonBar, L["Next"], 80, 26)
     nextBtn:SetPoint("RIGHT", -8, 0)
     nextBtn:Hide()
     f.NextButton = nextBtn
@@ -1505,7 +1506,7 @@ RenderSummary = function()
 
     -- Show summary header
     f.QuestionText:Show()
-    f.QuestionText:SetText("Here's what we'll set up:")
+    f.QuestionText:SetText(L["Here's what we'll set up:"])
 
     -- Build summary content
     f.SummaryScroll:Show()
@@ -1588,7 +1589,7 @@ RenderSummary = function()
                 end
                 if answerText == "" then answerText = tostring(answer) end
             else
-                answerText = "(skipped)"
+                answerText = L["(skipped)"]
             end
             row.Value:SetText(answerText)
 
@@ -1663,7 +1664,7 @@ UpdateNavButtons = function()
         if step then
             if step.type == "summary" then
                 f.NextButton:Show()
-                f.NextButton.Text:SetText("Apply")
+                f.NextButton.Text:SetText(L["Apply"])
                 f.NextButton.onClick = function()
                     CancelAutoAdvance()
                     CompleteWizard()
@@ -1684,9 +1685,9 @@ UpdateNavButtons = function()
                 end
 
                 if nextId then
-                    f.NextButton.Text:SetText("Next")
+                    f.NextButton.Text:SetText(L["Next"])
                 else
-                    f.NextButton.Text:SetText("Finish")
+                    f.NextButton.Text:SetText(L["Finish"])
                 end
 
                 f.NextButton.onClick = function()
@@ -1718,7 +1719,7 @@ UpdateNavButtons = function()
             else
                 -- Single select: auto-advance handles it, but show Next for keyboard users
                 f.NextButton:Show()
-                f.NextButton.Text:SetText("Next")
+                f.NextButton.Text:SetText(L["Next"])
                 f.NextButton.onClick = function()
                     CancelAutoAdvance()
                     local answer = wizardAnswers[step.id]
@@ -1779,7 +1780,7 @@ local function ConfigureForWizard(config)
     -- Set title (prefix with addon name so users know the source)
     local displayTitle = config.title or "Setup"
     if not config.noPrefix then
-        displayTitle = "DandersFrames: " .. displayTitle
+        displayTitle = L["DandersFrames: "] .. displayTitle
     end
     f.TitleText:SetText(displayTitle)
 
@@ -1821,7 +1822,7 @@ local function ConfigureForAlert(config)
     alertConfig = config
 
     -- Set title
-    f.TitleText:SetText(config.title or "Notice")
+    f.TitleText:SetText(config.title or L["Notice"])
 
     -- Set frame width
     local width = config.width or FRAME_WIDTH
@@ -1881,7 +1882,7 @@ local function ConfigureForAlert(config)
             f.alertButtonFrames[i] = btn
         end
 
-        btn.Text:SetText(btnConfig.label or "OK")
+        btn.Text:SetText(btnConfig.label or L["OK"])
         btn:SetWidth(btnWidth)
         btn:ClearAllPoints()
         btn:SetPoint("CENTER", f.ButtonBar, "CENTER", startX + (i - 1) * (btnWidth + btnSpacing), 0)
@@ -1898,10 +1899,10 @@ local function ConfigureForAlert(config)
     if numButtons == 0 then
         local btn = f.alertButtonFrames[1]
         if not btn then
-            btn = CreatePopupButton(f.ButtonBar, "OK", btnWidth, 26)
+            btn = CreatePopupButton(f.ButtonBar, L["OK"], btnWidth, 26)
             f.alertButtonFrames[1] = btn
         end
-        btn.Text:SetText("OK")
+        btn.Text:SetText(L["OK"])
         btn:ClearAllPoints()
         btn:SetPoint("CENTER", f.ButtonBar, "CENTER", 0, 0)
         btn.onClick = function() f:Hide() end
@@ -1960,7 +1961,7 @@ PopWizardState = function()
     if PopupFrame then
         local restoreTitle = wizardConfig.title or "Setup"
         if not wizardConfig.noPrefix then
-            restoreTitle = "DandersFrames: " .. restoreTitle
+            restoreTitle = L["DandersFrames: "] .. restoreTitle
         end
         PopupFrame.TitleText:SetText(restoreTitle)
         local width = wizardConfig.width or FRAME_WIDTH

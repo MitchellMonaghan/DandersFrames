@@ -10,6 +10,7 @@ local pairs, ipairs, tinsert, tremove, wipe = pairs, ipairs, tinsert, tremove, w
 local format = string.format
 local type = type
 local time = time
+local L = DF.L
 
 local WB = {}
 DF.WizardBuilder = WB
@@ -41,7 +42,7 @@ local function BuildDBKeyCache()
             tinsert(dbKeyCache, {
                 value = "party." .. key,
                 text = "party." .. key,
-                category = "Party: " .. cat,
+                category = format(L["Party: %s"], cat),
             })
         end
     end
@@ -56,7 +57,7 @@ local function BuildDBKeyCache()
             tinsert(dbKeyCache, {
                 value = "raid." .. key,
                 text = "raid." .. key,
-                category = "Raid: " .. cat,
+                category = format(L["Raid: %s"], cat),
             })
         end
     end
@@ -119,12 +120,12 @@ local function CreateNewWizard(name)
         steps = {
             {
                 id = "step1",
-                question = "First question",
+                question = L["First question"],
                 description = "",
                 type = "single",
                 options = {
-                    { label = "Option A", value = "a" },
-                    { label = "Option B", value = "b" },
+                    { label = L["Option A"], value = "a" },
+                    { label = L["Option B"], value = "b" },
                 },
                 next = "summary",
             },
@@ -206,7 +207,7 @@ local function BuildWizardConfig(config)
     -- which reads step.branches directly. No function conversion needed.
 
     return {
-        title = config.title or config.name or "Wizard",
+        title = config.title or config.name or L["Wizard"],
         width = config.width or 440,
         steps = steps,
         settingsMap = config.settingsMap,
@@ -415,7 +416,7 @@ local function CreateBuilderFrame()
     -- Title text
     f.TitleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     f.TitleText:SetPoint("CENTER")
-    f.TitleText:SetText("Wizard Builder")
+    f.TitleText:SetText(L["Wizard Builder"])
     f.TitleText:SetTextColor(BC.text.r, BC.text.g, BC.text.b)
 
     -- Close button
@@ -456,7 +457,7 @@ local function CreateBuilderFrame()
     f.ButtonBar = buttonBar
 
     -- Back button
-    f.BackBtn = CreateBuilderButton(buttonBar, "Back", 90, 30, function()
+    f.BackBtn = CreateBuilderButton(buttonBar, L["Back"], 90, 30, function()
         if builderStepIndex > 1 then
             builderStepIndex = builderStepIndex - 1
             RenderBuilderStep()
@@ -465,7 +466,7 @@ local function CreateBuilderFrame()
     f.BackBtn:SetPoint("LEFT", 10, 0)
 
     -- Add Step button (center)
-    f.AddStepBtn = CreateBuilderButton(buttonBar, "+ Add Step", 100, 30, function()
+    f.AddStepBtn = CreateBuilderButton(buttonBar, L["+ Add Step"], 100, 30, function()
         if not builderConfig then return end
         -- Insert new step after current (before summary if exists)
         local insertPos = builderStepIndex + 1
@@ -480,8 +481,8 @@ local function CreateBuilderFrame()
             description = "",
             type = "single",
             options = {
-                { label = "Option A", value = "a" },
-                { label = "Option B", value = "b" },
+                { label = L["Option A"], value = "a" },
+                { label = L["Option B"], value = "b" },
             },
         })
         SaveCurrentConfig()
@@ -491,7 +492,7 @@ local function CreateBuilderFrame()
     f.AddStepBtn:SetPoint("CENTER", 0, 0)
 
     -- Next/Save button
-    f.NextBtn = CreateBuilderButton(buttonBar, "Next", 90, 30, function()
+    f.NextBtn = CreateBuilderButton(buttonBar, L["Next"], 90, 30, function()
         if not builderConfig then return end
         if builderStepIndex < #builderConfig.steps then
             builderStepIndex = builderStepIndex + 1
@@ -565,9 +566,9 @@ local function UpdateBuilderNavButtons()
 
     -- Next/Save
     if builderStepIndex >= #builderConfig.steps then
-        BuilderFrame.NextBtn.Text:SetText("Save & Close")
+        BuilderFrame.NextBtn.Text:SetText(L["Save & Close"])
     else
-        BuilderFrame.NextBtn.Text:SetText("Next")
+        BuilderFrame.NextBtn.Text:SetText(L["Next"])
     end
 end
 
@@ -692,18 +693,18 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
             if controlType == "checkbox" then
                 -- Checkbox: offer true/false choice
                 DF:ShowPopupWizard({
-                    title = "Link: " .. dbKey,
+                    title = format(L["Link: %s"], dbKey),
                     width = 400,
                     steps = {
                         {
                             id = "action",
-                            question = "What should '" .. (opt and opt.label or "this option") .. "' do with this setting?",
-                            description = dbKey .. " (currently " .. tostring(currentValue) .. ")",
+                            question = format(L["What should '%s' do with this setting?"], (opt and opt.label or L["this option"])),
+                            description = format(L["%s (currently %s)"], dbKey, tostring(currentValue)),
                             type = "single",
                             options = {
-                                { label = "Enable (set to true)", value = "set_true" },
-                                { label = "Disable (set to false)", value = "set_false" },
-                                { label = "Highlight for user to configure", value = "highlight" },
+                                { label = L["Enable (set to true)"], value = "set_true" },
+                                { label = L["Disable (set to false)"], value = "set_false" },
+                                { label = L["Highlight for user to configure"], value = "highlight" },
                             },
                         },
                     },
@@ -726,24 +727,24 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
             elseif controlType == "slider" then
                 -- Slider: show current value and let user type a number
                 DF:ShowPopupAlert({
-                    title = "Link: " .. dbKey,
-                    message = format("Setting: %s\nCurrent value: %s\n\nEnter the value to set, or highlight for the user.",
+                    title = format(L["Link: %s"], dbKey),
+                    message = format(L["Setting: %s\nCurrent value: %s\n\nEnter the value to set, or highlight for the user."],
                         dbKey, tostring(currentValue)),
                     buttons = {
                         {
-                            label = "Use Current (" .. tostring(currentValue) .. ")",
+                            label = format(L["Use Current (%s)"], tostring(currentValue)),
                             onClick = function()
                                 LinkSettingValue(currentValue)
                             end,
                         },
                         {
-                            label = "Highlight for User",
+                            label = L["Highlight for User"],
                             onClick = function()
                                 LinkSettingHighlight()
                             end,
                         },
                         {
-                            label = "Cancel",
+                            label = L["Cancel"],
                             onClick = function()
                                 BuilderFrame:Show()
                             end,
@@ -753,24 +754,24 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
             else
                 -- Dropdown/color/other: offer highlight or use current value
                 DF:ShowPopupAlert({
-                    title = "Link: " .. dbKey,
-                    message = format("Setting: %s\nCurrent value: %s\n\nWhat should happen when '%s' is selected?",
-                        dbKey, tostring(currentValue), opt and opt.label or "this option"),
+                    title = format(L["Link: %s"], dbKey),
+                    message = format(L["Setting: %s\nCurrent value: %s\n\nWhat should happen when '%s' is selected?"],
+                        dbKey, tostring(currentValue), opt and opt.label or L["this option"]),
                     buttons = {
                         {
-                            label = "Use Current Value",
+                            label = L["Use Current Value"],
                             onClick = function()
                                 LinkSettingValue(currentValue)
                             end,
                         },
                         {
-                            label = "Highlight for User",
+                            label = L["Highlight for User"],
                             onClick = function()
                                 LinkSettingHighlight()
                             end,
                         },
                         {
-                            label = "Cancel",
+                            label = L["Cancel"],
                             onClick = function()
                                 BuilderFrame:Show()
                             end,
@@ -854,7 +855,7 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
     if branchTarget ~= "" then
         row.BranchBtn.Text:SetText("> " .. branchTarget)
     else
-        row.BranchBtn.Text:SetText("no branch")
+        row.BranchBtn.Text:SetText(L["no branch"])
     end
 
     -- Delete
@@ -879,7 +880,7 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
         end
         if #linked > 0 then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Linked Settings", 1, 1, 1)
+            GameTooltip:SetText(L["Linked Settings"], 1, 1, 1)
             for _, line in ipairs(linked) do
                 GameTooltip:AddLine(line, BC.orange.r, BC.orange.g, BC.orange.b)
             end
@@ -895,13 +896,13 @@ local function CreateOptionRowFrame(parent, optIndex, step, onUpdate)
     row.BranchBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(BC.hover.r, BC.hover.g, BC.hover.b, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Branch", 1, 1, 1)
+        GameTooltip:SetText(L["Branch"], 1, 1, 1)
         if branchTarget ~= "" then
-            GameTooltip:AddLine("Goes to: " .. branchTarget, BC.accent.r, BC.accent.g, BC.accent.b)
+            GameTooltip:AddLine(format(L["Goes to: %s"], branchTarget), BC.accent.r, BC.accent.g, BC.accent.b)
         else
-            GameTooltip:AddLine("Click to set branch target", BC.textDim.r, BC.textDim.g, BC.textDim.b)
+            GameTooltip:AddLine(L["Click to set branch target"], BC.textDim.r, BC.textDim.g, BC.textDim.b)
         end
-        GameTooltip:AddLine("Click to cycle through steps", BC.textDim.r, BC.textDim.g, BC.textDim.b)
+        GameTooltip:AddLine(L["Click to cycle through steps"], BC.textDim.r, BC.textDim.g, BC.textDim.b)
         GameTooltip:Show()
     end)
     row.BranchBtn:SetScript("OnLeave", function(self)
@@ -933,12 +934,12 @@ function RenderBuilderStep()
 
     local counterText = counterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     counterText:SetPoint("LEFT")
-    counterText:SetText(format("Step %d of %d", builderStepIndex, #builderConfig.steps))
+    counterText:SetText(format(L["Step %d of %d"], builderStepIndex, #builderConfig.steps))
     counterText:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
 
     -- Delete step button (only if more than 1 step)
     if #builderConfig.steps > 1 then
-        local delStep = CreateBuilderButton(counterFrame, "Delete Step", 80, 20, function()
+        local delStep = CreateBuilderButton(counterFrame, L["Delete Step"], 80, 20, function()
             tremove(builderConfig.steps, builderStepIndex)
             if builderStepIndex > #builderConfig.steps then
                 builderStepIndex = #builderConfig.steps
@@ -956,7 +957,7 @@ function RenderBuilderStep()
     if builderStepIndex == 1 then
         local nameLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         nameLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-        nameLabel:SetText("Wizard Name:")
+        nameLabel:SetText(L["Wizard Name:"])
         nameLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
         y = y - 18
 
@@ -967,7 +968,7 @@ function RenderBuilderStep()
             local newTitle = self:GetText()
             if newTitle and newTitle ~= "" then
                 builderConfig.title = newTitle
-                BuilderFrame.TitleText:SetText("Building: " .. newTitle)
+                BuilderFrame.TitleText:SetText(L["Building: "] .. newTitle)
                 SaveCurrentConfig()
             end
         end)
@@ -979,14 +980,14 @@ function RenderBuilderStep()
     if step.type == "summary" then
         local summaryLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         summaryLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-        summaryLabel:SetText("Summary Step")
+        summaryLabel:SetText(L["Summary Step"])
         summaryLabel:SetTextColor(BC.text.r, BC.text.g, BC.text.b)
         y = y - 30
 
         local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         desc:SetPoint("TOPLEFT", BUILDER_PADDING, y)
         desc:SetPoint("RIGHT", parent, "RIGHT", -BUILDER_PADDING, 0)
-        desc:SetText("This step automatically shows a review of all the user's answers. It's always the last step.")
+        desc:SetText(L["This step automatically shows a review of all the user's answers. It's always the last step."])
         desc:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
         desc:SetJustifyH("LEFT")
         desc:SetWordWrap(true)
@@ -1008,11 +1009,11 @@ function RenderBuilderStep()
     -- Step Type (simple label + cycle button)
     local typeLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     typeLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-    typeLabel:SetText("Type:")
+    typeLabel:SetText(L["Type:"])
     typeLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
 
-    local typeNames = { single = "Single Select", multi = "Multi Select" }
-    local typeBtn = CreateBuilderButton(parent, typeNames[step.type] or "Single Select", 120, 22, function()
+    local typeNames = { single = L["Single Select"], multi = L["Multi Select"] }
+    local typeBtn = CreateBuilderButton(parent, typeNames[step.type] or L["Single Select"], 120, 22, function()
         if step.type == "single" then
             step.type = "multi"
         else
@@ -1027,7 +1028,7 @@ function RenderBuilderStep()
     -- Question
     local qLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     qLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-    qLabel:SetText("Question:")
+    qLabel:SetText(L["Question:"])
     qLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
     y = y - 18
 
@@ -1044,7 +1045,7 @@ function RenderBuilderStep()
     -- Description
     local dLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     dLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-    dLabel:SetText("Description (optional):")
+    dLabel:SetText(L["Description (optional):"])
     dLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
     y = y - 18
 
@@ -1060,7 +1061,7 @@ function RenderBuilderStep()
     -- Options header
     local optLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     optLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-    optLabel:SetText("Options:    [S] = Link Setting    [->] = Branch    [x] = Delete")
+    optLabel:SetText(L["Options:    [S] = Link Setting    [->] = Branch    [x] = Delete"])
     optLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
     y = y - 20
 
@@ -1077,7 +1078,7 @@ function RenderBuilderStep()
     end
 
     -- Add Option button
-    local addOptBtn = CreateBuilderButton(parent, "+ Add Option", 120, 26, function()
+    local addOptBtn = CreateBuilderButton(parent, L["+ Add Option"], 120, 26, function()
         local newLabel = "Option " .. string.char(64 + #step.options + 1)  -- A, B, C...
         tinsert(step.options, { label = newLabel, value = newLabel:gsub("%s+", "_"):lower() })
         SaveCurrentConfig()
@@ -1089,14 +1090,14 @@ function RenderBuilderStep()
     -- Integration section (collapsible)
     local intLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     intLabel:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-    intLabel:SetText("Integration (advanced):")
+    intLabel:SetText(L["Integration (advanced):"])
     intLabel:SetTextColor(BC.textDim.r, BC.textDim.g, BC.textDim.b)
     y = y - 20
 
     -- Test mode toggle
     local testModes = { "", "party", "raid" }
-    local testModeNames = { [""] = "None", party = "Party", raid = "Raid" }
-    local testBtn = CreateBuilderButton(parent, "Test Mode: " .. testModeNames[step.testMode or ""], 160, 22, function()
+    local testModeNames = { [""] = L["None"], party = L["Party"], raid = L["Raid"] }
+    local testBtn = CreateBuilderButton(parent, format(L["Test Mode: %s"], testModeNames[step.testMode or ""]), 160, 22, function()
         local current = step.testMode or ""
         local nextIdx = 1
         for i, m in ipairs(testModes) do
@@ -1113,7 +1114,7 @@ function RenderBuilderStep()
     if step.openTab then
         local tabInfo = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         tabInfo:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-        tabInfo:SetText("Opens tab: " .. step.openTab)
+        tabInfo:SetText(format(L["Opens tab: %s"], step.openTab))
         tabInfo:SetTextColor(BC.orange.r, BC.orange.g, BC.orange.b)
         y = y - 18
     end
@@ -1122,7 +1123,7 @@ function RenderBuilderStep()
     if step.highlightSettings and #step.highlightSettings > 0 then
         local hlInfo = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hlInfo:SetPoint("TOPLEFT", BUILDER_PADDING, y)
-        hlInfo:SetText("Highlights: " .. table.concat(step.highlightSettings, ", "))
+        hlInfo:SetText(format(L["Highlights: %s"], table.concat(step.highlightSettings, ", ")))
         hlInfo:SetTextColor(BC.orange.r, BC.orange.g, BC.orange.b)
         y = y - 18
     end
@@ -1173,7 +1174,7 @@ function WB:ShowBuilder(wizardName, onSave)
     builderOnSave = onSave
 
     local f = CreateBuilderFrame()
-    f.TitleText:SetText("Building: " .. (config.title or wizardName))
+    f.TitleText:SetText(L["Building: "] .. (config.title or wizardName))
     f:Show()
     RenderBuilderStep()
 end
@@ -1191,13 +1192,13 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     local self = page
 
     -- Header
-    Add(GUI:CreateHeader(self.child, "Setup Wizards"), 40, "both")
-    Add(GUI:CreateLabel(self.child, "Create and manage setup wizards that guide users through configuring addon settings. Wizards can be shared with others via import/export strings.", 520), 40, "both")
+    Add(GUI:CreateHeader(self.child, L["Setup Wizards"]), 40, "both")
+    Add(GUI:CreateLabel(self.child, L["Create and manage setup wizards that guide users through configuring addon settings. Wizards can be shared with others via import/export strings."], 520), 40, "both")
     AddSpace(10, "both")
 
     -- === LEFT COLUMN: Wizard List ===
     local listLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    listLabel:SetText("My Wizards")
+    listLabel:SetText(L["My Wizards"])
     local listLabelFrame = CreateFrame("Frame", nil, self.child)
     listLabelFrame:SetSize(260, 20)
     listLabelFrame.text = listLabel
@@ -1218,7 +1219,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     local btnRow = CreateFrame("Frame", nil, self.child)
     btnRow:SetSize(240, 26)
 
-    local newBtn = GUI:CreateButton(btnRow, "+ New", 80, 24, function()
+    local newBtn = GUI:CreateButton(btnRow, L["+ New"], 80, 24, function()
         -- Generate unique name
         local configs = GetWizardConfigs()
         local baseName = "New Wizard"
@@ -1234,7 +1235,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     end)
     newBtn:SetPoint("TOPLEFT", 0, 0)
 
-    local deleteBtn = GUI:CreateButton(btnRow, "Delete", 80, 24, function()
+    local deleteBtn = GUI:CreateButton(btnRow, L["Delete"], 80, 24, function()
         if editingWizardName then
             DeleteWizardConfig(editingWizardName)
             editingWizardName = nil
@@ -1243,20 +1244,20 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     end)
     deleteBtn:SetPoint("LEFT", newBtn, "RIGHT", 4, 0)
 
-    local importBtn = GUI:CreateButton(btnRow, "Import", 70, 24, function()
+    local importBtn = GUI:CreateButton(btnRow, L["Import"], 70, 24, function()
         -- Show import popup
         DF:ShowPopupAlert({
-            title = "Import Wizard",
-            message = "Paste the wizard export string below:",
+            title = L["Import Wizard"],
+            message = L["Paste the wizard export string below:"],
             buttons = {
                 {
-                    label = "Import",
+                    label = L["Import"],
                     onClick = function()
                         -- Import handled via the editbox in a future iteration
                         -- For now, use a simple approach
                     end,
                 },
-                { label = "Cancel" },
+                { label = L["Cancel"] },
             },
         })
     end)
@@ -1270,7 +1271,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
 
     if config then
         local detailLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        detailLabel:SetText("Wizard Details")
+        detailLabel:SetText(L["Wizard Details"])
         local detailLabelFrame = CreateFrame("Frame", nil, self.child)
         detailLabelFrame:SetSize(260, 20)
         detailLabel:SetParent(detailLabelFrame)
@@ -1284,7 +1285,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         nameFrame:SetSize(230, 44)
         local nameLabel = nameFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         nameLabel:SetPoint("TOPLEFT", 0, 0)
-        nameLabel:SetText("Name")
+        nameLabel:SetText(L["Name"])
         nameLabel:SetTextColor(0.6, 0.6, 0.6)
         local nameEdit = CreateFrame("EditBox", nil, nameFrame, "BackdropTemplate")
         nameEdit:SetSize(230, 24)
@@ -1319,7 +1320,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         descFrame:SetSize(230, 44)
         local descLabel = descFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         descLabel:SetPoint("TOPLEFT", 0, 0)
-        descLabel:SetText("Description")
+        descLabel:SetText(L["Description"])
         descLabel:SetTextColor(0.6, 0.6, 0.6)
         local descEdit = CreateFrame("EditBox", nil, descFrame, "BackdropTemplate")
         descEdit:SetSize(230, 24)
@@ -1345,7 +1346,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         AddSpace(8, 2)
 
         -- Action buttons
-        local editBtn = GUI:CreateIconButton(self.child, "edit", "Edit Steps", 160, 26, function()
+        local editBtn = GUI:CreateIconButton(self.child, "edit", L["Edit Steps"], 160, 26, function()
             editingStepIndex = 1
             -- Navigate to editor tab
             if GUI.Tabs and GUI.Tabs["wizards_editor"] then
@@ -1354,7 +1355,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         end, 14)
         Add(editBtn, 30, 2)
 
-        local previewBtn = GUI:CreateIconButton(self.child, "visibility", "Preview", 160, 26, function()
+        local previewBtn = GUI:CreateIconButton(self.child, "visibility", L["Preview"], 160, 26, function()
             local wizConfig = BuildWizardConfig(config)
             if wizConfig then
                 DF:ShowPopupWizard(wizConfig)
@@ -1362,7 +1363,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         end, 14)
         Add(previewBtn, 30, 2)
 
-        local dupBtn = GUI:CreateIconButton(self.child, "content_copy", "Duplicate", 160, 26, function()
+        local dupBtn = GUI:CreateIconButton(self.child, "content_copy", L["Duplicate"], 160, 26, function()
             local newName = config.name .. " (Copy)"
             local i = 2
             local allConfigs = GetWizardConfigs()
@@ -1384,14 +1385,14 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         AddSpace(8, 2)
 
         -- Export button
-        local exportBtn = GUI:CreateIconButton(self.child, "upload", "Export", 160, 26, function()
+        local exportBtn = GUI:CreateIconButton(self.child, "upload", L["Export"], 160, 26, function()
             local str, err = WB:ExportWizard(editingWizardName)
             if str then
                 DF:ShowPopupAlert({
-                    title = "Export Wizard",
-                    message = "Copy the string below to share this wizard:\n\n" .. str:sub(1, 60) .. "...",
+                    title = L["Export Wizard"],
+                    message = L["Copy the string below to share this wizard:"] .. "\n\n" .. str:sub(1, 60) .. "...",
                     buttons = {
-                        { label = "OK" },
+                        { label = L["OK"] },
                     },
                 })
             else
@@ -1403,7 +1404,7 @@ function WB:BuildListPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     else
         -- No wizard selected
         local placeholder = self.child:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-        placeholder:SetText("Select or create a wizard")
+        placeholder:SetText(L["Select or create a wizard"])
         local placeholderFrame = CreateFrame("Frame", nil, self.child)
         placeholderFrame:SetSize(260, 30)
         placeholder:SetParent(placeholderFrame)
@@ -1436,16 +1437,16 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     local config = editingWizardName and configs[editingWizardName] or nil
 
     if not config then
-        Add(GUI:CreateHeader(self.child, "Step Editor"), 40, "both")
-        Add(GUI:CreateLabel(self.child, "No wizard selected. Go to 'My Wizards' tab to select or create a wizard first.", 500), 30, "both")
+        Add(GUI:CreateHeader(self.child, L["Step Editor"]), 40, "both")
+        Add(GUI:CreateLabel(self.child, L["No wizard selected. Go to 'My Wizards' tab to select or create a wizard first."], 500), 30, "both")
         return
     end
 
     -- Header with wizard name
-    Add(GUI:CreateHeader(self.child, "Editing: " .. (config.name or "?")), 40, "both")
+    Add(GUI:CreateHeader(self.child, format(L["Editing: %s"], (config.name or "?"))), 40, "both")
 
     -- Back button
-    local backBtn = GUI:CreateIconButton(self.child, "chevron_right", "Back to List", 140, 24, function()
+    local backBtn = GUI:CreateIconButton(self.child, "chevron_right", L["Back to List"], 140, 24, function()
         if GUI.Tabs and GUI.Tabs["wizards_list"] then
             GUI.Tabs["wizards_list"]:Click()
         end
@@ -1455,7 +1456,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
 
     -- === LEFT: Step List ===
     local stepListLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    stepListLabel:SetText("Steps")
+    stepListLabel:SetText(L["Steps"])
     local stepListLabelFrame = CreateFrame("Frame", nil, self.child)
     stepListLabelFrame:SetSize(170, 20)
     stepListLabel:SetParent(stepListLabelFrame)
@@ -1482,7 +1483,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     local stepBtnRow = CreateFrame("Frame", nil, self.child)
     stepBtnRow:SetSize(170, 26)
 
-    local addStepBtn = GUI:CreateButton(stepBtnRow, "+ Add", 50, 22, function()
+    local addStepBtn = GUI:CreateButton(stepBtnRow, L["+ Add"], 50, 22, function()
         local newId = "step" .. (#config.steps + 1)
         -- Insert before summary if one exists
         local insertPos = #config.steps + 1
@@ -1494,12 +1495,12 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         end
         tinsert(config.steps, insertPos, {
             id = newId,
-            question = "New question",
+            question = L["New question"],
             description = "",
             type = "single",
             options = {
-                { label = "Option A", value = "a" },
-                { label = "Option B", value = "b" },
+                { label = L["Option A"], value = "a" },
+                { label = L["Option B"], value = "b" },
             },
         })
         config.modified = time()
@@ -1509,7 +1510,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     end)
     addStepBtn:SetPoint("TOPLEFT", 0, 0)
 
-    local delStepBtn = GUI:CreateButton(stepBtnRow, "Del", 40, 22, function()
+    local delStepBtn = GUI:CreateButton(stepBtnRow, L["Del"], 40, 22, function()
         if editingStepIndex and config.steps[editingStepIndex] then
             tremove(config.steps, editingStepIndex)
             if editingStepIndex > #config.steps then
@@ -1563,7 +1564,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     local step = editingStepIndex and config.steps[editingStepIndex] or nil
     if not step then
         local noStepLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-        noStepLabel:SetText("Select a step to edit")
+        noStepLabel:SetText(L["Select a step to edit"])
         local noStepFrame = CreateFrame("Frame", nil, self.child)
         noStepFrame:SetSize(340, 30)
         noStepLabel:SetParent(noStepFrame)
@@ -1580,7 +1581,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     idFrame:SetSize(320, 44)
     local idLabel = idFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     idLabel:SetPoint("TOPLEFT", 0, 0)
-    idLabel:SetText("Step ID")
+    idLabel:SetText(L["Step ID"])
     idLabel:SetTextColor(0.6, 0.6, 0.6)
     local idEdit = CreateFrame("EditBox", nil, idFrame, "BackdropTemplate")
     idEdit:SetSize(320, 24)
@@ -1623,7 +1624,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         qFrame:SetSize(320, 44)
         local qLabel = qFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         qLabel:SetPoint("TOPLEFT", 0, 0)
-        qLabel:SetText("Question")
+        qLabel:SetText(L["Question"])
         qLabel:SetTextColor(0.6, 0.6, 0.6)
         local qEdit = CreateFrame("EditBox", nil, qFrame, "BackdropTemplate")
         qEdit:SetSize(320, 24)
@@ -1650,7 +1651,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         dFrame:SetSize(320, 44)
         local dLabel = dFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         dLabel:SetPoint("TOPLEFT", 0, 0)
-        dLabel:SetText("Description (optional)")
+        dLabel:SetText(L["Description (optional)"])
         dLabel:SetTextColor(0.6, 0.6, 0.6)
         local dEdit = CreateFrame("EditBox", nil, dFrame, "BackdropTemplate")
         dEdit:SetSize(320, 24)
@@ -1675,9 +1676,9 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
 
     -- Step Type dropdown
     local typeOptions = {
-        single = "Single Select",
-        multi = "Multi Select",
-        summary = "Summary",
+        single = L["Single Select"],
+        multi = L["Multi Select"],
+        summary = L["Summary"],
     }
     local typeOrder = { "single", "multi", "summary" }
 
@@ -1685,7 +1686,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     typeFrame:SetSize(320, 50)
     local typeLabel = typeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     typeLabel:SetPoint("TOPLEFT", 0, 0)
-    typeLabel:SetText("Type")
+    typeLabel:SetText(L["Type"])
     typeLabel:SetTextColor(0.6, 0.6, 0.6)
 
     local typeBtn = CreateFrame("Button", nil, typeFrame, "BackdropTemplate")
@@ -1751,7 +1752,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
 
         -- Integration header
         local intHeader = intGroup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        intHeader:SetText("Integration")
+        intHeader:SetText(L["Integration"])
         local intHeaderFrame = CreateFrame("Frame", nil, intGroup)
         intHeaderFrame:SetSize(320, 18)
         intHeader:SetParent(intHeaderFrame)
@@ -1759,12 +1760,12 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         intGroup:AddWidget(intHeaderFrame, 18)
 
         -- Test Mode dropdown
-        local testModeOpts = { [""] = "Off", party = "Party", raid = "Raid" }
+        local testModeOpts = { [""] = L["Off"], party = L["Party"], raid = L["Raid"] }
         local testModeFrame = CreateFrame("Frame", nil, intGroup)
         testModeFrame:SetSize(320, 50)
         local tmLabel = testModeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         tmLabel:SetPoint("TOPLEFT", 0, 0)
-        tmLabel:SetText("Test Mode")
+        tmLabel:SetText(L["Test Mode"])
         tmLabel:SetTextColor(0.6, 0.6, 0.6)
 
         local tmBtn = CreateFrame("Button", nil, testModeFrame, "BackdropTemplate")
@@ -1776,7 +1777,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         tmBtn:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.5)
         tmBtn.Text = tmBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         tmBtn.Text:SetPoint("LEFT", 6, 0)
-        tmBtn.Text:SetText(testModeOpts[step.testMode or ""] or "Off")
+        tmBtn.Text:SetText(testModeOpts[step.testMode or ""] or L["Off"])
 
         local tmMenu = CreateFrame("Frame", nil, tmBtn, "BackdropTemplate")
         tmMenu:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -1791,7 +1792,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         tmMenu:EnableMouse(true)
 
         local tmY = 0
-        for _, pair in ipairs({ {"", "Off"}, {"party", "Party"}, {"raid", "Raid"} }) do
+        for _, pair in ipairs({ {"", L["Off"]}, {"party", L["Party"]}, {"raid", L["Raid"]} }) do
             local tmOptBtn = CreateFrame("Button", nil, tmMenu, "BackdropTemplate")
             tmOptBtn:SetHeight(22)
             tmOptBtn:SetPoint("TOPLEFT", 2, -tmY)
@@ -1824,7 +1825,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         openTabFrame:SetSize(320, 44)
         local otLabel = openTabFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         otLabel:SetPoint("TOPLEFT", 0, 0)
-        otLabel:SetText("Open Settings Tab")
+        otLabel:SetText(L["Open Settings Tab"])
         otLabel:SetTextColor(0.6, 0.6, 0.6)
         local otEdit = CreateFrame("EditBox", nil, openTabFrame, "BackdropTemplate")
         otEdit:SetSize(320, 24)
@@ -1852,7 +1853,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         hsFrame:SetSize(320, 44)
         local hsLabel = hsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hsLabel:SetPoint("TOPLEFT", 0, 0)
-        hsLabel:SetText("Highlight Settings (comma-separated dbKeys)")
+        hsLabel:SetText(L["Highlight Settings (comma-separated dbKeys)"])
         hsLabel:SetTextColor(0.6, 0.6, 0.6)
         local hsEdit = CreateFrame("EditBox", nil, hsFrame, "BackdropTemplate")
         hsEdit:SetSize(320, 24)
@@ -1900,7 +1901,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         local optGroup = GUI:CreateSettingsGroup(self.child, 340)
 
         local optHeader = optGroup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        optHeader:SetText("Options")
+        optHeader:SetText(L["Options"])
         local optHeaderFrame = CreateFrame("Frame", nil, optGroup)
         optHeaderFrame:SetSize(320, 18)
         optHeader:SetParent(optHeaderFrame)
@@ -1916,7 +1917,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
             -- Label
             local olLabel = optRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             olLabel:SetPoint("TOPLEFT", 0, 0)
-            olLabel:SetText("Label:")
+            olLabel:SetText(L["Label:"])
             olLabel:SetTextColor(0.6, 0.6, 0.6)
             local olEdit = CreateFrame("EditBox", nil, optRow, "BackdropTemplate")
             olEdit:SetSize(130, 22)
@@ -1940,7 +1941,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
             -- Value
             local ovLabel = optRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             ovLabel:SetPoint("TOPLEFT", 0, -24)
-            ovLabel:SetText("Value:")
+            ovLabel:SetText(L["Value:"])
             ovLabel:SetTextColor(0.6, 0.6, 0.6)
             local ovEdit = CreateFrame("EditBox", nil, optRow, "BackdropTemplate")
             ovEdit:SetSize(130, 22)
@@ -1976,8 +1977,8 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
         -- Add Option button
         local addOptBtnFrame = CreateFrame("Frame", nil, optGroup)
         addOptBtnFrame:SetSize(320, 26)
-        local addOptBtn = GUI:CreateButton(addOptBtnFrame, "+ Add Option", 120, 22, function()
-            tinsert(step.options, { label = "New Option", value = "new" .. (#step.options + 1) })
+        local addOptBtn = GUI:CreateButton(addOptBtnFrame, L["+ Add Option"], 120, 22, function()
+            tinsert(step.options, { label = L["New Option"], value = "new" .. (#step.options + 1) })
             config.modified = time()
             SaveWizardConfig(editingWizardName, config)
             page:Refresh()
@@ -1992,7 +1993,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     -- === BRANCHING RULES SECTION ===
     if step.type ~= "summary" then
         local branchLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        branchLabel:SetText("Branching Rules")
+        branchLabel:SetText(L["Branching Rules"])
         local branchLabelFrame = CreateFrame("Frame", nil, self.child)
         branchLabelFrame:SetSize(340, 18)
         branchLabel:SetParent(branchLabelFrame)
@@ -2020,7 +2021,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
     -- === SETTINGS MAP SECTION ===
     if step.type == "single" or step.type == "multi" then
         local smLabel = self.child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        smLabel:SetText("Settings to Apply")
+        smLabel:SetText(L["Settings to Apply"])
         local smLabelFrame = CreateFrame("Frame", nil, self.child)
         smLabelFrame:SetSize(340, 18)
         smLabel:SetParent(smLabelFrame)
@@ -2036,7 +2037,7 @@ function WB:BuildEditorPage(GUI, page, db, Add, AddSpace, AddSyncPoint)
             subHeaderFrame:SetSize(340, 20)
             local subHeader = subHeaderFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             subHeader:SetPoint("BOTTOMLEFT", 0, 0)
-            subHeader:SetText("When \"" .. (opt.label or opt.value or "?") .. "\" selected:")
+            subHeader:SetText(format(L["When \"%s\" selected:"], (opt.label or opt.value or "?")))
             subHeader:SetTextColor(0.7, 0.7, 0.7)
             Add(subHeaderFrame, 22, 2)
 
@@ -2080,7 +2081,7 @@ end
 
 WB:RegisterBuiltinWizard({
     name = "Aura Filter Setup",
-    description = "Guided setup for configuring which buffs and debuffs appear on your frames.",
+    description = L["Guided setup for configuring which buffs and debuffs appear on your frames."],
     build = function()
         -- All the Direct API filter keys to highlight when user wants to configure themselves
         local directFilterKeys = {
@@ -2095,17 +2096,17 @@ WB:RegisterBuiltinWizard({
         }
 
         return {
-            title = "Aura Filter Setup",
+            title = L["Aura Filter Setup"],
             width = 480,
             steps = {
                 {
                     id = "welcome",
-                    question = "Would you like to set up your aura filters?",
-                    description = "• Having trouble seeing certain buffs or debuffs?\n• This wizard helps you pick the right aura settings",
+                    question = L["Would you like to set up your aura filters?"],
+                    description = L["• Having trouble seeing certain buffs or debuffs?\n• This wizard helps you pick the right aura settings"],
                     type = "single",
                     options = {
-                        { label = "Yes, let's set it up", value = "yes" },
-                        { label = "No thanks", value = "no" },
+                        { label = L["Yes, let's set it up"], value = "yes" },
+                        { label = L["No thanks"], value = "no" },
                     },
                     branches = {
                         { condition = { equals = "no" }, ["goto"] = "cancel" },
@@ -2114,19 +2115,19 @@ WB:RegisterBuiltinWizard({
                 },
                 {
                     id = "source",
-                    question = "Which aura data source would you like to use?",
+                    question = L["Which aura data source would you like to use?"],
                     type = "single",
                     options = {
                         {
-                            label = "Blizzard",
+                            label = L["Blizzard"],
                             value = "blizzard",
                         },
                         {
-                            label = "Direct API",
+                            label = L["Direct API"],
                             value = "direct",
                         },
                     },
-                    description = "Blizzard:\n• Mirrors the buffs/debuffs from default Blizzard frames\n• Requires Blizzard raid settings to be configured correctly\n• Slightly more performance heavy in large groups\n\nDirect API:\n• Gives you control over what shows on your frames\n• Some filters may miss certain buffs/debuffs\n• Others might show unwanted ones\n• Can be fine-tuned for best results",
+                    description = L["Blizzard:\n• Mirrors the buffs/debuffs from default Blizzard frames\n• Requires Blizzard raid settings to be configured correctly\n• Slightly more performance heavy in large groups\n\nDirect API:\n• Gives you control over what shows on your frames\n• Some filters may miss certain buffs/debuffs\n• Others might show unwanted ones\n• Can be fine-tuned for best results"],
                     branches = {
                         { condition = { equals = "blizzard" }, ["goto"] = "summary" },
                     },
@@ -2134,12 +2135,12 @@ WB:RegisterBuiltinWizard({
                 },
                 {
                     id = "direct_config",
-                    question = "How would you like to configure the filters?",
-                    description = "• Recommended defaults work well for most players\n• Manual lets you fine-tune every filter option",
+                    question = L["How would you like to configure the filters?"],
+                    description = L["• Recommended defaults work well for most players\n• Manual lets you fine-tune every filter option"],
                     type = "single",
                     options = {
-                        { label = "Use recommended defaults", value = "defaults" },
-                        { label = "Let me configure it myself", value = "manual" },
+                        { label = L["Use recommended defaults"], value = "defaults" },
+                        { label = L["Let me configure it myself"], value = "manual" },
                     },
                     next = "summary",
                 },
@@ -2256,23 +2257,20 @@ WB:RegisterBuiltinWizard({
 
 WB:RegisterBuiltinWizard({
     name = "Private Aura Overlay Setup",
-    description = "Guided setup for the frame border overlay that highlights boss debuffs.",
+    description = L["Guided setup for the frame border overlay that highlights boss debuffs."],
     build = function()
         return {
-            title = "Private Aura Overlay Setup",
+            title = L["Private Aura Overlay Setup"],
             width = 480,
             steps = {
                 {
                     id = "welcome",
-                    question = "New Feature: Frame Border Overlay",
-                    description = "This feature adds a border around the entire unit frame when private aura boss debuffs are active.\n\n"
-                        .. "Important: The border will appear for ALL boss debuffs, not just dispellable ones. Non-dispellable debuffs show a solid border.\n\n"
-                        .. "The appearance of the border is controlled by Blizzard and cannot be customised — only the size can be adjusted.\n\n"
-                        .. "Would you like to set up this feature now?",
+                    question = L["New Feature: Frame Border Overlay"],
+                    description = L["This feature adds a border around the entire unit frame when private aura boss debuffs are active.\n\nImportant: The border will appear for ALL boss debuffs, not just dispellable ones. Non-dispellable debuffs show a solid border.\n\nThe appearance of the border is controlled by Blizzard and cannot be customised — only the size can be adjusted.\n\nWould you like to set up this feature now?"],
                     type = "single",
                     options = {
-                        { label = "Yes, set it up", value = "yes" },
-                        { label = "Skip for now", value = "no" },
+                        { label = L["Yes, set it up"], value = "yes" },
+                        { label = L["Skip for now"], value = "no" },
                     },
                     branches = {
                         { condition = { equals = "no" }, ["goto"] = "cancel" },
@@ -2281,19 +2279,19 @@ WB:RegisterBuiltinWizard({
                 },
                 {
                     id = "enable_overlay",
-                    question = "Choose whether to enable the frame border overlay.",
-                    description = "The first image shows the overlay border active on a frame. The second shows the standard boss debuff icon only.",
+                    question = L["Choose whether to enable the frame border overlay."],
+                    description = L["The first image shows the overlay border active on a frame. The second shows the standard boss debuff icon only."],
                     type = "imageselect",
                     imageAspect = 1.7,
                     options = {
                         {
-                            label = "Enable Overlay",
+                            label = L["Enable Overlay"],
                             value = "enable",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_enabled",
                             texCoord = {0, 1, 0, 0.582},
                         },
                         {
-                            label = "Disable Overlay",
+                            label = L["Disable Overlay"],
                             value = "disable",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_disabled",
                             texCoord = {0, 0.6602, 0, 0.3789},
@@ -2306,22 +2304,19 @@ WB:RegisterBuiltinWizard({
                 },
                 {
                     id = "overlay_warning",
-                    question = "Before You Enable",
-                    description = "The frame border overlay is rendered entirely by Blizzard and has some visual quirks that cannot be fixed:\n\n"
-                        .. "|cFFFF8800Orange borders|r will appear for boss debuffs that are |cFFFF4444not dispellable|r. Only dispellable debuffs show the standard coloured border.\n\n"
-                        .. "Floating |cFFFFFF00stack count text|r may appear on the frame, separate from the icon.\n\n"
-                        .. "The overlay is not a perfect solution and may look rough in some encounters. Enable at your own risk.",
+                    question = L["Before You Enable"],
+                    description = L["The frame border overlay is rendered entirely by Blizzard and has some visual quirks that cannot be fixed:\n\n|cFFFF8800Orange borders|r will appear for boss debuffs that are |cFFFF4444not dispellable|r. Only dispellable debuffs show the standard coloured border.\n\nFloating |cFFFFFF00stack count text|r may appear on the frame, separate from the icon.\n\nThe overlay is not a perfect solution and may look rough in some encounters. Enable at your own risk."],
                     type = "imageselect",
                     imageAspect = 1.48,
                     options = {
                         {
-                            label = "I understand, enable it",
+                            label = L["I understand, enable it"],
                             value = "confirm",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_warning",
                             texCoord = {0, 0.8555, 0, 0.5781},
                         },
                         {
-                            label = "Actually, disable it",
+                            label = L["Actually, disable it"],
                             value = "cancel",
                             image = "Interface\\AddOns\\DandersFrames\\Textures\\Wizards\\overlay_disabled",
                             texCoord = {0, 0.6602, 0, 0.3789},
