@@ -2,6 +2,8 @@ local addonName, DF = ...
 
 -- Get module namespace
 local CC = DF.ClickCast
+local L = DF.L
+local format = string.format
 
 -- HOOKS INTO DANDERSFRAMES
 -- ============================================================
@@ -117,7 +119,7 @@ function CC:CreateClickCastUI(parent)
     -- Title
     local title = row1:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("LEFT", 0, 0)
-    title:SetText("Click-Casting")
+    title:SetText(L["Click-Casting"])
     title:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     
     -- Enable checkbox (next to title)
@@ -141,7 +143,7 @@ function CC:CreateClickCastUI(parent)
     
     local enableLabel = row1:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     enableLabel:SetPoint("LEFT", enableCb, "RIGHT", 3, 0)
-    enableLabel:SetText("Enabled")
+    enableLabel:SetText(L["Enabled"])
     enableLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     enableCb:SetScript("OnClick", function(self)
@@ -208,8 +210,8 @@ function CC:CreateClickCastUI(parent)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         cogwheelIcon:SetVertexColor(themeColor.r, themeColor.g, themeColor.b)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:SetText("Profile Settings", 1, 1, 1)
-        GameTooltip:AddLine("Open the Profiles tab to manage profiles", 0.7, 0.7, 0.7)
+        GameTooltip:SetText(L["Profile Settings"], 1, 1, 1)
+        GameTooltip:AddLine(L["Open the Profiles tab to manage profiles"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     profileCogwheel:SetScript("OnLeave", function(self)
@@ -250,7 +252,7 @@ function CC:CreateClickCastUI(parent)
     
     local profileLabel = row1:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     profileLabel:SetPoint("RIGHT", profileDropdown, "LEFT", -4, 0)
-    profileLabel:SetText("Profile:")
+    profileLabel:SetText(L["Profile:"])
     profileLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local profileMenu = CreateFrame("Frame", nil, profileDropdown, "BackdropTemplate")
@@ -389,7 +391,7 @@ function CC:CreateClickCastUI(parent)
     
     local downLabel = row2:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     downLabel:SetPoint("LEFT", downCb, "RIGHT", 3, 0)
-    downLabel:SetText("Cast on DOWN")
+    downLabel:SetText(L["Cast on DOWN"])
     downLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     downCb:SetScript("OnClick", function(self)
@@ -418,14 +420,14 @@ function CC:CreateClickCastUI(parent)
     
     local quickBindLabel = row2:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     quickBindLabel:SetPoint("LEFT", quickBindCb, "RIGHT", 3, 0)
-    quickBindLabel:SetText("Quick Bind")
+    quickBindLabel:SetText(L["Quick Bind"])
     quickBindLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     quickBindCb:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Quick Bind Mode", 1, 1, 1)
-        GameTooltip:AddLine("When enabled: Click spell, press key to bind instantly.", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("When disabled: Click spell to open Binding Editor.", 0.7, 0.7, 0.7)
+        GameTooltip:SetText(L["Quick Bind Mode"], 1, 1, 1)
+        GameTooltip:AddLine(L["When enabled: Click spell, press key to bind instantly."], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["When disabled: Click spell to open Binding Editor."], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     quickBindCb:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -437,7 +439,7 @@ function CC:CreateClickCastUI(parent)
     -- Smart Resurrection dropdown
     local smartResLabel = row2:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     smartResLabel:SetPoint("LEFT", quickBindLabel, "RIGHT", 15, 0)
-    smartResLabel:SetText("Smart Res:")
+    smartResLabel:SetText(L["Smart Res:"])
     smartResLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     local smartResDropdown = CreateFrame("Frame", nil, row2, "BackdropTemplate")
@@ -465,9 +467,9 @@ function CC:CreateClickCastUI(parent)
     smartResArrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local smartResOptions = {
-        { value = "disabled", text = "Disabled" },
-        { value = "normal", text = "Res + Mass" },
-        { value = "normal+combat", text = "Res + Mass + Combat" },
+        { value = "disabled", text = L["Disabled"] },
+        { value = "normal", text = L["Res + Mass"] },
+        { value = "normal+combat", text = L["Res + Mass + Combat"] },
     }
     
     local function UpdateSmartResText()
@@ -478,7 +480,7 @@ function CC:CreateClickCastUI(parent)
                 return
             end
         end
-        smartResText:SetText("Disabled")
+        smartResText:SetText(L["Disabled"])
     end
     
     local smartResMenu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
@@ -558,19 +560,19 @@ function CC:CreateClickCastUI(parent)
     smartResDropdown:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Smart Resurrection", 1, 1, 1)
+        GameTooltip:SetText(L["Smart Resurrection"], 1, 1, 1)
         GameTooltip:AddLine("When using any spell binding on a dead target,", 0.7, 0.7, 0.7)
         GameTooltip:AddLine("cast a resurrection spell instead.", 0.7, 0.7, 0.7)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Disabled:", themeColor.r, themeColor.g, themeColor.b)
-        GameTooltip:AddLine("Bindings only cast their assigned spell", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Disabled"] .. ":", themeColor.r, themeColor.g, themeColor.b)
+        GameTooltip:AddLine(L["Bindings only cast their assigned spell"], 0.7, 0.7, 0.7)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Res + Mass:", themeColor.r, themeColor.g, themeColor.b)
-        GameTooltip:AddLine("Dead + Out of combat: Cast Mass Res or normal Res", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Res + Mass"] .. ":", themeColor.r, themeColor.g, themeColor.b)
+        GameTooltip:AddLine(L["Dead + Out of combat: Cast Mass Res or normal Res"], 0.7, 0.7, 0.7)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Res + Mass + Combat:", themeColor.r, themeColor.g, themeColor.b)
-        GameTooltip:AddLine("Dead + In combat: Cast Battle Res (Rebirth, etc.)", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("Dead + Out of combat: Cast Mass Res or normal Res", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Res + Mass + Combat"] .. ":", themeColor.r, themeColor.g, themeColor.b)
+        GameTooltip:AddLine(L["Dead + In combat: Cast Battle Res (Rebirth, etc.)"], 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Dead + Out of combat: Cast Mass Res or normal Res"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     smartResDropdown:SetScript("OnLeave", function(self)
@@ -614,7 +616,7 @@ function CC:CreateClickCastUI(parent)
     
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     searchPlaceholder:SetPoint("LEFT", 18, 0)
-    searchPlaceholder:SetText("Search...")
+    searchPlaceholder:SetText(L["Search..."])
     searchPlaceholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     searchBox:SetScript("OnEditFocusGained", function() searchPlaceholder:Hide() end)
@@ -700,14 +702,14 @@ function CC:CreateClickCastUI(parent)
     -- Title
     local bindingsTitle = bindingsHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     bindingsTitle:SetPoint("LEFT", collapseBtn, "RIGHT", 6, 0)
-    bindingsTitle:SetText("Active Bindings")
+    bindingsTitle:SetText(L["Active Bindings"])
     bindingsTitle:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     CC.bindingsTitle = bindingsTitle
     
     -- Hint text
     local bindingsHint = bindingsHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     bindingsHint:SetPoint("LEFT", bindingsTitle, "RIGHT", 6, 0)
-    bindingsHint:SetText("— click to edit")
+    bindingsHint:SetText(L["— click to edit"])
     bindingsHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     CC.bindingsHint = bindingsHint
     
@@ -730,7 +732,7 @@ function CC:CreateClickCastUI(parent)
     clearAllIcon:SetVertexColor(0.9, 0.6, 0.6)
     local clearAllText = clearAllBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     clearAllText:SetPoint("LEFT", clearAllIcon, "RIGHT", 3, 0)
-    clearAllText:SetText("Clear")
+    clearAllText:SetText(L["Clear"])
     clearAllText:SetTextColor(0.9, 0.6, 0.6)
     
     clearAllBtn:SetScript("OnEnter", function(self)
@@ -739,8 +741,8 @@ function CC:CreateClickCastUI(parent)
         clearAllText:SetTextColor(1, 0.7, 0.7)
         clearAllIcon:SetVertexColor(1, 0.7, 0.7)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Clear All Bindings", 1, 0.3, 0.3)
-        GameTooltip:AddLine("Remove all bindings from the current profile.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine(L["Clear All Bindings"], 1, 0.3, 0.3)
+        GameTooltip:AddLine(L["Remove all bindings from the current profile."], 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     clearAllBtn:SetScript("OnLeave", function(self)
@@ -1102,22 +1104,22 @@ function CC:CreateClickCastUI(parent)
     end
     
     -- Create tabs (in tabs row)
-    local spellsTab = CreateTabButton(tabsRow, "Spells", 55)
+    local spellsTab = CreateTabButton(tabsRow, L["Spells"], 55)
     spellsTab:SetPoint("LEFT", 4, 0)
     spellsTab:SetActive(true)
     CC.spellsTab = spellsTab
     
-    local macrosTab = CreateTabButton(tabsRow, "Macros", 55)
+    local macrosTab = CreateTabButton(tabsRow, L["Macros"], 55)
     macrosTab:SetPoint("LEFT", spellsTab, "RIGHT", 2, 0)
     macrosTab:SetActive(false)
     CC.macrosTab = macrosTab
     
-    local itemsTab = CreateTabButton(tabsRow, "Items", 50)
+    local itemsTab = CreateTabButton(tabsRow, L["Items"], 50)
     itemsTab:SetPoint("LEFT", macrosTab, "RIGHT", 2, 0)
     itemsTab:SetActive(false)
     CC.itemsTab = itemsTab
     
-    local profilesTab = CreateTabButton(tabsRow, "Profiles", 60)
+    local profilesTab = CreateTabButton(tabsRow, L["Profiles"], 60)
     profilesTab:SetPoint("LEFT", itemsTab, "RIGHT", 2, 0)
     profilesTab:SetActive(false)
     CC.profilesTab = profilesTab
@@ -1127,11 +1129,11 @@ function CC:CreateClickCastUI(parent)
     
     -- Macro-specific controls (in filter row, anchored from LEFT to avoid overlap)
     -- Macro source dropdown (leftmost)
-    local macroSourceDropdown = CreateDropdown(filterRow, "All", 65, {
-        {key = "all", label = "All"},
-        {key = "custom", label = "Custom"},
-        {key = "global_import", label = "General"},
-        {key = "char_import", label = "Character"},
+    local macroSourceDropdown = CreateDropdown(filterRow, L["All"], 65, {
+        {key = "all", label = L["All"]},
+        {key = "custom", label = L["Custom"]},
+        {key = "global_import", label = L["General"]},
+        {key = "char_import", label = L["Character"]},
     }, function(key)
         CC.selectedMacroSource = key
         CC:RefreshSpellGrid()
@@ -1158,7 +1160,7 @@ function CC:CreateClickCastUI(parent)
     newMacroIcon:SetVertexColor(1, 1, 1)
     local newMacroBtnText = newMacroBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     newMacroBtnText:SetPoint("LEFT", newMacroIcon, "RIGHT", 3, 0)
-    newMacroBtnText:SetText("New")
+    newMacroBtnText:SetText(L["New"])
     newMacroBtnText:SetTextColor(1, 1, 1)
     newMacroBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(themeColor.r * 0.5, themeColor.g * 0.5, themeColor.b * 0.5, 1)
@@ -1190,7 +1192,7 @@ function CC:CreateClickCastUI(parent)
     importMacroIcon:SetVertexColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     local importMacroBtnText = importMacroBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     importMacroBtnText:SetPoint("LEFT", importMacroIcon, "RIGHT", 3, 0)
-    importMacroBtnText:SetText("Import")
+    importMacroBtnText:SetText(L["Import"])
     importMacroBtnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     importMacroBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
@@ -1222,12 +1224,12 @@ function CC:CreateClickCastUI(parent)
     quickMacroIcon:SetVertexColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     local quickMacroBtnText = quickMacroBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     quickMacroBtnText:SetPoint("LEFT", quickMacroIcon, "RIGHT", 3, 0)
-    quickMacroBtnText:SetText("Quick")
+    quickMacroBtnText:SetText(L["Quick Macro"])
     quickMacroBtnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     quickMacroBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Quick Macro", 1, 1, 1)
+        GameTooltip:SetText(L["Quick Macro"], 1, 1, 1)
         GameTooltip:AddLine("Create a simple macro without opening the full editor.", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
@@ -1244,7 +1246,7 @@ function CC:CreateClickCastUI(parent)
     -- Macro hint (after buttons)
     local macroHint = filterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     macroHint:SetPoint("LEFT", quickMacroBtn, "RIGHT", 12, 0)
-    macroHint:SetText("Click macro to bind")
+    macroHint:SetText(L["Click macro to bind"])
     macroHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     macroHint:Hide()
     CC.macroHint = macroHint
@@ -1262,12 +1264,12 @@ function CC:CreateClickCastUI(parent)
     -- "Click spell to bind" hint
     local bindHint = filterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     -- Anchored dynamically after view buttons are created
-    bindHint:SetText("Click spell to bind")
+    bindHint:SetText(L["Click spell to bind"])
     bindHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Show dropdown
-    local showDropdown = CreateDropdown(filterRow, "All", 70, {
-        {key = "all", label = "All"},
+    local showDropdown = CreateDropdown(filterRow, L["All"], 70, {
+        {key = "all", label = L["All"]},
         {key = "helpful", label = "Helpful"},
         {key = "harmful", label = "Harmful"},
     }, function(key)
@@ -1278,14 +1280,14 @@ function CC:CreateClickCastUI(parent)
     CC.selectedSpellType = "all"
     
     local showLabel = filterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    showLabel:SetText("Show:")
+    showLabel:SetText(L["Show:"])
     showLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- =============================================
     -- ITEMS TAB CONTROLS
     -- =============================================
     local itemsHint = filterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    itemsHint:SetText("Click item slot to bind")
+    itemsHint:SetText(L["Click item slot to bind"])
     itemsHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     itemsHint:Hide()
     CC.itemsHint = itemsHint
@@ -1342,7 +1344,7 @@ function CC:CreateClickCastUI(parent)
     CC.SetActiveTab = SetActiveTab
     
     -- View buttons (in filter row, far right side)
-    local alphabeticalSortBtn = CreateViewButton(filterRow, "A-Z")
+    local alphabeticalSortBtn = CreateViewButton(filterRow, L["A-Z"])
     alphabeticalSortBtn:SetPoint("RIGHT", -4, 0)
     local az = alphabeticalSortBtn:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     az:SetPoint("CENTER", 0, 0)
@@ -1350,7 +1352,7 @@ function CC:CreateClickCastUI(parent)
     az:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 1)
     alphabeticalSortBtn.azText = az
     
-    local sectionedSortBtn = CreateViewButton(filterRow, "Categories")
+    local sectionedSortBtn = CreateViewButton(filterRow, L["Categories"])
     sectionedSortBtn:SetPoint("RIGHT", alphabeticalSortBtn, "LEFT", -2, 0)
     local h1 = sectionedSortBtn:CreateTexture(nil, "ARTWORK")
     h1:SetSize(4, 2)
@@ -1368,7 +1370,7 @@ function CC:CreateClickCastUI(parent)
     h2:SetColorTexture(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 1)
     table.insert(sectionedSortBtn.iconLines, h2)
     
-    local gridViewBtn = CreateViewButton(filterRow, "Grid")
+    local gridViewBtn = CreateViewButton(filterRow, L["Grid"])
     gridViewBtn:SetPoint("RIGHT", sectionedSortBtn, "LEFT", -8, 0)
     local positions = {{-4, 3}, {4, 3}, {-4, -5}, {4, -5}}
     for _, pos in ipairs(positions) do
@@ -1379,7 +1381,7 @@ function CC:CreateClickCastUI(parent)
         table.insert(gridViewBtn.iconLines, square)
     end
     
-    local listViewBtn = CreateViewButton(filterRow, "List")
+    local listViewBtn = CreateViewButton(filterRow, L["List"])
     listViewBtn:SetPoint("RIGHT", gridViewBtn, "LEFT", -2, 0)
     for i = 0, 2 do
         local line = listViewBtn:CreateTexture(nil, "ARTWORK")
@@ -1569,7 +1571,7 @@ function CC:RefreshActiveBindings()
     
     -- Update title with count (only shown when expanded)
     if self.bindingsTitle then
-        self.bindingsTitle:SetText("Active Bindings (" .. enabledCount .. ")")
+        self.bindingsTitle:SetText(format(L["Active Bindings (%d)"], enabledCount))
     end
     
     -- Determine content width based on collapsed state
@@ -1741,7 +1743,7 @@ function CC:CreateCollapsedBindingRow(parent, binding, index)
         GameTooltip:AddLine(displayName, 1, 1, 1)
         GameTooltip:AddLine(bindText, themeColor.r, themeColor.g, themeColor.b)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click to edit", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Click to edit"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function(self)
@@ -1883,7 +1885,7 @@ function CC:CreateKeybindPopup()
     -- Instructions
     local instructions = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     instructions:SetPoint("TOP", spellName, "BOTTOM", 0, -12)
-    instructions:SetText("Press any key, mouse button, or scroll wheel\n(with modifiers if desired)")
+    instructions:SetText(L["Press any key, mouse button, or scroll wheel\n(with modifiers if desired)"])
     instructions:SetTextColor(0.7, 0.7, 0.7)
     instructions:SetJustifyH("CENTER")
     
@@ -1891,7 +1893,7 @@ function CC:CreateKeybindPopup()
     local isMac = IsMacClient and IsMacClient()
     local macWarning = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     macWarning:SetPoint("TOP", instructions, "BOTTOM", 0, -4)
-    macWarning:SetText("|cffff9900Note:|r Cmd + Left Click unavailable on Mac")
+    macWarning:SetText("|cffff9900" .. L["Note:|r Cmd + Left Click unavailable on Mac"])
     macWarning:SetTextColor(0.9, 0.6, 0.2)
     if isMac then
         macWarning:Show()
@@ -1923,7 +1925,7 @@ function CC:CreateKeybindPopup()
     
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(0.9, 0.9, 0.9)
     
     cancelBtn:SetScript("OnEnter", function(self)
@@ -1999,15 +2001,15 @@ function CC:ShowKeybindPopup(spellData)
     
     if spellData.isItem then
         -- Item binding
-        self.keybindPopup.title:SetText("Bind Item")
+        self.keybindPopup.title:SetText(L["Bind Item"])
         self.keybindPopup.spellName:SetText(spellData.name or "Unknown Item")
     elseif spellData.actionType and not spellData.spellName then
         -- Special action (Target, Menu)
-        self.keybindPopup.title:SetText("Bind Action")
+        self.keybindPopup.title:SetText(L["Bind Action"])
         self.keybindPopup.spellName:SetText(spellData.name or spellData.actionType)
     else
         -- Regular spell - show current override name for display
-        self.keybindPopup.title:SetText("Bind Spell")
+        self.keybindPopup.title:SetText(L["Bind Spell"])
         local displayName = GetSpellDisplayInfo(spellData.spellId, spellData.spellName or spellData.name)
         self.keybindPopup.spellName:SetText(displayName or spellData.spellName or spellData.name or "Unknown")
     end

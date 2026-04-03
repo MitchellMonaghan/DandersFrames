@@ -2,6 +2,8 @@ local addonName, DF = ...
 
 -- Get module namespace
 local CC = DF.ClickCast
+local L = DF.L
+local format = string.format
 
 -- Local aliases for helper functions (defined in Constants.lua and Profiles.lua)
 local IsDefaultProfile = function(name) return CC.IsDefaultProfile(name) end
@@ -29,7 +31,7 @@ function CC:CreateProfilesPanelContent()
     -- ===== LEFT COLUMN: Profile List =====
     local profilesLabel = leftCol:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     profilesLabel:SetPoint("TOPLEFT", 0, 0)
-    profilesLabel:SetText("YOUR PROFILES")
+    profilesLabel:SetText(L["YOUR PROFILES"])
     profilesLabel:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
     
     local profileList = CreateFrame("Frame", nil, leftCol, "BackdropTemplate")
@@ -90,7 +92,7 @@ function CC:CreateProfilesPanelContent()
     end
     
     -- Row 1: New and Copy buttons
-    local newBtn = CreateSmallButton(btnRow, "New", 10)  -- Width will be set by anchors
+    local newBtn = CreateSmallButton(btnRow, L["New"], 10)  -- Width will be set by anchors
     newBtn:SetPoint("LEFT", 0, 0)
     newBtn:SetPoint("RIGHT", btnRow, "CENTER", -2, 0)
     newBtn:SetBackdropColor(themeColor.r * 0.3, themeColor.g * 0.3, themeColor.b * 0.3, 1)
@@ -106,7 +108,7 @@ function CC:CreateProfilesPanelContent()
         CC:ShowNewProfileDialog()
     end)
     
-    local copyBtn = CreateSmallButton(btnRow, "Copy", 10)
+    local copyBtn = CreateSmallButton(btnRow, L["Copy"], 10)
     copyBtn:SetPoint("LEFT", btnRow, "CENTER", 2, 0)
     copyBtn:SetPoint("RIGHT", 0, 0)
     -- Add icon
@@ -130,7 +132,7 @@ function CC:CreateProfilesPanelContent()
     btnRow2:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
     btnRow2:SetHeight(22)
     
-    local renameBtn = CreateSmallButton(btnRow2, "Rename", 10)
+    local renameBtn = CreateSmallButton(btnRow2, L["Rename"], 10)
     renameBtn:SetPoint("LEFT", 0, 0)
     renameBtn:SetPoint("RIGHT", btnRow2, "CENTER", -2, 0)
     -- Add icon
@@ -148,7 +150,7 @@ function CC:CreateProfilesPanelContent()
     end)
     CC.profileRenameBtn = renameBtn
     
-    local deleteBtn = CreateSmallButton(btnRow2, "Delete", 10)
+    local deleteBtn = CreateSmallButton(btnRow2, L["Delete"], 10)
     deleteBtn:SetPoint("LEFT", btnRow2, "CENTER", 2, 0)
     deleteBtn:SetPoint("RIGHT", 0, 0)
     -- Add icon
@@ -177,7 +179,7 @@ function CC:CreateProfilesPanelContent()
     -- Import/Export section
     local ioLabel = leftCol:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     ioLabel:SetPoint("TOPLEFT", btnRow2, "BOTTOMLEFT", 0, -12)
-    ioLabel:SetText("IMPORT / EXPORT")
+    ioLabel:SetText(L["IMPORT / EXPORT"])
     ioLabel:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
     
     local ioRow = CreateFrame("Frame", nil, leftCol)
@@ -185,7 +187,7 @@ function CC:CreateProfilesPanelContent()
     ioRow:SetPoint("RIGHT", 0, 0)
     ioRow:SetHeight(22)
     
-    local exportBtn = CreateSmallButton(ioRow, "Export", 10)
+    local exportBtn = CreateSmallButton(ioRow, L["Export"], 10)
     exportBtn:SetPoint("LEFT", 0, 0)
     exportBtn:SetPoint("RIGHT", ioRow, "CENTER", -2, 0)
     exportBtn:SetBackdropColor(themeColor.r * 0.3, themeColor.g * 0.3, themeColor.b * 0.3, 1)
@@ -201,7 +203,7 @@ function CC:CreateProfilesPanelContent()
         CC:ShowExportDialog()
     end)
     
-    local importBtn = CreateSmallButton(ioRow, "Import", 10)
+    local importBtn = CreateSmallButton(ioRow, L["Import"], 10)
     importBtn:SetPoint("LEFT", ioRow, "CENTER", 2, 0)
     importBtn:SetPoint("RIGHT", 0, 0)
     -- Add icon
@@ -238,7 +240,7 @@ function CC:CreateProfilesPanelContent()
     
     local autoCreateLabel = leftCol:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     autoCreateLabel:SetPoint("LEFT", autoCreateCb, "RIGHT", 5, 0)
-    autoCreateLabel:SetText("Auto-create profiles for loadouts")
+    autoCreateLabel:SetText(L["Auto-create profiles for loadouts"])
     autoCreateLabel:SetTextColor(C.text.r, C.text.g, C.text.b)
     
     -- Initialize checkbox state
@@ -265,8 +267,8 @@ function CC:CreateProfilesPanelContent()
     autoCreateCb:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Auto-Create Profiles", 1, 1, 1)
-        GameTooltip:AddLine("When enabled, a new profile will be automatically", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine(L["Auto-Create Profiles"], 1, 1, 1)
+        GameTooltip:AddLine(L["When enabled, a new profile will be automatically"], 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine("created when you switch to a talent loadout that", 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine("doesn't have a profile assigned.", 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine(" ", 0.7, 0.7, 0.7)
@@ -302,7 +304,7 @@ function CC:CreateProfilesPanelContent()
     
     local mountLabel = leftCol:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mountLabel:SetPoint("LEFT", mountCb, "RIGHT", 6, 0)
-    mountLabel:SetText("Disable while mounted/flying")
+    mountLabel:SetText(L["Disable while mounted/flying"])
     mountLabel:SetTextColor(C.text.r, C.text.g, C.text.b)
     
     -- Define methods first
@@ -341,8 +343,8 @@ function CC:CreateProfilesPanelContent()
     mountCb:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Disable While Mounted", 1, 1, 1)
-        GameTooltip:AddLine("When enabled, click-casting bindings will be", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine(L["Disable While Mounted"], 1, 1, 1)
+        GameTooltip:AddLine(L["When enabled, click-casting bindings will be"], 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine("temporarily disabled while you are mounted", 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine("or in druid flight form.", 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine(" ", 0.7, 0.7, 0.7)
@@ -360,7 +362,7 @@ function CC:CreateProfilesPanelContent()
     -- ===== RIGHT COLUMN: Loadout Assignments =====
     local loadoutLabel = rightCol:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     loadoutLabel:SetPoint("TOPLEFT", 0, 0)
-    loadoutLabel:SetText("LOADOUT ASSIGNMENTS")
+    loadoutLabel:SetText(L["LOADOUT ASSIGNMENTS"])
     loadoutLabel:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
     
     local loadoutContainer = CreateFrame("Frame", nil, rightCol, "BackdropTemplate")
@@ -476,7 +478,7 @@ function CC:RefreshProfilesPanel()
         
         local countText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         countText:SetPoint("RIGHT", -6, 0)
-        countText:SetText(bindCount .. " binds")
+        countText:SetText(format(L["%d binds"], bindCount))
         countText:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
         
         local nameText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -566,17 +568,17 @@ function CC:RefreshProfilesPanel()
         if autoCreate == nil then autoCreate = true end
         
         if isSpecific and assignedProfile and assignedProfile == activeProfile then
-            self.autoLinkInfo:SetText("|cff33cc33[Linked]|r Profile matched to loadout")
+            self.autoLinkInfo:SetText("|cff33cc33" .. L["[Linked]|r Profile matched to loadout"])
         elseif isSpecific and assignedProfile then
-            self.autoLinkInfo:SetText("|cffff9900[Override]|r Loadout expects: " .. assignedProfile)
+            self.autoLinkInfo:SetText("|cffff9900" .. format(L["[Override]|r Loadout expects: %s"], assignedProfile))
         elseif not isSpecific and loadoutID > 0 then
             if autoCreate then
-                self.autoLinkInfo:SetText("|cff888888[Unassigned]|r Will auto-create on switch")
+                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r Will auto-create on switch"])
             else
-                self.autoLinkInfo:SetText("|cff888888[Unassigned]|r Auto-create disabled")
+                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r Auto-create disabled"])
             end
         else
-            self.autoLinkInfo:SetText("|cff888888[Unassigned]|r No loadout detected")
+            self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r No loadout detected"])
         end
     end
 end
@@ -634,7 +636,7 @@ function CC:RefreshLoadoutAssignments()
             local loadouts = self:GetSpecLoadouts(specIndex)
             
             -- Always show spec default row (fallback when no specific loadout matches)
-            local row = self:CreateLoadoutRow(self.loadoutContent, specIndex, 0, "Spec Default", profiles, yOffset)
+            local row = self:CreateLoadoutRow(self.loadoutContent, specIndex, 0, L["Spec Default"], profiles, yOffset)
             yOffset = yOffset + 24
             
             -- Show individual loadout rows if any exist
@@ -691,7 +693,7 @@ function CC:CreateLoadoutRow(parent, specIndex, configID, loadoutName, profiles,
     dropText:SetPoint("RIGHT", -14, 0)
     dropText:SetJustifyH("LEFT")
     dropText:SetWordWrap(false)
-    local displayText = assignedProfile and TruncText(assignedProfile, 14) or "Not Set"
+    local displayText = assignedProfile and TruncText(assignedProfile, 14) or L["Not Set"]
     dropText:SetText(displayText)
     dropText:SetTextColor(assignedProfile and themeColor.r or C.textDim.r, assignedProfile and themeColor.g or C.textDim.g, assignedProfile and themeColor.b or C.textDim.b)
     
@@ -830,17 +832,17 @@ function CC:CreateLoadoutRow(parent, specIndex, configID, loadoutName, profiles,
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
         if assignedProfile then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Profile: " .. assignedProfile, 1, 1, 1)
-            GameTooltip:AddLine("Click to change assignment", 0.7, 0.7, 0.7)
+            GameTooltip:SetText(format(L["Profile: %s"], assignedProfile), 1, 1, 1)
+            GameTooltip:AddLine(L["Click to change assignment"], 0.7, 0.7, 0.7)
             GameTooltip:Show()
         else
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             if configID == 0 then
-                GameTooltip:SetText("No default profile set", 1, 1, 1)
+                GameTooltip:SetText(L["No default profile set"], 1, 1, 1)
                 GameTooltip:AddLine("Click to assign a profile that activates", 0.7, 0.7, 0.7)
                 GameTooltip:AddLine("when switching to this spec", 0.7, 0.7, 0.7)
             else
-                GameTooltip:SetText("Using spec default", 1, 1, 1)
+                GameTooltip:SetText(L["Using spec default"], 1, 1, 1)
                 GameTooltip:AddLine("Click to assign a specific profile", 0.7, 0.7, 0.7)
             end
             GameTooltip:Show()
@@ -878,9 +880,9 @@ CC.ShowPopupOnTop = ShowPopupOnTop
 
 function CC:ShowNewProfileDialog()
     StaticPopupDialogs["DFCC_NEW_PROFILE"] = {
-        text = "Enter new profile name:",
-        button1 = "Create",
-        button2 = "Cancel",
+        text = L["Enter new profile name:"],
+        button1 = L["Create"],
+        button2 = L["Cancel"],
         hasEditBox = true,
         editBoxWidth = 200,
         OnAccept = function(self)
@@ -905,9 +907,9 @@ end
 
 function CC:ShowCopyProfileDialog(sourceName)
     StaticPopupDialogs["DFCC_COPY_PROFILE"] = {
-        text = "Enter name for copy of '" .. sourceName .. "':",
-        button1 = "Copy",
-        button2 = "Cancel",
+        text = format(L["Enter name for copy of '%s':"], sourceName),
+        button1 = L["Copy"],
+        button2 = L["Cancel"],
         hasEditBox = true,
         editBoxWidth = 200,
         OnAccept = function(self)
@@ -933,9 +935,9 @@ end
 
 function CC:ShowRenameProfileDialog(oldName)
     StaticPopupDialogs["DFCC_RENAME_PROFILE"] = {
-        text = "Enter new name for '" .. oldName .. "':",
-        button1 = "Rename",
-        button2 = "Cancel",
+        text = format(L["Enter new name for '%s':"], oldName),
+        button1 = L["Rename"],
+        button2 = L["Cancel"],
         hasEditBox = true,
         editBoxWidth = 200,
         OnAccept = function(self)
@@ -962,9 +964,9 @@ end
 
 function CC:ShowDeleteProfileDialog(profileName)
     StaticPopupDialogs["DFCC_DELETE_PROFILE"] = {
-        text = "Delete profile '" .. profileName .. "'?\n\nThis cannot be undone.",
-        button1 = "Delete",
-        button2 = "Cancel",
+        text = format(L["Delete profile '%s'?\n\nThis cannot be undone."], profileName),
+        button1 = L["Delete"],
+        button2 = L["Cancel"],
         OnAccept = function()
             if CC:DeleteProfile(profileName) then
                 CC.selectedProfileName = nil
@@ -989,9 +991,9 @@ function CC:ShowClearAllConfirmation()
     end
     
     StaticPopupDialogs["DFCC_CLEAR_ALL_BINDINGS"] = {
-        text = "Reset all bindings to defaults?\n\nThis will set:\n• Left Click = Target Unit\n• Right Click = Open Menu\n\n|cffff6666This cannot be undone.|r",
-        button1 = "Reset to Defaults",
-        button2 = "Cancel",
+        text = L["Reset all bindings to defaults?\n\nThis will set:\n• Left Click = Target Unit\n• Right Click = Open Menu\n\n|cffff6666This cannot be undone.|r"],
+        button1 = L["Reset to Defaults"],
+        button2 = L["Cancel"],
         OnAccept = function()
             CC:ResetBindingsToDefaults()
         end,
@@ -1063,8 +1065,8 @@ function CC:ShowExportDialog()
     if not exportString or exportString == "" then
         -- Error message already printed by ExportProfile
         StaticPopupDialogs["DFCC_EXPORT_ERROR"] = {
-            text = "Export failed. Please try again or check for errors.",
-            button1 = "OK",
+            text = L["Export failed. Please try again or check for errors."],
+            button1 = L["OK"],
             timeout = 0,
             whileDead = true,
             hideOnEscape = true,
@@ -1075,8 +1077,8 @@ function CC:ShowExportDialog()
     end
     
     StaticPopupDialogs["DFCC_EXPORT_PROFILE"] = {
-        text = "Copy this string to share your profile:",
-        button1 = "Done",
+        text = L["Copy this string to share your profile:"],
+        button1 = L["Done"],
         hasEditBox = true,
         editBoxWidth = 350,
         OnShow = function(self)
@@ -1097,9 +1099,9 @@ end
 
 function CC:ShowImportDialog()
     StaticPopupDialogs["DFCC_IMPORT_PROFILE"] = {
-        text = "Paste a profile string to import:",
-        button1 = "Import",
-        button2 = "Cancel",
+        text = L["Paste a profile string to import:"],
+        button1 = L["Import"],
+        button2 = L["Cancel"],
         hasEditBox = true,
         editBoxWidth = 350,
         OnAccept = function(self)

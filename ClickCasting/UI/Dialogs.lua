@@ -2,6 +2,8 @@ local addonName, DF = ...
 
 -- Get module namespace
 local CC = DF.ClickCast
+local L = DF.L
+local format = string.format
 
 -- Local aliases for shared constants (defined in Constants.lua)
 local PROFILE_TEMPLATE = CC.PROFILE_TEMPLATE
@@ -103,7 +105,7 @@ local function CreateImportPopup()
     
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("CENTER")
-    title:SetText("Import Click Casting Profile")
+    title:SetText(L["Import Click Casting Profile"])
     title:SetTextColor(POPUP_COLORS.text.r, POPUP_COLORS.text.g, POPUP_COLORS.text.b)
     frame.title = title
     
@@ -187,7 +189,7 @@ local function CreateImportPopup()
     
     local validLabel = validPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     validLabel:SetPoint("LEFT", validIcon, "RIGHT", 4, 0)
-    validLabel:SetText("Compatible Bindings")
+    validLabel:SetText(L["Compatible Bindings"])
     validLabel:SetTextColor(POPUP_COLORS.green.r, POPUP_COLORS.green.g, POPUP_COLORS.green.b)
     
     local validScroll = CreateFrame("ScrollFrame", nil, validPanel, "UIPanelScrollFrameTemplate")
@@ -221,7 +223,7 @@ local function CreateImportPopup()
     
     local invalidLabel = invalidPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     invalidLabel:SetPoint("LEFT", invalidIcon, "RIGHT", 4, 0)
-    invalidLabel:SetText("Incompatible Bindings")
+    invalidLabel:SetText(L["Incompatible Bindings"])
     invalidLabel:SetTextColor(POPUP_COLORS.red.r, POPUP_COLORS.red.g, POPUP_COLORS.red.b)
     
     local invalidScroll = CreateFrame("ScrollFrame", nil, invalidPanel, "UIPanelScrollFrameTemplate")
@@ -270,7 +272,7 @@ local function CreateImportPopup()
     local startX = -totalWidth / 2 + btnWidth / 2
     
     -- Import All button
-    local importAllBtn = CreateStyledButton(frame, "Import All", btnWidth, 30)
+    local importAllBtn = CreateStyledButton(frame, L["Import All"], btnWidth, 30)
     importAllBtn:SetPoint("BOTTOM", frame, "BOTTOM", startX, 18)
     importAllBtn:SetScript("OnClick", function()
         if pendingImportCallback then
@@ -281,7 +283,7 @@ local function CreateImportPopup()
     frame.importAllBtn = importAllBtn
     
     -- Import Compatible button
-    local importCompatibleBtn = CreateStyledButton(frame, "Compatible Only", btnWidth, 30)
+    local importCompatibleBtn = CreateStyledButton(frame, L["Compatible Only"], btnWidth, 30)
     importCompatibleBtn:SetPoint("BOTTOM", frame, "BOTTOM", startX + btnWidth + btnSpacing, 18)
     importCompatibleBtn:SetScript("OnClick", function()
         if pendingImportCallback then
@@ -292,7 +294,7 @@ local function CreateImportPopup()
     frame.importCompatibleBtn = importCompatibleBtn
     
     -- Cancel button
-    local cancelBtn = CreateStyledButton(frame, "Cancel", btnWidth, 30)
+    local cancelBtn = CreateStyledButton(frame, L["Cancel"], btnWidth, 30)
     cancelBtn:SetPoint("BOTTOM", frame, "BOTTOM", startX + (btnWidth + btnSpacing) * 2, 18)
     cancelBtn:SetScript("OnClick", function()
         if pendingImportCallback then
@@ -402,9 +404,9 @@ local function PopulateImportPopup(validBindings, invalidBindings, sourceClass, 
     -- Set warning text
     local currentClass = GetPlayerClass()
     if sourceClass and sourceClass ~= currentClass then
-        frame.warning:SetText("This profile was created for |cffffffff" .. sourceClass .. "|r.\nSome bindings may not be compatible with |cffffffff" .. currentClass .. "|r.")
+        frame.warning:SetText(format(L["This profile was created for |cffffffff%s|r.\nSome bindings may not be compatible with |cffffffff%s|r."], sourceClass, currentClass))
     else
-        frame.warning:SetText("Some bindings use spells that are not available\nto your current class or specialization.")
+        frame.warning:SetText(L["Some bindings use spells that are not available\nto your current class or specialization."])
     end
     
     -- Helper to create a colored dot texture
@@ -476,20 +478,20 @@ local function PopulateImportPopup(validBindings, invalidBindings, sourceClass, 
     local invalidCount = #invalidBindings
     local totalCount = validCount + invalidCount
     
-    frame.summary:SetText(string.format(
-        "Profile: |cffffffff%s|r\n|cff33ee33%d compatible|r   |cffee3333%d incompatible|r   |cff888888%d total|r",
+    frame.summary:SetText(format(
+        L["Profile: |cffffffff%s|r\n|cff33ee33%d compatible|r   |cffee3333%d incompatible|r   |cff888888%d total|r"],
         profileName or "Imported",
         validCount, invalidCount, totalCount
     ))
-    
+
     -- Update button text
     if invalidCount == 0 then
-        frame.importAllBtn.label:SetText("Import All")
+        frame.importAllBtn.label:SetText(L["Import All"])
         frame.importCompatibleBtn:SetAlpha(0.5)
         frame.importCompatibleBtn:Disable()
     else
-        frame.importAllBtn.label:SetText("Import All (" .. totalCount .. ")")
-        frame.importCompatibleBtn.label:SetText("Compatible (" .. validCount .. ")")
+        frame.importAllBtn.label:SetText(format(L["Import All (%d)"], totalCount))
+        frame.importCompatibleBtn.label:SetText(format(L["Compatible (%d)"], validCount))
         frame.importCompatibleBtn:SetAlpha(1)
         frame.importCompatibleBtn:Enable()
     end
@@ -714,7 +716,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Click-Casting Addon Conflict")
+    title:SetText(L["Click-Casting Addon Conflict"])
     title:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     popup.title = title
     
@@ -724,7 +726,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     msg:SetPoint("LEFT", 20, 0)
     msg:SetPoint("RIGHT", -20, 0)
     msg:SetJustifyH("CENTER")
-    msg:SetText(conflictList .. " detected.\n\nWhich click-casting addon would you like to use?")
+    msg:SetText(format(L["%s detected.\n\nWhich click-casting addon would you like to use?"], conflictList))
     msg:SetTextColor(1, 1, 1)
     popup.msg = msg
     
@@ -734,7 +736,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     warning:SetPoint("LEFT", 20, 0)
     warning:SetPoint("RIGHT", -20, 0)
     warning:SetJustifyH("CENTER")
-    warning:SetText("Selecting an option will disable the other addon(s)\nand reload your UI.")
+    warning:SetText(L["Selecting an option will disable the other addon(s)\nand reload your UI."])
     warning:SetTextColor(0.7, 0.7, 0.7)
     popup.warning = warning
     
@@ -778,7 +780,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     end
     
     -- DandersFrames button (primary)
-    local dfBtn = CreateChoiceButton(popup, "Use DandersFrames", -20, true)
+    local dfBtn = CreateChoiceButton(popup, L["Use DandersFrames"], -20, true)
     dfBtn:SetScript("OnClick", function()
         -- Disable conflicting addons
         for _, addonName in ipairs(conflicts) do
@@ -803,7 +805,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     popup.dfBtn = dfBtn
     
     -- Conflicting addon button
-    local otherBtn = CreateChoiceButton(popup, "Use " .. conflicts[1], -55, false)
+    local otherBtn = CreateChoiceButton(popup, format(L["Use %s"], conflicts[1]), -55, false)
     otherBtn:SetScript("OnClick", function()
         -- Disable DandersFrames click casting
         CC.db.enabled = false
@@ -824,7 +826,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     popup.otherBtn = otherBtn
     
     -- Cancel button
-    local cancelBtn = CreateChoiceButton(popup, "Cancel", -90, false)
+    local cancelBtn = CreateChoiceButton(popup, L["Cancel"], -90, false)
     cancelBtn:SetSize(100, 26)
     cancelBtn:SetScript("OnClick", function()
         -- Revert checkbox state
@@ -836,7 +838,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
     popup.cancelBtn = cancelBtn
     
     -- Ignore button (next to Cancel) - both centered as a group
-    local ignoreBtn = CreateChoiceButton(popup, "Ignore", -90, false)
+    local ignoreBtn = CreateChoiceButton(popup, L["Ignore"], -90, false)
     ignoreBtn:SetSize(100, 26)
     ignoreBtn:SetBackdropColor(0.3, 0.2, 0.1, 1)
     ignoreBtn:SetBackdropBorderColor(0.6, 0.4, 0.1, 1)
@@ -856,12 +858,12 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
             confirmationState = true
             
             -- Update popup to show warning
-            title:SetText("Are you sure?")
+            title:SetText(L["Are you sure?"])
             title:SetTextColor(1, 0.6, 0.2)
             
-            msg:SetText("Having multiple click-casting addons enabled\nmay cause conflicts and unexpected behavior.\n\n|cffff6600Use at your own risk!|r")
+            msg:SetText(L["Having multiple click-casting addons enabled\nmay cause conflicts and unexpected behavior.\n\n|cffff6600Use at your own risk!|r"])
             
-            warning:SetText("This warning will not appear again after confirming.")
+            warning:SetText(L["This warning will not appear again after confirming."])
             warning:SetTextColor(1, 0.8, 0.3)
             
             -- Hide the main buttons
@@ -869,8 +871,8 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
             otherBtn:Hide()
             
             -- Update buttons
-            cancelBtn.label:SetText("Go Back")
-            ignoreBtn.label:SetText("Confirm")
+            cancelBtn.label:SetText(L["Go Back"])
+            ignoreBtn.label:SetText(L["Confirm"])
             ignoreBtn:SetBackdropColor(0.5, 0.2, 0.1, 1)
             ignoreBtn:SetBackdropBorderColor(0.8, 0.3, 0.1, 1)
         else
@@ -892,19 +894,19 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
             -- Go back to normal state
             confirmationState = false
             
-            title:SetText("Click-Casting Addon Conflict")
+            title:SetText(L["Click-Casting Addon Conflict"])
             title:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
             
-            msg:SetText(conflictList .. " detected.\n\nWhich click-casting addon would you like to use?")
+            msg:SetText(format(L["%s detected.\n\nWhich click-casting addon would you like to use?"], conflictList))
             
-            warning:SetText("Selecting an option will disable the other addon(s)\nand reload your UI.")
+            warning:SetText(L["Selecting an option will disable the other addon(s)\nand reload your UI."])
             warning:SetTextColor(0.7, 0.7, 0.7)
             
             dfBtn:Show()
             otherBtn:Show()
             
-            cancelBtn.label:SetText("Cancel")
-            ignoreBtn.label:SetText("Ignore")
+            cancelBtn.label:SetText(L["Cancel"])
+            ignoreBtn.label:SetText(L["Ignore"])
             ignoreBtn:SetBackdropColor(0.3, 0.2, 0.1, 1)
             ignoreBtn:SetBackdropBorderColor(0.6, 0.4, 0.1, 1)
         else
@@ -982,7 +984,7 @@ function CC:ShowBlizzardClickCastWarning(enableCheckbox, onConfirm)
     -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Blizzard Click-Casting")
+    title:SetText(L["Blizzard Click-Casting"])
     title:SetTextColor(1, 0.8, 0.2)  -- Yellow/orange warning color
     
     -- Message
@@ -991,7 +993,7 @@ function CC:ShowBlizzardClickCastWarning(enableCheckbox, onConfirm)
     msg:SetPoint("LEFT", 25, 0)
     msg:SetPoint("RIGHT", -25, 0)
     msg:SetJustifyH("CENTER")
-    msg:SetText("Blizzard's built-in click-casting may conflict with\nDandersFrames click-casting settings.\n\nWe recommend clearing Blizzard's bindings from\nframes where you use DandersFrames bindings.")
+    msg:SetText(L["Blizzard's built-in click-casting may conflict with\nDandersFrames click-casting settings.\n\nWe recommend clearing Blizzard's bindings from\nframes where you use DandersFrames bindings."])
     msg:SetTextColor(0.9, 0.9, 0.9)
     
     -- Helper function to create buttons
@@ -1033,7 +1035,7 @@ function CC:ShowBlizzardClickCastWarning(enableCheckbox, onConfirm)
     end
     
     -- "Clear Blizzard Bindings" button (primary)
-    local clearBtn = CreateButton(popup, "Clear Blizzard Bindings", true)
+    local clearBtn = CreateButton(popup, L["Clear Blizzard Bindings"], true)
     clearBtn:SetPoint("BOTTOMLEFT", 25, 20)
     clearBtn:SetScript("OnClick", function()
         -- Reset Blizzard's click-casting profile to default (removes all custom bindings)
@@ -1055,7 +1057,7 @@ function CC:ShowBlizzardClickCastWarning(enableCheckbox, onConfirm)
     end)
     
     -- "Ignore" button
-    local ignoreBtn = CreateButton(popup, "Ignore", false)
+    local ignoreBtn = CreateButton(popup, L["Ignore"], false)
     ignoreBtn:SetPoint("BOTTOMRIGHT", -25, 20)
     ignoreBtn:SetScript("OnClick", function()
         -- Just proceed without clearing
@@ -1096,7 +1098,7 @@ function CC:ShowBlizzardClickCastWarning(enableCheckbox, onConfirm)
     
     local dontShowLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     dontShowLabel:SetPoint("LEFT", dontShowCb, "RIGHT", 5, 0)
-    dontShowLabel:SetText("Don't show this warning again")
+    dontShowLabel:SetText(L["Don't show this warning again"])
     dontShowLabel:SetTextColor(0.6, 0.6, 0.6)
     
     -- Close button
@@ -1168,12 +1170,12 @@ function CC:ShowMacroEditorDialog(existingMacro)
     title:SetPoint("TOPLEFT", 12, -12)
     if isEditing then
         if isImported then
-            title:SetText("View Imported Macro")
+            title:SetText(L["View Imported Macro"])
         else
-            title:SetText("Edit Macro")
+            title:SetText(L["Edit Macro"])
         end
     else
-        title:SetText("Create Custom Macro")
+        title:SetText(L["Create Custom Macro"])
     end
     title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
@@ -1252,7 +1254,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
     -- Name label
     local nameLabel = macroEditorDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameLabel:SetPoint("TOPLEFT", iconBtn, "TOPRIGHT", 10, -2)
-    nameLabel:SetText("Name:")
+    nameLabel:SetText(L["Name:"])
     nameLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Name input
@@ -1279,7 +1281,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
     -- Body label
     local bodyLabel = macroEditorDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bodyLabel:SetPoint("TOPLEFT", 12, -105)
-    bodyLabel:SetText("Macro Text:")
+    bodyLabel:SetText(L["Macro Text:"])
     bodyLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Character count
@@ -1345,7 +1347,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
     cancelBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     cancelBtn:SetScript("OnClick", function() thisDialog:Hide() end)
     cancelBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(C_ELEMENT.r + 0.1, C_ELEMENT.g + 0.1, C_ELEMENT.b + 0.1, 1) end)
@@ -1365,13 +1367,13 @@ function CC:ShowMacroEditorDialog(existingMacro)
         deleteBtn:SetBackdropBorderColor(0.6, 0.2, 0.2, 1)
         local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         deleteText:SetPoint("CENTER")
-        deleteText:SetText("Delete")
+        deleteText:SetText(L["Delete"])
         deleteText:SetTextColor(1, 0.5, 0.5)
         deleteBtn:SetScript("OnClick", function()
             StaticPopupDialogs["DF_CONFIRM_DELETE_MACRO"] = {
-                text = "Delete macro '" .. existingMacro.name .. "'?\nAny bindings using this macro will be removed.",
-                button1 = "Delete",
-                button2 = "Cancel",
+                text = format(L["Delete macro '%s'?\nAny bindings using this macro will be removed."], existingMacro.name),
+                button1 = L["Delete"],
+                button2 = L["Cancel"],
                 OnAccept = function()
                     CC:DeleteMacro(existingMacro.id)
                     CC:RefreshSpellGrid()
@@ -1403,13 +1405,13 @@ function CC:ShowMacroEditorDialog(existingMacro)
         deleteBtn:SetBackdropBorderColor(0.6, 0.2, 0.2, 1)
         local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         deleteText:SetPoint("CENTER")
-        deleteText:SetText("Delete")
+        deleteText:SetText(L["Delete"])
         deleteText:SetTextColor(1, 0.5, 0.5)
         deleteBtn:SetScript("OnClick", function()
             StaticPopupDialogs["DF_CONFIRM_DELETE_IMPORTED_MACRO"] = {
-                text = "Delete imported macro '" .. existingMacro.name .. "'?\nAny bindings using this macro will be removed.\n\n(The original WoW macro will not be affected)",
-                button1 = "Delete",
-                button2 = "Cancel",
+                text = format(L["Delete imported macro '%s'?\nAny bindings using this macro will be removed.\n\n(The original WoW macro will not be affected)"], existingMacro.name),
+                button1 = L["Delete"],
+                button2 = L["Cancel"],
                 OnAccept = function()
                     CC:DeleteMacro(existingMacro.id)
                     CC:RefreshSpellGrid()
@@ -1438,7 +1440,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
         syncBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
         local syncText = syncBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         syncText:SetPoint("CENTER")
-        syncText:SetText("Sync from WoW")
+        syncText:SetText(L["Sync from WoW"])
         syncText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         syncBtn:SetScript("OnClick", function()
             local success, msg = CC:SyncImportedMacro(existingMacro.id)
@@ -1464,7 +1466,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
         convertBtn:SetBackdropBorderColor(themeColor.r * 0.6, themeColor.g * 0.6, themeColor.b * 0.6, 1)
         local convertText = convertBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         convertText:SetPoint("CENTER")
-        convertText:SetText("Edit Copy")
+        convertText:SetText(L["Edit Copy"])
         convertText:SetTextColor(1, 1, 1)
         convertBtn:SetScript("OnClick", function()
             CC:ConvertToCustomMacro(existingMacro.id)
@@ -1487,7 +1489,7 @@ function CC:ShowMacroEditorDialog(existingMacro)
         saveBtn:SetBackdropBorderColor(themeColor.r * 0.6, themeColor.g * 0.6, themeColor.b * 0.6, 1)
         local saveText = saveBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         saveText:SetPoint("CENTER")
-        saveText:SetText("Save")
+        saveText:SetText(L["Save"])
         saveText:SetTextColor(1, 1, 1)
         saveBtn:SetScript("OnClick", function()
             local name = nameInput:GetText():trim()
@@ -1567,7 +1569,7 @@ function CC:ShowIconPickerDialog(onSelect)
     -- Title
     local title = iconPickerDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
-    title:SetText("Choose Icon")
+    title:SetText(L["Choose Icon"])
     title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     -- Close button
@@ -1632,7 +1634,7 @@ function CC:ShowIconPickerDialog(onSelect)
     -- Manual ID input
     local idLabel = iconPickerDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     idLabel:SetPoint("BOTTOMLEFT", 12, 50)
-    idLabel:SetText("Or enter Icon ID:")
+    idLabel:SetText(L["Or enter Icon ID:"])
     idLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local idInput = CreateFrame("EditBox", nil, iconPickerDialog, "BackdropTemplate")
@@ -1663,7 +1665,7 @@ function CC:ShowIconPickerDialog(onSelect)
     useIdBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local useIdText = useIdBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     useIdText:SetPoint("CENTER")
-    useIdText:SetText("Use")
+    useIdText:SetText(L["Use"])
     useIdText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     useIdBtn:SetScript("OnClick", function()
         local id = tonumber(idInput:GetText())
@@ -1686,7 +1688,7 @@ function CC:ShowIconPickerDialog(onSelect)
     cancelBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     cancelBtn:SetScript("OnClick", function() iconPickerDialog:Hide() end)
     
@@ -1733,7 +1735,7 @@ function CC:ShowImportMacroDialog()
     -- Title
     local title = importMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
-    title:SetText("Import WoW Macros")
+    title:SetText(L["Import WoW Macros"])
     title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     -- Close button
@@ -1826,7 +1828,7 @@ function CC:ShowImportMacroDialog()
     local function UpdateSelectedCount()
         local count = 0
         for _ in pairs(selectedMacros) do count = count + 1 end
-        selectedCount:SetText("Selected: " .. count)
+        selectedCount:SetText(format(L["Selected: %d"], count))
     end
     
     local function RefreshMacroList()
@@ -1941,7 +1943,7 @@ function CC:ShowImportMacroDialog()
     cancelBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     cancelBtn:SetScript("OnClick", function() thisDialog:Hide() end)
     
@@ -1958,7 +1960,7 @@ function CC:ShowImportMacroDialog()
     importAllBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local importAllText = importAllBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     importAllText:SetPoint("CENTER")
-    importAllText:SetText("Import All")
+    importAllText:SetText(L["Import All"])
     importAllText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     importAllBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 1)
@@ -2017,7 +2019,7 @@ function CC:ShowImportMacroDialog()
     importBtn:SetBackdropBorderColor(themeColor.r * 0.6, themeColor.g * 0.6, themeColor.b * 0.6, 1)
     local importText = importBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     importText:SetPoint("CENTER")
-    importText:SetText("Import")
+    importText:SetText(L["Import"])
     importText:SetTextColor(1, 1, 1)
     importBtn:SetScript("OnClick", function()
         local imported = 0
@@ -2089,7 +2091,7 @@ function CC:ShowQuickMacroDialog()
     -- Title
     local title = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
-    title:SetText("Quick Macro Builder")
+    title:SetText(L["Quick Macro Builder"])
     title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     -- Close button
@@ -2121,7 +2123,7 @@ function CC:ShowQuickMacroDialog()
     -- Spell search
     local spellLabel = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     spellLabel:SetPoint("TOPLEFT", 12, -40)
-    spellLabel:SetText("Spell:")
+    spellLabel:SetText(L["Spell:"])
     spellLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local spellInput = CreateFrame("EditBox", nil, quickMacroDialog, "BackdropTemplate")
@@ -2149,7 +2151,7 @@ function CC:ShowQuickMacroDialog()
     -- Pattern selection
     local patternLabel = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     patternLabel:SetPoint("TOPLEFT", 12, -95)
-    patternLabel:SetText("Pattern:")
+    patternLabel:SetText(L["Pattern:"])
     patternLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local patterns = {
@@ -2240,7 +2242,7 @@ function CC:ShowQuickMacroDialog()
     end)
     local tooltipLabel = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     tooltipLabel:SetPoint("LEFT", tooltipCb, "RIGHT", 4, 0)
-    tooltipLabel:SetText("Add #showtooltip")
+    tooltipLabel:SetText(L["Add #showtooltip"])
     tooltipLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     local stopCb = CreateFrame("CheckButton", nil, quickMacroDialog, "UICheckButtonTemplate")
@@ -2253,14 +2255,14 @@ function CC:ShowQuickMacroDialog()
     end)
     local stopLabel = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     stopLabel:SetPoint("LEFT", stopCb, "RIGHT", 4, 0)
-    stopLabel:SetText("Add /stopcasting")
+    stopLabel:SetText(L["Add /stopcasting"])
     stopLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     -- Preview
     yOffset = yOffset - 35
     local previewLabel = quickMacroDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     previewLabel:SetPoint("TOPLEFT", 12, yOffset)
-    previewLabel:SetText("Preview:")
+    previewLabel:SetText(L["Preview:"])
     previewLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local previewBg = CreateFrame("Frame", nil, quickMacroDialog, "BackdropTemplate")
@@ -2280,7 +2282,7 @@ function CC:ShowQuickMacroDialog()
     previewText:SetJustifyH("LEFT")
     previewText:SetJustifyV("TOP")
     previewText:SetTextColor(0.7, 0.7, 0.7)
-    previewText:SetText("Enter a spell name above...")
+    previewText:SetText(L["Enter a spell name above..."])
     quickMacroDialog.previewText = previewText
     
     -- Spell input handling
@@ -2289,7 +2291,7 @@ function CC:ShowQuickMacroDialog()
         if text == "" then
             selectedSpell = nil
             spellIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-            previewText:SetText("Enter a spell name above...")
+            previewText:SetText(L["Enter a spell name above..."])
             return
         end
         
@@ -2319,7 +2321,7 @@ function CC:ShowQuickMacroDialog()
     cancelBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     cancelBtn:SetScript("OnClick", function() thisDialog:Hide() end)
     
@@ -2336,7 +2338,7 @@ function CC:ShowQuickMacroDialog()
     createBtn:SetBackdropBorderColor(themeColor.r * 0.6, themeColor.g * 0.6, themeColor.b * 0.6, 1)
     local createText = createBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     createText:SetPoint("CENTER")
-    createText:SetText("Create Macro")
+    createText:SetText(L["Create Macro"])
     createText:SetTextColor(1, 1, 1)
     createBtn:SetScript("OnClick", function()
         if not selectedSpell then
