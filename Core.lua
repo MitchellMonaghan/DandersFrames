@@ -12,6 +12,10 @@ _G[addonName] = DF
 local GetAddOnMetadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
 DF.VERSION = GetAddOnMetadata(addonName, "Version") or "Unknown"
 
+-- Localization
+DF.L = LibStub("AceLocale-3.0"):GetLocale("DandersFrames")
+local L = DF.L
+
 -- Debug flags
 DF.debugEnabled = false
 DF.demoMode = false
