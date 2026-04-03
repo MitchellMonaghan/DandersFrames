@@ -1,6 +1,7 @@
 local addonName, DF = ...
 local GUI = {}
 DF.GUI = GUI
+local L = DF.L
 
 -- =========================================================================
 -- MODERN UI CONSTANTS & STYLING (Matching Original v2.3.8)
@@ -602,7 +603,7 @@ function GUI:CreateSeeAlso(parent, links)
     
     local label = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     label:SetPoint("TOPLEFT", 8, -10)
-    label:SetText("See Also:")
+    label:SetText(L["See Also:"])
     label:SetTextColor(0.7, 0.7, 0.7)
     
     local linkButtons = {}
@@ -807,7 +808,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
         self:SetBackdropBorderColor(1, 0.8, 0.2, 1)
         resetIcon:SetVertexColor(1, 0.8, 0.2)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Reset to Global")
+        GameTooltip:SetText(L["Reset to Global"])
         GameTooltip:Show()
     end)
     resetBtn:SetScript("OnLeave", function(self)
@@ -908,8 +909,8 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
 
         -- Runtime override mode: show star + global value, but no reset button
         if isRuntimeOverridden and not isEditing then
-            self.overrideStar.tooltipText = "Overridden by Auto Layout"
-            self.overrideStar.tooltipSubText = "This setting is being overridden by the active auto layout profile. To change it, edit the profile in the Auto Layouts tab."
+            self.overrideStar.tooltipText = L["Overridden by Auto Layout"]
+            self.overrideStar.tooltipSubText = L["This setting is being overridden by the active auto layout profile. To change it, edit the profile in the Auto Layouts tab."]
             self.overrideStar:Show()
             self.overrideResetBtn:Hide()  -- Can't reset runtime overrides from controls
             self.overrideCheckIcon:Hide()
@@ -919,7 +920,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
             -- Format global value for display
             local globalDisplay
             if type(globalValue) == "boolean" then
-                globalDisplay = globalValue and "Yes" or "No"
+                globalDisplay = globalValue and L["Yes"] or L["No"]
             elseif type(globalValue) == "number" then
                 if globalValue == math.floor(globalValue) then
                     globalDisplay = tostring(globalValue)
@@ -928,7 +929,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
                 end
             elseif type(globalValue) == "table" then
                 if globalValue.r then
-                    globalDisplay = "Color"
+                    globalDisplay = L["Color"]
                 else
                     globalDisplay = "..."
                 end
@@ -940,7 +941,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
                     globalDisplay = tostring(mapped)
                 end
             else
-                globalDisplay = tostring(globalValue or "None")
+                globalDisplay = tostring(globalValue or L["None"])
             end
 
             self.overrideGlobalText:SetText("(Global: " .. globalDisplay .. ")")
@@ -958,8 +959,8 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
 
         -- Show/hide star and reset button
         if isOverridden then
-            self.overrideStar.tooltipText = "Overridden in this layout"
-            self.overrideStar.tooltipSubText = "This setting differs from the global profile value. Click the reset button to revert."
+            self.overrideStar.tooltipText = L["Overridden in this layout"]
+            self.overrideStar.tooltipSubText = L["This setting differs from the global profile value. Click the reset button to revert."]
             self.overrideStar:Show()
             self.overrideResetBtn:Show()
         else
@@ -970,7 +971,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
         -- Format global value for display
         local globalDisplay
         if type(globalValue) == "boolean" then
-            globalDisplay = globalValue and "Yes" or "No"
+            globalDisplay = globalValue and L["Yes"] or L["No"]
         elseif type(globalValue) == "number" then
             if globalValue == math.floor(globalValue) then
                 globalDisplay = tostring(globalValue)
@@ -992,7 +993,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
                 globalDisplay = tostring(mapped)
             end
         else
-            globalDisplay = tostring(globalValue or "None")
+            globalDisplay = tostring(globalValue or L["None"])
         end
 
         -- Show global value inline with label
@@ -1045,7 +1046,7 @@ local function AddOrderListOverrideIndicators(container, dbKey, onReset)
         self:SetBackdropBorderColor(1, 0.8, 0.2, 1)
         resetIcon:SetVertexColor(1, 0.8, 0.2)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Reset to Global Order")
+        GameTooltip:SetText(L["Reset to Global Order"])
         GameTooltip:Show()
     end)
     resetBtn:SetScript("OnLeave", function(self)
@@ -1091,7 +1092,7 @@ local function AddOrderListOverrideIndicators(container, dbKey, onReset)
     -- "Modified" text to the left of star
     local modifiedText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     modifiedText:SetPoint("RIGHT", starIcon, "LEFT", -2, 0)
-    modifiedText:SetText("Modified")
+    modifiedText:SetText(L["Modified"])
     modifiedText:SetTextColor(1, 0.8, 0.2, 0.8)
     modifiedText:Hide()
     container.overrideModifiedText = modifiedText
@@ -1130,8 +1131,8 @@ local function AddOrderListOverrideIndicators(container, dbKey, onReset)
         local isOverridden = AutoProfilesUI:IsSettingOverridden(dbKey)
         
         if isOverridden then
-            self.overrideStar.tooltipText = "Overridden in this layout"
-            self.overrideStar.tooltipSubText = "This setting differs from the global profile value. Click the reset button to revert."
+            self.overrideStar.tooltipText = L["Overridden in this layout"]
+            self.overrideStar.tooltipSubText = L["This setting differs from the global profile value. Click the reset button to revert."]
             self.overrideStar:Show()
             self.overrideResetBtn:Show()
             self.overrideModifiedText:Show()
@@ -1931,7 +1932,7 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
             if type(displayVal) == "table" then
                 displayVal = displayVal.text or displayVal.label or tostring(val)
             end
-            btn.Text:SetText(displayVal or tostring(val) or "Select...")
+            btn.Text:SetText(displayVal or tostring(val) or L["Select..."])
             -- Update override indicators
             if container.UpdateOverrideIndicators then
                 container:UpdateOverrideIndicators(val)
@@ -2252,7 +2253,7 @@ function GUI:CreateGrowthControl(parent, db, dbKey, callback)
 
             -- Update displayed text
             local curVal = getValue()
-            btn.Text:SetText(newOptions[curVal] or tostring(curVal) or "Select...")
+            btn.Text:SetText(newOptions[curVal] or tostring(curVal) or L["Select..."])
         end
 
         btn:SetScript("OnEnter", function(self)
@@ -2405,7 +2406,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
                 -- Use robust SharedMedia lookup
                 displayName = DF:GetTextureNameFromPath(val)
             end
-            btn.Text:SetText(displayName or "Select...")
+            btn.Text:SetText(displayName or L["Select..."])
             -- Handle "Solid" special case (not a valid texture path)
             if val == "Solid" then
                 btn.Preview:SetColorTexture(0.3, 0.3, 0.3, 1)
@@ -2447,7 +2448,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     -- Placeholder text
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     placeholder:SetPoint("LEFT", 24, 0)
-    placeholder:SetText("Search textures...")
+    placeholder:SetText(L["Search textures..."])
     placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
     
     searchBox:SetScript("OnEditFocusGained", function() placeholder:Hide() end)
@@ -2706,7 +2707,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
             local val = dbTable[dbKey]
             -- Get font display name (handles both names and legacy paths)
             local displayName = DF:GetFontNameFromPath(val)
-            btn.Text:SetText(displayName or "Select...")
+            btn.Text:SetText(displayName or L["Select..."])
             -- Try to set the button text to the selected font for preview
             local fontPath = DF:GetFontPath(val)
             if fontPath then
@@ -2751,7 +2752,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     -- Placeholder text
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     placeholder:SetPoint("LEFT", 24, 0)
-    placeholder:SetText("Search fonts...")
+    placeholder:SetText(L["Search fonts..."])
     placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
     
     searchBox:SetScript("OnEditFocusGained", function() placeholder:Hide() end)
@@ -2996,7 +2997,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     local function UpdateText()
         if dbTable and dbKey then
             local val = dbTable[dbKey]
-            btn.Text:SetText(val or "Select...")
+            btn.Text:SetText(val or L["Select..."])
         end
     end
 
@@ -3031,7 +3032,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     -- Placeholder text
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     searchPlaceholder:SetPoint("LEFT", 24, 0)
-    searchPlaceholder:SetText("Search sounds...")
+    searchPlaceholder:SetText(L["Search sounds..."])
     searchPlaceholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
 
     searchBox:SetScript("OnEditFocusGained", function() searchPlaceholder:Hide() end)
@@ -4186,7 +4187,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     -- ========== LEFT COLUMN: Group Roster ==========
     local leftHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     leftHeader:SetPoint("TOPLEFT", 0, 0)
-    leftHeader:SetText("Group Roster")
+    leftHeader:SetText(L["Group Roster"])
     leftHeader:SetTextColor(0.7, 0.7, 0.7)
     
     local leftCount = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -4215,7 +4216,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     -- ========== RIGHT COLUMN: Highlighted Units ==========
     local rightHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     rightHeader:SetPoint("TOPLEFT", leftBg, "TOPRIGHT", COL_GAP, 18)
-    rightHeader:SetText("Highlighted Units")
+    rightHeader:SetText(L["Highlighted Units"])
     rightHeader:SetTextColor(0.7, 0.7, 0.7)
     
     local rightCount = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -4539,7 +4540,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
             end
         else
             -- Player not in group
-            nameText:SetText(displayName .. " (offline)")
+            nameText:SetText(displayName .. " " .. L["(offline)"])
             nameText:SetTextColor(0.5, 0.5, 0.5)
             item:SetBackdropColor(0.1, 0.1, 0.1, 0.7)
             grip:SetGripColor(0.35, 0.35, 0.35)
@@ -4758,7 +4759,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     
     clearBtn.text = clearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     clearBtn.text:SetPoint("CENTER")
-    clearBtn.text:SetText("Clear All")
+    clearBtn.text:SetText(L["Clear All"])
     clearBtn.text:SetTextColor(0.8, 0.35, 0.35)
     
     clearBtn:SetScript("OnClick", function()
@@ -4791,7 +4792,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     
     removeOfflineBtn.text = removeOfflineBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     removeOfflineBtn.text:SetPoint("CENTER")
-    removeOfflineBtn.text:SetText("Remove Offline")
+    removeOfflineBtn.text:SetText(L["Remove Offline"])
     removeOfflineBtn.text:SetTextColor(0.7, 0.55, 0.3)
     
     removeOfflineBtn:SetScript("OnClick", function()
@@ -4831,12 +4832,12 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     local themeColor = GetThemeColor()
     local manualHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     manualHeader:SetPoint("TOPLEFT", buttonRow, "BOTTOMLEFT", 0, -12)
-    manualHeader:SetText("Add Offline Player")
+    manualHeader:SetText(L["Add Offline Player"])
     manualHeader:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     
     local manualHelp = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     manualHelp:SetPoint("TOPLEFT", manualHeader, "BOTTOMLEFT", 0, -2)
-    manualHelp:SetText("Pre-configure players before they join the group")
+    manualHelp:SetText(L["Pre-configure players before they join the group"])
     manualHelp:SetTextColor(0.45, 0.45, 0.45)
     
     local manualInput = CreateFrame("EditBox", nil, container, "BackdropTemplate")
@@ -4885,7 +4886,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     
     addManualBtn.text = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     addManualBtn.text:SetPoint("CENTER")
-    addManualBtn.text:SetText("Add")
+    addManualBtn.text:SetText(L["Add"])
     addManualBtn.text:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     
     addManualBtn:SetScript("OnClick", function()
@@ -4952,7 +4953,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
             if not container.emptyHint then
                 container.emptyHint = rightContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 container.emptyHint:SetPoint("CENTER", rightBg, "CENTER", 0, 0)
-                container.emptyHint:SetText("Add players from the roster\nor use quick add buttons")
+                container.emptyHint:SetText(L["Add players from the roster\nor use quick add buttons"])
                 container.emptyHint:SetTextColor(0.35, 0.35, 0.35)
                 container.emptyHint:SetJustifyH("CENTER")
             end
@@ -5236,7 +5237,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
     btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-    btn.Text:SetText("Select...")
+    btn.Text:SetText(L["Select..."])
 
     btn.Arrow = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btn.Arrow:SetPoint("RIGHT", -6, 0)
@@ -5270,7 +5271,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
 
     searchBox.placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     searchBox.placeholder:SetPoint("LEFT", 6, 0)
-    searchBox.placeholder:SetText("Search...")
+    searchBox.placeholder:SetText(L["Search..."])
     searchBox.placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
 
     -- Scroll frame for menu items
@@ -5458,7 +5459,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
                 return
             end
         end
-        btn.Text:SetText(value and tostring(value) or "Select...")
+        btn.Text:SetText(value and tostring(value) or L["Select..."])
     end
 
     function container:GetValue()
@@ -5584,7 +5585,7 @@ function GUI:CreateKeyValueEditor(parent, width, keyOptionsFunc, onChanged)
 
             row.valueBoolLabel = row.valueFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.valueBoolLabel:SetPoint("LEFT", row.valueCheck, "RIGHT", 4, 0)
-            row.valueBoolLabel:SetText("Enabled")
+            row.valueBoolLabel:SetText(L["Enabled"])
             row.valueBoolLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
             row.valueBoolLabel:Hide()
 
@@ -5704,7 +5705,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
         dd.Text:SetPoint("RIGHT", -14, 0)
         dd.Text:SetJustifyH("LEFT")
         dd.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-        dd.Text:SetText("(none)")
+        dd.Text:SetText(L["(none)"])
 
         dd.Arrow = dd:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         dd.Arrow:SetPoint("RIGHT", -4, 0)
@@ -5749,7 +5750,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
                     b:SetScript("OnLeave", function(self) self:SetBackdropColor(0, 0, 0, 0) end)
                     b:SetScript("OnClick", function(self)
                         dd.value = self.optValue
-                        dd.Text:SetText(self.optValue or "(none)")
+                        dd.Text:SetText(self.optValue or L["(none)"])
                         menu:Hide()
                         CloseOpenDropdown()
                         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
@@ -5783,7 +5784,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
 
         function dd:SetValue(v)
             dd.value = v
-            dd.Text:SetText(v or "(none)")
+            dd.Text:SetText(v or L["(none)"])
         end
 
         return dd
@@ -6157,7 +6158,7 @@ function DF:CreateGUI()
     CreateElementBackdrop(backBtn)
     local backText = backBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     backText:SetPoint("CENTER")
-    backText:SetText("Back")
+    backText:SetText(L["Back"])
     backText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     backBtn:SetScript("OnEnter", function(self)
         local tc = GetThemeColor()
@@ -6170,7 +6171,7 @@ function DF:CreateGUI()
 
     -- Convert markdown changelog to WoW color-coded plain text
     local function FormatChangelog(text)
-        if not text or text == "" then return "No changelog available." end
+        if not text or text == "" then return L["No changelog available."] end
         local tc = GetThemeColor()
         local themeHex = format("%02x%02x%02x", tc.r * 255, tc.g * 255, tc.b * 255)
         local dimHex = format("%02x%02x%02x", C_TEXT_DIM.r * 255, C_TEXT_DIM.g * 255, C_TEXT_DIM.b * 255)
@@ -6270,7 +6271,7 @@ function DF:CreateGUI()
     CreateElementBackdrop(btnParty)
     btnParty.Text = btnParty:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btnParty.Text:SetPoint("CENTER")
-    btnParty.Text:SetText("PARTY")
+    btnParty.Text:SetText(L["PARTY"])
     GUI.PartyButton = btnParty  -- Store for external access
     
     local btnRaid = CreateFrame("Button", nil, frame, "BackdropTemplate")
@@ -6279,7 +6280,7 @@ function DF:CreateGUI()
     CreateElementBackdrop(btnRaid)
     btnRaid.Text = btnRaid:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btnRaid.Text:SetPoint("CENTER")
-    btnRaid.Text:SetText("RAID")
+    btnRaid.Text:SetText(L["RAID"])
     GUI.RaidButton = btnRaid  -- Store for external access
     
     -- Click Casting tab button
@@ -6289,7 +6290,7 @@ function DF:CreateGUI()
     CreateElementBackdrop(btnClicks)
     btnClicks.Text = btnClicks:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btnClicks.Text:SetPoint("CENTER")
-    btnClicks.Text:SetText("BINDS")
+    btnClicks.Text:SetText(L["BINDS"])
     GUI.ClicksButton = btnClicks
     
     -- =========================================================================
@@ -6306,7 +6307,7 @@ function DF:CreateGUI()
     btnTest.Icon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     btnTest.Text = btnTest:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btnTest.Text:SetPoint("LEFT", btnTest.Icon, "RIGHT", 4, 0)
-    btnTest.Text:SetText("Test")
+    btnTest.Text:SetText(L["Test"])
     btnTest.Text:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     GUI.TestButton = btnTest
     
@@ -6376,7 +6377,7 @@ function DF:CreateGUI()
         local isLocked = db and (GUI.SelectedMode == "raid" and db.raidLocked or db.locked)
         local themeColor = GetThemeColor()
         
-        btnLock.Text:SetText(isLocked and "Unlock" or "Lock")
+        btnLock.Text:SetText(isLocked and L["Unlock"] or L["Lock"])
         btnLock.Icon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\" .. (isLocked and "lock" or "lock_open"))
         
         if not isLocked then
@@ -6435,7 +6436,7 @@ function DF:CreateGUI()
     
     local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     scaleLabel:SetPoint("LEFT", 0, 0)
-    scaleLabel:SetText("UI Scale:")
+    scaleLabel:SetText(L["UI Scale:"])
     scaleLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local scaleSlider = CreateFrame("Slider", nil, scaleContainer, "BackdropTemplate")
@@ -6885,7 +6886,7 @@ function DF:CreateGUI()
             
             local hint = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             hint:SetPoint("BOTTOM", 0, 8)
-            hint:SetText("Press Ctrl+C to copy, then Escape to close")
+            hint:SetText(L["Press Ctrl+C to copy, then Escape to close"])
             hint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
             
             GUI.urlPopup = popup
