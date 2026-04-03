@@ -153,13 +153,23 @@ end
 -- Set/create a profile
 function DF:SetProfile(name)
     if not name or name == "" then return end
-    
+
     -- Initialize profiles table if needed
     if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
     if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
-    
+
     -- Save current profile before switching (strips runtime overrides)
     DF:SaveCurrentProfile()
+
+    -- Clear auto-profile runtime state and overlay BEFORE switching profiles
+    -- so FullProfileRefresh reads the clean new profile with no stale overlay
+    if DF.AutoProfilesUI then
+        DF.AutoProfilesUI.activeRuntimeProfile = nil
+        DF.AutoProfilesUI.activeRuntimeContentKey = nil
+        DF.AutoProfilesUI.pendingAutoProfileEval = false
+    end
+    DF.raidOverrides = nil
+    DF:Debug("PROFILE", "SetProfile: cleared runtime state before switching to " .. name)
 
     -- Create new profile if doesn't exist
     if not DandersFramesDB_v2.profiles[name] then
@@ -173,7 +183,7 @@ function DF:SetProfile(name)
         }
         print("|cff00ff00DandersFrames:|r Created new profile: " .. name)
     end
-    
+
     -- Switch to the profile (update both account-wide and per-character)
     DandersFramesDB_v2.currentProfile = name
     if DandersFramesCharDB then
@@ -182,32 +192,9 @@ function DF:SetProfile(name)
     DF.db = DandersFramesDB_v2.profiles[name]
     DF:WrapDB()
 
-    -- Apply the profile with full refresh BEFORE clearing runtime state,
-    -- so the raid proxy system has consistent state during secure frame ops
+    -- Apply the profile — runtime state is already clear so the proxy reads
+    -- the new profile directly with no stale overlay
     DF:FullProfileRefresh()
-
-    -- Clear auto-profile runtime state AFTER refresh completes
-    -- (old profile's data is now stale and safe to remove)
-    if DF.AutoProfilesUI then
-        DF.AutoProfilesUI.activeRuntimeProfile = nil
-        DF.AutoProfilesUI.activeRuntimeContentKey = nil
-        DF.AutoProfilesUI.pendingAutoProfileEval = false
-    end
-
-    -- Guard raidOverrides clearing behind combat check — secure header
-    -- attributes may still be in flight during combat lockdown
-    if InCombatLockdown() then
-        DF:Debug("PROFILE", "SetProfile: deferring raidOverrides clear until combat ends")
-        local regenFrame = CreateFrame("Frame")
-        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        regenFrame:SetScript("OnEvent", function(self)
-            self:UnregisterAllEvents()
-            DF.raidOverrides = nil
-            DF:Debug("PROFILE", "SetProfile: raidOverrides cleared after combat")
-        end)
-    else
-        DF.raidOverrides = nil
-    end
 
     print("|cff00ff00DandersFrames:|r Switched to profile: " .. name)
 

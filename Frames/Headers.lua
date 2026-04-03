@@ -21,6 +21,7 @@ local IteratePinnedFrames
 -- ============================================================
 local rosterThrottleFrame = CreateFrame("Frame")
 rosterThrottleFrame:Hide()
+DF._rosterThrottleFrame = rosterThrottleFrame
 local gruEventCount = 0        -- total GRU events since last PEW
 local gruBurstCount = 0        -- GRU events coalesced into current throttle batch
 rosterThrottleFrame:SetScript("OnUpdate", function(self)
@@ -4194,6 +4195,15 @@ function DF:ApplyRaidGroupSorting()
         end
     end)
 
+    -- Re-anchor container after positionSnippet resizes it — the CENTER anchor
+    -- shifts when dimensions change, so reapply the saved position
+    C_Timer.After(0.1, function()
+        if not InCombatLockdown() and DF.UpdateRaidContainerPosition then
+            DF:Debug("ROSTER", "ApplyRaidGroupSorting: re-anchoring raidContainer after resize")
+            DF:UpdateRaidContainerPosition()
+        end
+    end)
+
     -- Log header positions after reposition for diagnosis
     if DF.raidSeparatedHeaders then
         for i = 1, 8 do
@@ -7986,10 +7996,24 @@ function DF:ProcessRosterUpdate()
         DF:UpdatePlayerGroupTracking()
     end
     
+    -- Detect flat→grouped transition: grouped headers may have zero children
+    -- after flat mode cleared their attributes. Force sorting to repopulate them.
+    local groupedHeadersEmpty = false
+    if IsInRaid() and raidDb and raidDb.raidUseGroups and DF.raidPositionHandler then
+        local totalCount = 0
+        for i = 1, 8 do
+            totalCount = totalCount + (DF.raidPositionHandler:GetAttribute("group" .. i .. "count") or 0)
+        end
+        if totalCount == 0 and GetNumGroupMembers() > 0 then
+            groupedHeadersEmpty = true
+            DF:Debug("ROSTER", "  Grouped headers empty despite active raid — forcing sort")
+        end
+    end
+
     -- Check if roster membership actually changed
     -- This prevents redundant sorting when GROUP_ROSTER_UPDATE fires multiple times
     -- with the same roster data
-    if not HasRosterMembershipChanged() then
+    if not groupedHeadersEmpty and not HasRosterMembershipChanged() then
         DF:Debug("ROSTER", "  Roster unchanged — skipping sorting, rebuilding unitFrameMap")
         -- Roster is identical - skip sorting
         -- Visibility update already handled above

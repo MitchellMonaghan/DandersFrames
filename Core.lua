@@ -4968,6 +4968,7 @@ function DF:FullProfileRefresh()
             local raidDb = DF:GetRaidDB()
             if not raidDb.raidUseGroups then
                 DF.FlatRaidFrames:ApplyLayoutSettings()
+                DF.FlatRaidFrames:ResizeInnerContainer()
             end
         end
     end

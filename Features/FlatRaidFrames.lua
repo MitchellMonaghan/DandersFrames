@@ -1107,6 +1107,9 @@ function FlatRaidFrames:SetEnabled(enabled)
                     if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
                 end
             end
+            -- Reapply layout settings in case spacing/anchors/growth changed
+            self:ApplyLayoutSettings(true)  -- true = skip internal 4-step refresh
+            self:ResizeInnerContainer()
             self._settingEnabled = nil
             return
         end

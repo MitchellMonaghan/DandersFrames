@@ -3412,32 +3412,14 @@ function AutoProfilesUI:RemoveRuntimeProfile()
     if not self.activeRuntimeProfile then return end
     DF:Debug("LAYOUT", "RemoveRuntimeProfile: deactivating \"%s\" (%s)", self.activeRuntimeProfile.name or "?", self.activeRuntimeContentKey or "?")
 
-    -- Refresh all frames FIRST while proxy state is still consistent,
-    -- then clear overlay and runtime state afterward
-    if DF.FullProfileRefresh then
-        DF:FullProfileRefresh()
-    end
+    -- Clear overlay FIRST so any subsequent refresh reads global settings
+    DF.raidOverrides = nil
 
-    -- Clear overlay and runtime state AFTER refresh completes
-    if InCombatLockdown() then
-        DF:Debug("LAYOUT", "RemoveRuntimeProfile: deferring raidOverrides clear until combat ends")
-        local regenFrame = CreateFrame("Frame")
-        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        regenFrame:SetScript("OnEvent", function(self)
-            self:UnregisterAllEvents()
-            DF.raidOverrides = nil
-            DF:Debug("LAYOUT", "RemoveRuntimeProfile: raidOverrides cleared after combat")
-        end)
-    else
-        DF.raidOverrides = nil
-    end
-
+    -- Clear runtime state
     self.activeRuntimeProfile = nil
     self.activeRuntimeContentKey = nil
 
     print("|cff00ff00DandersFrames:|r Auto-profile deactivated, using global settings")
-
-    -- Update tab override stars
     self:RefreshTabOverrideStars()
 end
 
@@ -3561,14 +3543,20 @@ function AutoProfilesUI:EvaluateAndApply()
 
     DF:Debug("LAYOUT", "EvaluateAndApply: switching \"%s\" -> \"%s\"", oldName, newName)
 
-    -- Remove old profile if one was active
+    -- Capture whether an old profile was active before clearing state
+    local oldWasActive = (self.activeRuntimeProfile ~= nil)
+
+    -- Remove old profile if one was active (clears overlay and state only)
     if self.activeRuntimeProfile then
         self:RemoveRuntimeProfile()
     end
 
-    -- Apply new profile if one matches
+    -- Apply new profile if one matches (sets overlay then calls FullProfileRefresh: 1 refresh)
     if newProfile then
         self:ApplyRuntimeProfile(newProfile, contentKey)
+    elseif oldWasActive then
+        -- Profile deactivated (profile→none): refresh once with clean global settings
+        DF:FullProfileRefresh()
     end
 end
 
@@ -3588,7 +3576,28 @@ local autoProfileThrottleFrame = CreateFrame("Frame")
 autoProfileThrottleFrame:Hide()
 autoProfileThrottleFrame:SetScript("OnUpdate", function(self)
     self:Hide()
+
+    -- Suppress any pending roster update — we process it after overlay is settled
+    local rosterPending = DF._rosterThrottleFrame and DF._rosterThrottleFrame:IsShown()
+    if rosterPending then
+        DF._rosterThrottleFrame:Hide()
+    end
+
     AutoProfilesUI:EvaluateAndApply()
+
+    -- Now process roster with correct overlay state
+    if rosterPending then
+        if not InCombatLockdown() then
+            DF:ProcessRosterUpdate()
+        else
+            local raidDb = DF:GetRaidDB()
+            if IsInRaid() and not raidDb.raidUseGroups then
+                DF.pendingFlatLayoutRefresh = true
+            else
+                DF.pendingHeaderSettingsApply = true
+            end
+        end
+    end
 end)
 
 local function QueueAutoProfileEval()
