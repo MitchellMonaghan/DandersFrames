@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-03T00:29:36Z"
+DF.BUILD_DATE = "2026-04-03T13:12:11Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -11,6 +11,7 @@ DF.CHANGELOG_TEXT = [===[
 * (Frames) Status icons (summon, AFK, phased, resurrection) now stay fully visible when unit is out of range or dead
 
 ### Bug Fixes
+* (Fonts) Fix client crash (ACCESS_VIOLATION) when SetFontObject receives an uninitialized font family during early login
 * (Auto Layouts) Fix frames using wrong positions or settings when switching between grouped and flat raid layouts
 * (Auto Layouts) Fix double frame refresh when switching between auto-profiles
 * (Auto Layouts) Fix race condition between auto-profile evaluation and roster update processing
@@ -19,6 +20,7 @@ DF.CHANGELOG_TEXT = [===[
 * (Auto Layouts) Fix raid container drifting to wrong position after group sorting due to CENTER anchor resize
 * (Auto Layouts) Fix profile switch reading stale overlay settings during refresh
 * (Auto Layouts) Fix flat raid container not resizing immediately after layout settings change
+* (Auto Layouts) Add defensive refresh after auto-profile deactivation to prevent partially-configured frame state
 * (Resource Bar) Remove stale type guards that could prevent the resource bar from displaying power values
 * (Missing Buffs) Fix missing buff indicators not fading when a unit is dead or offline
 * (Aura Designer) Fix icon border appearing asymmetric at certain sizes by snapping to pixel boundaries
