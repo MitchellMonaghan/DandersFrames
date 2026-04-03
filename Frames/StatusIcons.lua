@@ -105,6 +105,8 @@ function DF:CreateStatusIcons(frame)
         frame.resurrectionIcon:SetMouseClickEnabled(false)
     end
     frame.resurrectionIcon:SetScript("OnEnter", function(self)
+        local db = DF:GetFrameDB(self.unitFrame)
+        if not db or not db.tooltipResurrectionEnabled then return end
         local unit = self.unitFrame and self.unitFrame.unit
         local state = unit and resCache[unit]
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")

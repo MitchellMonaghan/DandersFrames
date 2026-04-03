@@ -443,6 +443,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         
         Add(defTooltipGroup, nil, 2)
 
+        -- Resurrection Icon Tooltips (Column 3)
+        local resTooltipGroup = GUI:CreateSettingsGroup(self.child, 280)
+        resTooltipGroup:AddWidget(GUI:CreateHeader(self.child, "Resurrection Icon Tooltips"), 40)
+        resTooltipGroup:AddWidget(GUI:CreateCheckbox(self.child, "Enable Resurrection Icon Tooltips", db, "tooltipResurrectionEnabled", nil), 30)
+        Add(resTooltipGroup, nil, 2)
+
         -- Sync point: align row 3
         AddSyncPoint()
 
