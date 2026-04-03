@@ -8,6 +8,13 @@
 
 ### Bug Fixes
 * (Auto Layouts) Fix frames using wrong positions or settings when switching between grouped and flat raid layouts
+* (Auto Layouts) Fix double frame refresh when switching between auto-profiles
+* (Auto Layouts) Fix race condition between auto-profile evaluation and roster update processing
+* (Auto Layouts) Fix flat raid fast path not reapplying layout settings when spacing or anchors change
+* (Auto Layouts) Fix grouped headers staying empty after switching from flat to grouped mode on instance entry
+* (Auto Layouts) Fix raid container drifting to wrong position after group sorting due to CENTER anchor resize
+* (Auto Layouts) Fix profile switch reading stale overlay settings during refresh
+* (Auto Layouts) Fix flat raid container not resizing immediately after layout settings change
 * (Resource Bar) Remove stale type guards that could prevent the resource bar from displaying power values
 * (Missing Buffs) Fix missing buff indicators not fading when a unit is dead or offline
 * (Aura Designer) Fix icon border appearing asymmetric at certain sizes by snapping to pixel boundaries
