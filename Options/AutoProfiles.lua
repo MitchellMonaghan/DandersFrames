@@ -3419,6 +3419,12 @@ function AutoProfilesUI:RemoveRuntimeProfile()
     self.activeRuntimeProfile = nil
     self.activeRuntimeContentKey = nil
 
+    -- Snap frames to base settings immediately so they are never in a
+    -- partially-configured state between overlay clear and the caller's refresh
+    if not InCombatLockdown() and DF.FullProfileRefresh then
+        DF:FullProfileRefresh()
+    end
+
     print("|cff00ff00DandersFrames:|r Auto-profile deactivated, using global settings")
     self:RefreshTabOverrideStars()
 end
