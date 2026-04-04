@@ -1,25 +1,19 @@
 # DandersFrames Changelog
 
-## [4.1.13] - 2026-04-04
-
-### New Features
-* (Localization) Add full localization infrastructure using AceLocale-3.0 and CurseForge translation system — community translators can now contribute translations via the CurseForge web UI without touching code
-* (Localization) Add locale stubs for 11 languages: English, German, Spanish (EU/LATAM), French, Italian, Korean, Portuguese (BR), Russian, Chinese (Simplified/Traditional)
-
-### Bug Fixes
-* (Raid Frames) Fix groups overlapping after auto-profile switch when layout direction and spacing are unchanged between profiles
-* (Raid Frames) Fix CENTER-aligned groups landing in wrong positions when the first person joins a previously empty group
-
 ## [4.1.12] - 2026-04-02
 
 ### New Features
 * (Resource Bar) Add "Use Class Color" option for resource bars — colors power bars by class instead of power type (thanks **sKullsen**)
+* (Localization) Add full localization infrastructure using AceLocale-3.0 and CurseForge translation system — community translators can now contribute translations via the CurseForge web UI without touching code
+* (Localization) Add locale stubs for 11 languages: English, German, Spanish (EU/LATAM), French, Italian, Korean, Portuguese (BR), Russian, Chinese (Simplified/Traditional)
 
 ### Improvements
 * (Frames) Add tooltip to resurrection icon showing cast status (green = incoming, yellow = pending accept)
 * (Frames) Status icons (summon, AFK, phased, resurrection) now stay fully visible when unit is out of range or dead
 
 ### Bug Fixes
+* (Raid Frames) Fix groups overlapping after auto-profile switch when layout direction and spacing are unchanged between profiles
+* (Raid Frames) Fix CENTER-aligned groups landing in wrong positions when the first person joins a previously empty group
 * (Fonts) Fix client crash (ACCESS_VIOLATION) when SetFontObject receives an uninitialized font family during early login
 * (Auto Layouts) Fix frames using wrong positions or settings when switching between grouped and flat raid layouts
 * (Auto Layouts) Fix double frame refresh when switching between auto-profiles
