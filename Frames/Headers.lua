@@ -4177,6 +4177,15 @@ function DF:ApplyRaidGroupSorting()
     -- were already off, each child OnShow would independently fire the position snippet,
     -- creating N redundant repositions. By keeping suppress on, those OnShow hooks
     -- are no-ops, and we fire ONE authoritative reposition after unsuppressing.
+    --
+    -- IMPORTANT: Force-clear the layout cache before updating attributes.
+    -- An auto-profile switch may have applied new frame dimensions (frameWidth,
+    -- frameHeight, groupSpacing, etc.) between the roster throttle firing and this
+    -- sort running. Without the cache clear, UpdateRaidHeaderLayoutAttributes skips
+    -- if horizontal/spacing appear unchanged, and the position snippet fires with
+    -- stale handler attributes — causing groups to overlap.
+    lastLayoutHorizontal = nil
+    lastLayoutSpacing = nil
     DF:UpdateRaidPositionAttributes()
 
     -- NOW unsuppress and fire the single authoritative reposition
@@ -4184,6 +4193,26 @@ function DF:ApplyRaidGroupSorting()
     if DF.raidPositionHandler then
         DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
     end
+
+    -- Authoritative Lua-side recount: secure OnShow/OnHide hooks may have
+    -- set intermediate counts during the Hide/Show cycle above. Recount
+    -- from Lua to guarantee the position snippet sees final child state.
+    -- This is critical for CENTER alignment where all groups shift when
+    -- numPopulated changes — stale counts produce wrong centering offsets.
+    if DF.raidPositionHandler then
+        for i = 1, 8 do
+            local header = DF.raidSeparatedHeaders[i]
+            if header then
+                local count = 0
+                for ci = 1, 5 do
+                    local ch = header:GetAttribute("child" .. ci)
+                    if ch and ch:IsShown() then count = count + 1 end
+                end
+                DF.raidPositionHandler:SetAttribute("group" .. i .. "count", count)
+            end
+        end
+    end
+
     DF:TriggerRaidPosition()
 
     -- Safety net: SecureGroupHeaderTemplate may defer child Show/Hide past

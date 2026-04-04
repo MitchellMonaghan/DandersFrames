@@ -1,5 +1,11 @@
 # DandersFrames Changelog
 
+## [4.1.13] - 2026-04-04
+
+### Bug Fixes
+* (Raid Frames) Fix groups overlapping after auto-profile switch when layout direction and spacing are unchanged between profiles
+* (Raid Frames) Fix CENTER-aligned groups landing in wrong positions when the first person joins a previously empty group
+
 ## [4.1.12] - 2026-04-02
 
 ### New Features
