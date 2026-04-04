@@ -93,20 +93,15 @@ jobs:
         run: |
           ERRORS=0
           for f in .release/DandersFrames/Locales/*.lua; do
-            if grep -qP '^(?!--).*error code:|^(?!--).*<!DOCTYPE|^(?!--).*<html' "$f" 2>/dev/null; then
-              echo "::error::Locale file contains API error response: $f"
+            # Check for CurseForge API error responses injected as raw text
+            if grep -qP '^error code:|^<!DOCTYPE|^<html|^\{"error' "$f" 2>/dev/null; then
+              echo "::error::Locale file contains API error response: $(basename $f)"
               head -5 "$f"
-              ERRORS=$((ERRORS + 1))
-            fi
-            # Basic Lua syntax check — look for lines that aren't comments, assignments, or blank
-            if grep -nP '^(?!--|local |if |end|L\[|$|\s*$)' "$f" | grep -vP '^\d+:\s*$' | head -5 | grep -q .; then
-              echo "::warning::Possible malformed content in $f:"
-              grep -nP '^(?!--|local |if |end|L\[|$|\s*$)' "$f" | grep -vP '^\d+:\s*$' | head -5
               ERRORS=$((ERRORS + 1))
             fi
           done
           if [ $ERRORS -gt 0 ]; then
-            echo "::error::$ERRORS locale file(s) have issues. Build uploaded but may contain errors."
+            echo "::error::$ERRORS locale file(s) have CurseForge API errors. The build was uploaded but contains broken locale files — rebuild required."
             exit 1
           fi
           echo "All locale files validated OK"

@@ -1,5 +1,10 @@
 # DandersFrames Changelog
 
+## [4.2.1] - 2026-04-04
+
+### Bug Fixes
+* (Localization) Fix Spanish locale file containing a CurseForge API error instead of translation data
+
 ## [4.2.0] - 2026-04-04
 
 ### New Features
