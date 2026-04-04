@@ -1,15 +1,13 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-04T18:37:14Z"
+DF.BUILD_DATE = "2026-04-04T18:41:44Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
-## Unreleased (v4.2.0-alpha.1)
+## [4.2.1] - 2026-04-04
 
-- Add post-build locale validation to catch CurseForge API errors
-
----
-
+### Bug Fixes
+* (Localization) Fix Spanish locale file containing a CurseForge API error instead of translation data
 
 ## [4.2.0] - 2026-04-04
 
