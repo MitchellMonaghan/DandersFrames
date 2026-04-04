@@ -1893,7 +1893,7 @@ function CC:CreateKeybindPopup()
     local isMac = IsMacClient and IsMacClient()
     local macWarning = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     macWarning:SetPoint("TOP", instructions, "BOTTOM", 0, -4)
-    macWarning:SetText("|cffff9900" .. L["Note:|r Cmd + Left Click unavailable on Mac"])
+    macWarning:SetText("|cffff9900" .. L["Note: Cmd + Left Click unavailable on Mac"] .. "|r")
     macWarning:SetTextColor(0.9, 0.6, 0.2)
     if isMac then
         macWarning:Show()

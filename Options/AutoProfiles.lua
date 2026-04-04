@@ -645,7 +645,7 @@ function AutoProfilesUI:BuildPage(GUI, pageFrame, db, Add, AddSpace)
     step1:SetPoint("TOPLEFT", 10, yOff)
     step1:SetPoint("RIGHT", infoBody, "RIGHT", -10, 0)
     step1:SetJustifyH("LEFT")
-    step1:SetText("|cffff8020" .. "1.|r " .. L["Create layouts below for different player ranges within each content type. Layouts only store settings that |cffffffffdiffer|r from your global settings — everything else is inherited automatically."])
+    step1:SetText("|cffff8020" .. "1.|r " .. format(L["Create layouts below for different player ranges within each content type. Layouts only store settings that %sdiffer%s from your global settings — everything else is inherited automatically."], "|cffffffff", "|r"))
     step1:SetTextColor(0.65, 0.65, 0.65)
     yOff = yOff - 30
     
@@ -654,7 +654,7 @@ function AutoProfilesUI:BuildPage(GUI, pageFrame, db, Add, AddSpace)
     step2:SetPoint("TOPLEFT", 10, yOff)
     step2:SetPoint("RIGHT", infoBody, "RIGHT", -10, 0)
     step2:SetJustifyH("LEFT")
-    step2:SetText("|cffff8020" .. "2.|r " .. L["Click |cffffffffEdit Settings|r on a profile to customise it. This takes you to the settings tabs with an editing banner at the top. While editing, any setting you change is stored as an override for that profile only."])
+    step2:SetText("|cffff8020" .. "2.|r " .. format(L["Click %sEdit Settings%s on a profile to customise it. This takes you to the settings tabs with an editing banner at the top. While editing, any setting you change is stored as an override for that profile only."], "|cffffffff", "|r"))
     step2:SetTextColor(0.65, 0.65, 0.65)
     yOff = yOff - 30
     
@@ -680,7 +680,7 @@ function AutoProfilesUI:BuildPage(GUI, pageFrame, db, Add, AddSpace)
     
     local ex1Text = exRow1:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ex1Text:SetPoint("LEFT", ex1Check, "RIGHT", 4, 0)
-    ex1Text:SetText(L["|cff4db84dGlobal: 80|r |cff666666— Setting matches global, no override stored|r"])
+    ex1Text:SetText(format(L["%sGlobal: 80%s %s— Setting matches global, no override stored%s"], "|cff4db84d", "|r", "|cff666666", "|r"))
     yOff = yOff - 18
     
     -- Visual example row 2: Overridden (star + reset)
@@ -707,7 +707,7 @@ function AutoProfilesUI:BuildPage(GUI, pageFrame, db, Add, AddSpace)
     
     local ex2Text = exRow2:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ex2Text:SetPoint("LEFT", ex2ResetBg, "RIGHT", 6, 0)
-    ex2Text:SetText(L["|cffe6cc80Modified|r |cff666666— Setting differs from global. Click|r |cffffffffreset|r |cff666666to revert.|r"])
+    ex2Text:SetText(format(L["%sModified%s %s— Setting differs from global. Click%s %sreset%s %sto revert.%s"], "|cffe6cc80", "|r", "|cff666666", "|r", "|cffffffff", "|r", "|cff666666", "|r"))
     yOff = yOff - 22
     
     -- Step 4
@@ -715,7 +715,7 @@ function AutoProfilesUI:BuildPage(GUI, pageFrame, db, Add, AddSpace)
     step4:SetPoint("TOPLEFT", 10, yOff)
     step4:SetPoint("RIGHT", infoBody, "RIGHT", -10, 0)
     step4:SetJustifyH("LEFT")
-    step4:SetText("|cffff8020" .. "4.|r " .. L["Click |cffffffffExit Editing|r when done. Your overrides are saved to the profile. If you change a setting back to match global, the override is automatically removed."])
+    step4:SetText("|cffff8020" .. "4.|r " .. format(L["Click %sExit Editing%s when done. Your overrides are saved to the profile. If you change a setting back to match global, the override is automatically removed."], "|cffffffff", "|r"))
     step4:SetTextColor(0.65, 0.65, 0.65)
     yOff = yOff - 30
     

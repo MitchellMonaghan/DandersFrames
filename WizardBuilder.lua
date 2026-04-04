@@ -2305,7 +2305,7 @@ WB:RegisterBuiltinWizard({
                 {
                     id = "overlay_warning",
                     question = L["Before You Enable"],
-                    description = L["The frame border overlay is rendered entirely by Blizzard and has some visual quirks that cannot be fixed:\n\n|cFFFF8800Orange borders|r will appear for boss debuffs that are |cFFFF4444not dispellable|r. Only dispellable debuffs show the standard coloured border.\n\nFloating |cFFFFFF00stack count text|r may appear on the frame, separate from the icon.\n\nThe overlay is not a perfect solution and may look rough in some encounters. Enable at your own risk."],
+                    description = format(L["The frame border overlay is rendered entirely by Blizzard and has some visual quirks that cannot be fixed:\n\n%sOrange borders%s will appear for boss debuffs that are %snot dispellable%s. Only dispellable debuffs show the standard coloured border.\n\nFloating %sstack count text%s may appear on the frame, separate from the icon.\n\nThe overlay is not a perfect solution and may look rough in some encounters. Enable at your own risk."], "|cFFFF8800", "|r", "|cFFFF4444", "|r", "|cFFFFFF00", "|r"),
                     type = "imageselect",
                     imageAspect = 1.48,
                     options = {

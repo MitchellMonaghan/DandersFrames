@@ -2595,7 +2595,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         if FrameSortApi then
             local frameSortGroup = GUI:CreateSettingsGroup(self.child, 280)
             frameSortGroup:AddWidget(GUI:CreateHeader(self.child, L["FrameSort Integration"]), 40)
-            frameSortGroup:AddWidget(GUI:CreateLabel(self.child, L["FrameSort addon detected. Enable to let FrameSort control frame ordering.\n\n|cFFFF8800Experimental:|r This feature is new and may not work perfectly in all scenarios. Please report any issues."], 250), 70)
+            frameSortGroup:AddWidget(GUI:CreateLabel(self.child, format(L["FrameSort addon detected. Enable to let FrameSort control frame ordering.\n\n%sExperimental:%s This feature is new and may not work perfectly in all scenarios. Please report any issues."], "|cFFFF8800", "|r"), 250), 70)
             frameSortGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Use FrameSort Addon"], db, "useFrameSort", function()
                 -- Set both modes simultaneously
                 local partyDB = DF:GetDB("party")

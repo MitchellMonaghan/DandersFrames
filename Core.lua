@@ -2767,13 +2767,13 @@ SlashCmdList["DFARENA"] = function(msg)
     DF.forceArenaMode = not DF.forceArenaMode
     
     if DF.forceArenaMode then
-        print("|cffff8033DandersFrames:|r " .. L["Arena mode |cff00ff00ENABLED|r for testing"])
+        print("|cffff8033DandersFrames:|r " .. format(L["Arena mode %sENABLED%s for testing"], "|cff00ff00", "|r"))
         print("  - " .. L["Join a raid group (2-5 players works best)"])
         print("  - " .. L["Arena header will show using raid1-5 unit IDs"])
         print("  - " .. L["Uses party frame settings/position"])
         print("  - " .. L["Type /dfarena again to disable"])
     else
-        print("|cffff8033DandersFrames:|r " .. L["Arena mode |cffff0000DISABLED|r"])
+        print("|cffff8033DandersFrames:|r " .. format(L["Arena mode %sDISABLED%s"], "|cffff0000", "|r"))
     end
     
     -- Apply full header settings (includes orientation, grow from center, etc.)
@@ -3049,11 +3049,11 @@ function DF:CheckElvUICompatibility()
         -- Print the path to chat so they have a reference
         print(" ")
         print("|cff00ff00DandersFrames:|r " .. L["To fix the ElvUI compatibility issue:"])
-        print("|cff00ff00DandersFrames:|r " .. L["1. Open ElvUI config with |cff1784d1/ec|r"])
-        print("|cff00ff00DandersFrames:|r " .. L["2. Go to |cffffffffUnitFrames|r (left sidebar)"])
-        print("|cff00ff00DandersFrames:|r " .. L["3. Click |cffffffffGeneral|r at the top"])
-        print("|cff00ff00DandersFrames:|r " .. L["4. Scroll down to |cffffffffDisabled Blizzard Frames|r"])
-        print("|cff00ff00DandersFrames:|r " .. L["5. Under |cffffffffGroup Units|r, uncheck |cffff6666Party|r and |cffff6666Raid|r"])
+        print("|cff00ff00DandersFrames:|r " .. format(L["1. Open ElvUI config with %s/ec%s"], "|cff1784d1", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["2. Go to %sUnitFrames%s (left sidebar)"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["3. Click %sGeneral%s at the top"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["4. Scroll down to %sDisabled Blizzard Frames%s"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["5. Under %sGroup Units%s, uncheck %sParty%s and %sRaid%s"], "|cffffffff", "|r", "|cffff6666", "|r", "|cffff6666", "|r"))
         print("|cff00ff00DandersFrames:|r " .. L["6. Click the reload button when prompted"])
         print(" ")
     end)
@@ -3753,7 +3753,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF.DebugConsole:Init()
         end
 
-        print("|cff00ff00DandersFrames|r " .. format(L["v%s loaded. Type |cffeda55f/df|r for settings, |cffeda55f/df resetgui|r if window is offscreen."], DF.VERSION))
+        print("|cff00ff00DandersFrames|r " .. format(L["v%s loaded. Type %s/df%s for settings, %s/df resetgui%s if window is offscreen."], DF.VERSION, "|cffeda55f", "|r", "|cffeda55f", "|r"))
 
         -- ============================================================
         -- CRITICAL: Initialize frames HERE at ADDON_LOADED
@@ -4056,7 +4056,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 print("|cff00ff00DandersFrames:|r " .. format(L["Slider update debug %s"], DF.debugSliderUpdates and L["enabled"] or L["disabled"]))
                 if DF.debugSliderUpdates then
                     print("  " .. L["Drag any slider to see update function calls"])
-                    print("  " .. L["|cff88ff88Green|r = lightweight update, |cffffff00Yellow|r = full update"])
+                    print("  " .. format(L["%sGreen%s = lightweight update, %sYellow%s = full update"], "|cff88ff88", "|r", "|cffffff00", "|r"))
                 end
             elseif msg == "debugrested" then
                 if DF.DebugRestedIndicator then
@@ -4280,7 +4280,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.EnterSettingsPickerMode then
                     DF:EnterSettingsPickerMode(function(tabName, dbKey, controlType)
                         DF:Debug("Picker selected: tab=" .. tostring(tabName) .. " key=" .. tostring(dbKey) .. " type=" .. tostring(controlType))
-                        print("|cff00ff00DandersFrames:|r " .. format(L["Picked setting: |cffffffff%s|r from tab |cffffffff%s|r"], tostring(dbKey), tostring(tabName)))
+                        print("|cff00ff00DandersFrames:|r " .. format(L["Picked setting: %s%s%s from tab %s%s%s"], "|cffffffff", tostring(dbKey), "|r", "|cffffffff", tostring(tabName), "|r"))
                     end)
                 else
                     print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])

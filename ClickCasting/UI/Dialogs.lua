@@ -404,7 +404,7 @@ local function PopulateImportPopup(validBindings, invalidBindings, sourceClass, 
     -- Set warning text
     local currentClass = GetPlayerClass()
     if sourceClass and sourceClass ~= currentClass then
-        frame.warning:SetText(format(L["This profile was created for |cffffffff%s|r.\nSome bindings may not be compatible with |cffffffff%s|r."], sourceClass, currentClass))
+        frame.warning:SetText(format(L["This profile was created for %s%s%s.\nSome bindings may not be compatible with %s%s%s."], "|cffffffff", sourceClass, "|r", "|cffffffff", currentClass, "|r"))
     else
         frame.warning:SetText(L["Some bindings use spells that are not available\nto your current class or specialization."])
     end
@@ -479,9 +479,11 @@ local function PopulateImportPopup(validBindings, invalidBindings, sourceClass, 
     local totalCount = validCount + invalidCount
     
     frame.summary:SetText(format(
-        L["Profile: |cffffffff%s|r\n|cff33ee33%d compatible|r   |cffee3333%d incompatible|r   |cff888888%d total|r"],
-        profileName or "Imported",
-        validCount, invalidCount, totalCount
+        L["Profile: %s%s%s\n%s%d compatible%s   %s%d incompatible%s   %s%d total%s"],
+        "|cffffffff", profileName or "Imported", "|r",
+        "|cff33ee33", validCount, "|r",
+        "|cffee3333", invalidCount, "|r",
+        "|cff888888", totalCount, "|r"
     ))
 
     -- Update button text
@@ -861,7 +863,7 @@ function CC:ShowClickCastConflictPopup(conflicts, enableCheckbox)
             title:SetText(L["Are you sure?"])
             title:SetTextColor(1, 0.6, 0.2)
             
-            msg:SetText(L["Having multiple click-casting addons enabled\nmay cause conflicts and unexpected behavior.\n\n|cffff6600Use at your own risk!|r"])
+            msg:SetText(format(L["Having multiple click-casting addons enabled\nmay cause conflicts and unexpected behavior.\n\n%sUse at your own risk!%s"], "|cffff6600", "|r"))
             
             warning:SetText(L["This warning will not appear again after confirming."])
             warning:SetTextColor(1, 0.8, 0.3)

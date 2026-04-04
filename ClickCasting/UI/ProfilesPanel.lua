@@ -568,17 +568,17 @@ function CC:RefreshProfilesPanel()
         if autoCreate == nil then autoCreate = true end
         
         if isSpecific and assignedProfile and assignedProfile == activeProfile then
-            self.autoLinkInfo:SetText("|cff33cc33" .. L["[Linked]|r Profile matched to loadout"])
+            self.autoLinkInfo:SetText("|cff33cc33" .. L["[Linked]"] .. "|r " .. L["Profile matched to loadout"])
         elseif isSpecific and assignedProfile then
-            self.autoLinkInfo:SetText("|cffff9900" .. format(L["[Override]|r Loadout expects: %s"], assignedProfile))
+            self.autoLinkInfo:SetText("|cffff9900" .. L["[Override]"] .. "|r " .. format(L["Loadout expects: %s"], assignedProfile))
         elseif not isSpecific and loadoutID > 0 then
             if autoCreate then
-                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r Will auto-create on switch"])
+                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]"] .. "|r " .. L["Will auto-create on switch"])
             else
-                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r Auto-create disabled"])
+                self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]"] .. "|r " .. L["Auto-create disabled"])
             end
         else
-            self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]|r No loadout detected"])
+            self.autoLinkInfo:SetText("|cff888888" .. L["[Unassigned]"] .. "|r " .. L["No loadout detected"])
         end
     end
 end
@@ -991,7 +991,7 @@ function CC:ShowClearAllConfirmation()
     end
     
     StaticPopupDialogs["DFCC_CLEAR_ALL_BINDINGS"] = {
-        text = L["Reset all bindings to defaults?\n\nThis will set:\n• Left Click = Target Unit\n• Right Click = Open Menu\n\n|cffff6666This cannot be undone.|r"],
+        text = format(L["Reset all bindings to defaults?\n\nThis will set:\n• Left Click = Target Unit\n• Right Click = Open Menu\n\n%sThis cannot be undone.%s"], "|cffff6666", "|r"),
         button1 = L["Reset to Defaults"],
         button2 = L["Cancel"],
         OnAccept = function()
