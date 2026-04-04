@@ -335,7 +335,7 @@ function DF:ExportProfile(categories, frameTypes, profileName)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
 
     if not LibSerialize or not LibDeflate then
-        print("|cffff0000DandersFrames:|r " .. L["Missing required libraries"])
+        print("|cffff0000DandersFrames:|r Missing required libraries")
         return nil
     end
     
@@ -360,7 +360,7 @@ function DF:ExportProfile(categories, frameTypes, profileName)
     }
     
     if not DF.db then
-        print("|cffff0000DandersFrames:|r " .. L["No database"])
+        print("|cffff0000DandersFrames:|r No database")
         return nil
     end
     

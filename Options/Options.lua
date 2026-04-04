@@ -3383,13 +3383,13 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local textureOptions = DF:GetTextureList()
         -- Add stripe textures if not already present
         local stripeTextures = {
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft"]= L["DF Stripes Soft"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft_Wide"]= L["DF Stripes Soft Wide"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes"]= L["DF Stripes"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Sparse"]= L["DF Stripes Sparse"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Medium"]= L["DF Stripes Medium"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Dense"]= L["DF Stripes Dense"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Very_Dense"]= L["DF Stripes Very Dense"],
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft"]= "DF Stripes Soft",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft_Wide"]= "DF Stripes Soft Wide",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes"]= "DF Stripes",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Sparse"]= "DF Stripes Sparse",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Medium"]= "DF Stripes Medium",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Dense"]= "DF Stripes Dense",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Very_Dense"]= "DF Stripes Very Dense",
         }
         for path, name in pairs(stripeTextures) do
             if not textureOptions[path] then
@@ -3505,13 +3505,13 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local healTextureOptions = DF:GetTextureList()
         -- Add stripe textures if not already present
         local healStripeTextures = {
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft"]= L["DF Stripes Soft"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft_Wide"]= L["DF Stripes Soft Wide"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes"]= L["DF Stripes"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Sparse"]= L["DF Stripes Sparse"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Medium"]= L["DF Stripes Medium"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Dense"]= L["DF Stripes Dense"],
-            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Very_Dense"]= L["DF Stripes Very Dense"],
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft"]= "DF Stripes Soft",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Soft_Wide"]= "DF Stripes Soft Wide",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes"]= "DF Stripes",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Sparse"]= "DF Stripes Sparse",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Medium"]= "DF Stripes Medium",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Dense"]= "DF Stripes Dense",
+            ["Interface\\AddOns\\DandersFrames\\Media\\DF_Stripes_Very_Dense"]= "DF Stripes Very Dense",
         }
         for path, name in pairs(healStripeTextures) do
             if not healTextureOptions[path] then
@@ -5584,7 +5584,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         
         local roleStyleOptions = {
             BLIZZARD = L["Blizzard"],
-            CUSTOM = L["DF Icons"],
+            CUSTOM = "DF Icons",
             EXTERNAL = L["External"],
         }
         

@@ -4022,7 +4022,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.AutoProfilesUI and DF.AutoProfilesUI.PrintOverrides then
                     DF.AutoProfilesUI:PrintOverrides()
                 else
-                    print("|cff00ff00DandersFrames:|r " .. L["Auto profiles module not loaded."])
+                    print("|cff00ff00DandersFrames:|r Auto profiles module not loaded.")
                 end
             elseif msg == "test" then
                 if DF.ToggleTestPanel then DF:ToggleTestPanel() end
@@ -4049,14 +4049,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             elseif msg == "debugrole" then
                 DF.debugRoleIcons = not DF.debugRoleIcons
-                print("|cff00ff00DandersFrames:|r " .. format(L["Role icon debug %s"], DF.debugRoleIcons and L["enabled"] or L["disabled"]))
-                print("  " .. L["Enter/leave combat to see role icon update logs"])
+                print("|cff00ff00DandersFrames:|r " .. format("Role icon debug %s", DF.debugRoleIcons and L["enabled"] or L["disabled"]))
+                print("  Enter/leave combat to see role icon update logs")
             elseif msg == "debugslider" then
                 DF.debugSliderUpdates = not DF.debugSliderUpdates
-                print("|cff00ff00DandersFrames:|r " .. format(L["Slider update debug %s"], DF.debugSliderUpdates and L["enabled"] or L["disabled"]))
+                print("|cff00ff00DandersFrames:|r " .. format("Slider update debug %s", DF.debugSliderUpdates and L["enabled"] or L["disabled"]))
                 if DF.debugSliderUpdates then
-                    print("  " .. L["Drag any slider to see update function calls"])
-                    print("  " .. format(L["%sGreen%s = lightweight update, %sYellow%s = full update"], "|cff88ff88", "|r", "|cffffff00", "|r"))
+                    print("  Drag any slider to see update function calls")
+                    print("  " .. format("%sGreen%s = lightweight update, %sYellow%s = full update", "|cff88ff88", "|r", "|cffffff00", "|r"))
                 end
             elseif msg == "debugrested" then
                 if DF.DebugRestedIndicator then
@@ -4128,68 +4128,68 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.DebugDispel then
                     DF:DebugDispel(unit)
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Dispel debug not loaded"])
+                    print("|cffff0000DandersFrames:|r Dispel debug not loaded")
                 end
             elseif msg == "resetconflict" then
                 -- Reset the click-casting conflict warning ignore setting
                 if DandersFramesClickCastingDB then
                     DandersFramesClickCastingDB.ignoreConflictWarning = nil
-                    print("|cff00ff00DandersFrames:|r " .. L["Click-casting conflict warning has been re-enabled."])
-                    print("|cff00ff00DandersFrames:|r " .. L["The warning will appear on next reload if conflicts are detected."])
+                    print("|cff00ff00DandersFrames:|r Click-casting conflict warning has been re-enabled.")
+                    print("|cff00ff00DandersFrames:|r The warning will appear on next reload if conflicts are detected.")
                 else
-                    print("|cffff9900DandersFrames:|r " .. L["Click-casting database not loaded."])
+                    print("|cffff9900DandersFrames:|r Click-casting database not loaded.")
                 end
             elseif msg == "casthistory" or msg == "history" then
                 -- Show cast history (TEST feature for secret values)
                 if DF.ShowCastHistory then
                     DF:ShowCastHistory()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Cast history not available"])
+                    print("|cffff0000DandersFrames:|r Cast history not available")
                 end
             elseif msg == "clearhistory" then
                 -- Clear cast history
                 if DF.ClearCastHistory then
                     DF:ClearCastHistory()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Cast history not available"])
+                    print("|cffff0000DandersFrames:|r Cast history not available")
                 end
             elseif msg == "headers" or msg == "hdump" then
                 -- Dump header debug info
                 if DF.DumpHeaderInfo then
                     DF:DumpHeaderInfo()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Header info not available"])
+                    print("|cffff0000DandersFrames:|r Header info not available")
                 end
             elseif msg == "debugheaders" then
                 -- Toggle header debug mode
                 DF.debugHeaders = not DF.debugHeaders
-                print("|cff00ff00DandersFrames:|r " .. format(L["Header debug %s"], DF.debugHeaders and L["enabled"] or L["disabled"]))
+                print("|cff00ff00DandersFrames:|r " .. format("Header debug %s", DF.debugHeaders and L["enabled"] or L["disabled"]))
             elseif msg == "raidbg" then
                 -- Toggle raid group debug backgrounds
                 if DF.ToggleRaidDebugBackgrounds then
                     DF:ToggleRaidDebugBackgrounds()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Raid debug not available"])
+                    print("|cffff0000DandersFrames:|r Raid debug not available")
                 end
             elseif msg == "auratimer" then
                 -- Show aura timer stats
                 if DF.PrintAuraTimerStats then
                     DF:PrintAuraTimerStats()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Aura timer not available"])
+                    print("|cffff0000DandersFrames:|r Aura timer not available")
                 end
             elseif msg == "auratimer reset" or msg == "auratreset" then
                 -- Reset aura timer stats
                 if DF.ResetAuraTimerStats then
                     DF:ResetAuraTimerStats()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Aura timer not available"])
+                    print("|cffff0000DandersFrames:|r Aura timer not available")
                 end
             elseif msg == "testwizard" then
                 if DF.TestPopupWizard then
                     DF:TestPopupWizard()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
                 end
             elseif msg == "testhighlight" then
                 -- Debug: open settings to Frame tab and highlight width/height
@@ -4242,14 +4242,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.TestPopupAlert then
                     DF:TestPopupAlert()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
                 end
             elseif msg:match("^importwizard ") then
                 local str = msg:match("^importwizard (.+)$")
                 if str and DF.WizardBuilder then
                     DF.WizardBuilder:HandleImportCommand(str)
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Usage: /df importwizard <string>"])
+                    print("|cffff0000DandersFrames:|r Usage: /df importwizard <string>")
                 end
             elseif msg == "aurasetup" then
                 -- Launch the Aura Filter Setup wizard
@@ -4263,7 +4263,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         end
                     end
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["WizardBuilder not loaded"])
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
                 end
             elseif msg == "testbuilder" then
                 -- Test the wizard builder popup
@@ -4273,7 +4273,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         print("|cff00ff00DandersFrames:|r " .. format(L["Wizard '%s' saved!"], tostring(name)))
                     end)
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["WizardBuilder not loaded"])
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
                 end
             elseif msg == "testpicker" then
                 -- Test the settings picker mode
@@ -4283,14 +4283,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         print("|cff00ff00DandersFrames:|r " .. format(L["Picked setting: %s%s%s from tab %s%s%s"], "|cffffffff", tostring(dbKey), "|r", "|cffffffff", tostring(tabName), "|r"))
                     end)
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Popup module not loaded"])
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
                 end
             elseif msg == "profiler" then
                 -- Toggle the function profiler UI
                 if DF.Profiler then
                     DF.Profiler:ToggleUI()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Profiler not loaded"])
+                    print("|cffff0000DandersFrames:|r Profiler not loaded")
                 end
             elseif msg == "profile" or msg:match("^profile %d") then
                 -- Quick profile run: /df profile [seconds]
@@ -4298,13 +4298,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     local duration = tonumber(msg:match("(%d+)")) or 10
                     DF.Profiler:QuickProfile(duration)
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["Profiler not loaded"])
+                    print("|cffff0000DandersFrames:|r Profiler not loaded")
                 end
             else
                 if DF.ToggleGUI then
                     DF:ToggleGUI()
                 else
-                    print("|cffff0000DandersFrames:|r " .. L["GUI not loaded yet."])
+                    print("|cffff0000DandersFrames:|r GUI not loaded yet.")
                 end
             end
         end

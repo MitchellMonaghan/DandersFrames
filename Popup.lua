@@ -1780,7 +1780,7 @@ local function ConfigureForWizard(config)
     -- Set title (prefix with addon name so users know the source)
     local displayTitle = config.title or "Setup"
     if not config.noPrefix then
-        displayTitle = L["DandersFrames: "] .. displayTitle
+        displayTitle = "DandersFrames: " .. displayTitle
     end
     f.TitleText:SetText(displayTitle)
 
@@ -1961,7 +1961,7 @@ PopWizardState = function()
     if PopupFrame then
         local restoreTitle = wizardConfig.title or "Setup"
         if not wizardConfig.noPrefix then
-            restoreTitle = L["DandersFrames: "] .. restoreTitle
+            restoreTitle = "DandersFrames: " .. restoreTitle
         end
         PopupFrame.TitleText:SetText(restoreTitle)
         local width = wizardConfig.width or FRAME_WIDTH

@@ -788,7 +788,7 @@ function CC:CreateBindingRow(parent, binding, index)
         -- Show frames info
         local frames = binding.frames or { dandersFrames = true, otherFrames = true }
         local framesParts = {}
-        if frames.dandersFrames then table.insert(framesParts, L["DandersFrames"]) end
+        if frames.dandersFrames then table.insert(framesParts, "DandersFrames") end
         if frames.otherFrames then table.insert(framesParts, L["Other Frames"]) end
         local framesText = format(L["Frames: %s"], #framesParts > 0 and table.concat(framesParts, ", ") or "None")
         GameTooltip:AddLine(framesText, 0.6, 0.6, 0.6)
