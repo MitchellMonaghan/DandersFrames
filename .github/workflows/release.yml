@@ -88,6 +88,29 @@ jobs:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate locale files
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          ERRORS=0
+          for f in .release/DandersFrames/Locales/*.lua; do
+            if grep -qP '^(?!--).*error code:|^(?!--).*<!DOCTYPE|^(?!--).*<html' "$f" 2>/dev/null; then
+              echo "::error::Locale file contains API error response: $f"
+              head -5 "$f"
+              ERRORS=$((ERRORS + 1))
+            fi
+            # Basic Lua syntax check — look for lines that aren't comments, assignments, or blank
+            if grep -nP '^(?!--|local |if |end|L\[|$|\s*$)' "$f" | grep -vP '^\d+:\s*$' | head -5 | grep -q .; then
+              echo "::warning::Possible malformed content in $f:"
+              grep -nP '^(?!--|local |if |end|L\[|$|\s*$)' "$f" | grep -vP '^\d+:\s*$' | head -5
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::$ERRORS locale file(s) have issues. Build uploaded but may contain errors."
+            exit 1
+          fi
+          echo "All locale files validated OK"
+
       - name: Notify Discord (dev channel — alpha/beta)
         if: steps.guard.outputs.skip != 'true' && success() && steps.changelog.outputs.channel != 'release'
         env:
