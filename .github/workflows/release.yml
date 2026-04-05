@@ -107,7 +107,7 @@ jobs:
           echo "All locale files validated OK"
 
       - name: Notify Discord (dev channel — alpha/beta)
-        if: steps.guard.outputs.skip != 'true' && success() && steps.changelog.outputs.channel != 'release'
+        if: steps.guard.outputs.skip != 'true' && success() && steps.changelog.outputs.channel != 'release' && startsWith(github.ref, 'refs/tags/')
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_DEV }}
           VERSION: ${{ steps.changelog.outputs.version }}
