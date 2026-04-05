@@ -4,6 +4,11 @@ DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
+## [4.2.3] - 2026-04-05
+
+### Bug Fixes
+* (Localization) Add missing "Pull Timer" locale string causing errors on load
+
 ## [4.2.2] - 2026-04-05
 
 ### Improvements
