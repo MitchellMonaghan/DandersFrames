@@ -6194,12 +6194,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end), 30)
         settingsGroup:AddWidget(GUI:CreateLabel(self.child, L["Shows a colored border/glow when a dispellable debuff is present."], 250), 35)
         local partyDbDispel = DF.db.party
-        local dispelIndicatorOptions = { [1]= L["Dispellable By Me"], [2]= L["All Dispellable"] }
+        local dispelIndicatorOptions = { [1]= L["All Dispellable"], [2]= L["Dispellable By Me"] }
         local dispelIndicatorDropdown = settingsGroup:AddWidget(GUI:CreateDropdown(self.child, L["Show Overlay For"], dispelIndicatorOptions, partyDbDispel, "_blizzDispelIndicator", function()
             local newValue = partyDbDispel._blizzDispelIndicator or 1
             if newValue == 0 then partyDbDispel._blizzDispelIndicator = 1; newValue = 1 end
-            SetCVar("raidFramesDispelIndicatorType", newValue)
             InvalidateCurves()
+            if DF.UpdateAllDispelOverlays then DF:UpdateAllDispelOverlays() end
         end), 55)
         dispelIndicatorDropdown.hideOn = HideDispelOptions
         local showBorder = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Border"], db, "dispelShowBorder", function()

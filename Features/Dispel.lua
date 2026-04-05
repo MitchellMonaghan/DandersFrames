@@ -1442,38 +1442,63 @@ function DF:UpdateDispelOverlay(frame)
     local debugMode = DF.debugDispel
     
     -- PERFORMANCE OPTIMIZATION: Use BlizzardAuraCache instead of scanning all 40 slots.
-    -- The playerDispellable cache contains auraInstanceIDs of debuffs that should trigger
-    -- the dispel overlay (based on raidFramesDispelIndicatorType CVar setting).
     local foundDispellable = false
     local lastDispellableID = nil
     local lastDispelType = nil
-    
+
     -- Check if bleed/enrage overlay is enabled (user wants to see them)
     local bleedColor = db.dispelBleedColor
     local showBleeds = bleedColor and (bleedColor.r > 0 or bleedColor.g > 0 or bleedColor.b > 0)
-    
-    -- FAST PATH: Check playerDispellable cache first (typically 0-2 entries vs scanning 40 slots)
+
+    -- Determine dispel mode:
+    -- _blizzDispelIndicator: 1 = All Dispellable, 2 = Dispellable By Me
+    local partyDb = DF.db and DF.db.party
+    local dispelIndicator = partyDb and partyDb._blizzDispelIndicator or 1
+
     local cache = DF.BlizzardAuraCache and DF.BlizzardAuraCache[unit]
-    if cache and cache.playerDispellable then
-        -- Get first entry from cache using next() - O(1)
-        local auraInstanceID = next(cache.playerDispellable)
-        if auraInstanceID then
-            foundDispellable = true
-            lastDispellableID = auraInstanceID
-            lastDispelType = nil  -- Not a bleed/enrage
-            if debugMode then
-                print("|cff00ff00DF Dispel:|r Found dispellable in cache: " .. tostring(auraInstanceID))
+
+    if dispelIndicator == 2 then
+        -- "Dispellable By Me": use playerDispellable cache (RAID_PLAYER_DISPELLABLE filtered)
+        if cache and cache.playerDispellable then
+            local auraInstanceID = next(cache.playerDispellable)
+            if auraInstanceID then
+                foundDispellable = true
+                lastDispellableID = auraInstanceID
+                if debugMode then
+                    print("|cff00ff00DF Dispel:|r Found player-dispellable in cache: " .. tostring(auraInstanceID))
+                end
+            end
+        end
+    else
+        -- "All Dispellable": iterate ALL debuffs on the unit — GetAuraDispelTypeColor + the curve
+        -- will naturally return nil for non-dispellable types (dispelType 0), so the overlay
+        -- only lights up for types 1-4 (Magic/Curse/Disease/Poison).
+        -- We use a test curve to find the first debuff with a valid dispel color.
+        if cache and cache.debuffs then
+            local testCurve = GetBorderCurve(db)
+            if testCurve then
+                for auraInstanceID in pairs(cache.debuffs) do
+                    local color = C_UnitAuras.GetAuraDispelTypeColor(unit, auraInstanceID, testCurve)
+                    if color then
+                        foundDispellable = true
+                        lastDispellableID = auraInstanceID
+                        if debugMode then
+                            print("|cff00ff00DF Dispel:|r Found all-dispellable via curve: " .. tostring(auraInstanceID))
+                        end
+                        break
+                    end
+                end
             end
         end
     end
-    
+
     -- SLOW PATH: Only scan for bleeds/enrages if enabled AND no regular dispellable found
     -- Bleeds (dispelType 11) and enrages (dispelType 9) don't appear in dispelDebuffFrames
     if showBleeds and not foundDispellable then
         for i = 1, 40 do
             local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
             if not aura then break end
-            
+
             local dispelType = aura.dispelType
             if dispelType == 11 or dispelType == 9 then
                 foundDispellable = true
@@ -1487,7 +1512,7 @@ function DF:UpdateDispelOverlay(frame)
             end
         end
     end
-    
+
     if foundDispellable and lastDispellableID then
         -- Create overlay only when we need to show it
         local overlay = CreateDispelOverlay(frame)
