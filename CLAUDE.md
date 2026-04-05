@@ -17,6 +17,7 @@ DandersFrames is a custom party and raid frame addon for World of Warcraft (Reta
 - **Always update the TOC file** (`DandersFrames.toc`) when adding or removing Lua/XML files. Load order matters — see `.claude/docs/project-structure.md`.
 - **Test mode exists** — when suggesting testing, remind that `/df test` or the test mode toggle can be used to simulate party/raid frames without being in a group.
 - **No AI attribution in commits.** Never add `Co-Authored-By` lines, Claude references, or any AI-related mentions in commit messages or code comments.
+- **`CHANGELOG.md` is the single source of truth for changelogs.** Always add new changelog entries to `CHANGELOG.md` — never edit `Changelog.lua` directly. CI generates `Changelog.lua` from `CHANGELOG.md` at build time via `generate_changelog.sh`. To update the local in-game changelog for testing, run `bash generate_changelog.sh` then restore side effects with `git checkout -- CHANGELOG.md DandersFrames.toc` (the script modifies these as a side effect). The `/bump-version` skill should add entries to `CHANGELOG.md`.
 
 ## File Paths
 
