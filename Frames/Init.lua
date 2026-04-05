@@ -1145,10 +1145,15 @@ function DF:CommitAllClickCastRegistrations()
         end
     end
 
-    -- Pinned frames header
-    if DF.pinnedHeader then
-        for i = 1, 5 do
-            commitFrame(DF.pinnedHeader:GetAttribute("child" .. i))
+    -- Pinned frames headers
+    if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.headers then
+        for setIndex = 1, 2 do
+            local header = DF.PinnedFrames.headers[setIndex]
+            if header then
+                for i = 1, 40 do
+                    commitFrame(header:GetAttribute("child" .. i))
+                end
+            end
         end
     end
 end
