@@ -969,6 +969,7 @@ L["Profile imported successfully!"] = true
 L["Profile Name"] = true
 L["Profile not found"] = true
 L["Profile:"] = true
+L["Pull Timer"] = true
 L["Pull Timer Duration"] = true
 L["Quick Switch CC Profile"] = true
 L["Quick Switch Profile"] = true
