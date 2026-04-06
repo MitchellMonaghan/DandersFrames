@@ -6,9 +6,16 @@
 * (Debug Console) Redesigned page with collapsible sections and a wider log viewer
 * (Debug Console) Category checkboxes grouped by feature and always visible, with descriptions on hover
 * (Debug Console) Unchecking a category now stops it from being logged, not just hidden
+* (Targeted Spells) Add detection for the upcoming WoW 12.0.5 `UnitIsUnit` API change that prevents addons from detecting which party/raid member an enemy is targeting. When detected, group-frame Targeted Spells is force-disabled with an explanatory overlay on the settings page and a link to Personal Targeted Spells, which continues to work normally.
+* (Auras) Add detection for the upcoming WoW 12.0.5 removal of addon access to Blizzard's party-frame aura data. When detected, the aura source is automatically migrated to Direct API mode, the source dropdown is locked with a warning note, and a popup alert explains the change with a "Show Me" button that opens the Aura Filters tab and highlights the Direct API filter controls for review.
+* (Defensive Icon) Defensive icon detection now uses the secret-safe Direct API (`IsAuraFilteredOutByInstanceID`) exclusively, independent of the selected aura data source. Works consistently on current retail and upcoming builds, including a unified multi-defensive renderer previously exclusive to Direct mode.
 
 ### Bug Fixes
 * (Dispel Overlay) Fix "All Dispellable" mode not firing in Direct API aura mode when the dispellable debuff was filtered out of the icon display — the overlay now triggers on any dispellable debuff regardless of aura filters
+* (Debug Console) Fix secret-tainted log entries crashing the live viewer and export with `invalid value (secret)` errors — sanitization added at write, display, and concat layers so a tainted value can never corrupt the log. Legacy tainted entries from previous sessions are also handled on render.
+* (Auras) Fix early-load error when Direct API is enabled before the frame map is populated — the Blizzard cache-population path now resolves the aura source from `DandersFramesDB_v2` when `DF.db` isn't built yet, covering the load-time scan from `InitializeEnhancedAuras`
+* (Auras) Fix `IsShown on bad self` error reading `frame.CenterDefensiveBuff` on some builds where Blizzard restructured the private auras frame — defensive classification now skips the frame read entirely and uses the Direct API populator
+* (Aura Designer) Temporarily disable LinkedAuras (Symbiotic Relationship target inference) — the `UnitIsUnit(unit, "player")` guard in its UNIT_AURA handler flooded the error log with secret-boolean taint errors on upcoming WoW builds. Minor functionality loss for Restoration Druids; will be re-enabled once the guard is rewritten to use string comparison.
 
 ### Diagnostics
 * (Raid Frames) Added logging to help track down the "raid frames jump on roster change" bug. If affected, open `/df console`, enable the **RAIDPOS**, **LAYOUT**, **ROSTER**, and **FRAMESORT** categories, reproduce, then send the log with your bug report.

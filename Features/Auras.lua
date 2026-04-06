@@ -564,10 +564,233 @@ local function TriggerAuraUpdateForUnit(unit)
     end
 end
 
+-- Forward declarations: these helpers are defined later in the file (used by
+-- the Direct API path), but CaptureAurasFromBlizzardFrame also calls them to
+-- compute defensive auras via the secret-safe IsAuraFilteredOutByInstanceID,
+-- avoiding the broken-in-12.0.5 frame.CenterDefensiveBuff read.
+local BuildDirectDefensiveFilters
+local AuraPassesAnyFilter
+
+-- ============================================================
+-- API COMPATIBILITY: Blizzard aura source removed in 12.0.5
+-- ------------------------------------------------------------
+-- WoW 12.0.5 removed party-frame buff/debuff rendering from the default
+-- compact party/raid frames entirely. The aura containers (frame.buffs,
+-- frame.debuffs), the Lua update functions (CompactUnitFrame_UpdateAuras,
+-- UpdateBuffs, UpdateDebuffs), and every hook point the Blizzard capture
+-- path depended on are gone. The configuration fields (maxBuffs, auraSize,
+-- etc.) remain on the frame, but the actual aura data never enters Lua —
+-- rendering is done entirely in native code now.
+--
+-- Since "Blizzard data source" mode works by mirroring Blizzard's display
+-- decisions, and there are no more decisions to mirror, that mode is
+-- architecturally impossible on 12.0.5+. We detect the condition at addon
+-- init, force both party and raid profiles to DIRECT mode, persist the
+-- flag to SavedVariables so the migration only happens once, and show a
+-- one-time popup explaining the change.
+--
+-- Detection: CompactUnitFrame_UpdateAuras is the cleanest single indicator.
+-- On live retail it's a Lua function; on 12.0.5+ it's nil. No other state
+-- is required — if the function exists, Blizzard still has a Lua aura
+-- pipeline; if it doesn't, they don't.
+-- ============================================================
+
+local function IsBlizzardAuraSourceAvailable()
+    return type(_G.CompactUnitFrame_UpdateAuras) == "function"
+end
+
+-- Applies the forced migration to both party and raid profiles. Called both
+-- at first detection (new flag) and on every subsequent load where the flag
+-- is already set (so the setting can't drift back to BLIZZARD via profile
+-- import, reset, or copy).
+local function ForceDirectAuraSourceMode()
+    if not DF.db then return end
+    if DF.db.party then DF.db.party.auraSourceMode = "DIRECT" end
+    if DF.db.raid  then DF.db.raid.auraSourceMode  = "DIRECT" end
+end
+
+-- One-time detection + migration. Runs once after DF.db is available.
+-- Safe to call multiple times — the first call flips the flag and shows
+-- the popup, subsequent calls only re-apply the forced setting.
+function DF:CheckBlizzardAuraSourceAvailable()
+    -- Already migrated this session — nothing to do.
+    if DF.BlizzardAuraSourceUnavailable then
+        ForceDirectAuraSourceMode()
+        return
+    end
+
+    -- Blizzard's pipeline is still present — nothing to migrate.
+    if IsBlizzardAuraSourceAvailable() then
+        return
+    end
+
+    -- Detection positive. Set the in-memory flag immediately so the rest
+    -- of this file's early-returns see it.
+    DF.BlizzardAuraSourceUnavailable = true
+
+    -- Force the setting on both profiles right now, before anything else
+    -- tries to read it.
+    ForceDirectAuraSourceMode()
+
+    -- Persist so we don't re-run detection (and re-show the popup) on every
+    -- reload. Also persists the migration across reloads even if the user
+    -- somehow flips auraSourceMode back (e.g. via profile import).
+    if DandersFramesDB_v2 then
+        DandersFramesDB_v2.apiBlocked = DandersFramesDB_v2.apiBlocked or {}
+        local first = not DandersFramesDB_v2.apiBlocked.blizzardAuraSource
+        DandersFramesDB_v2.apiBlocked.blizzardAuraSource = true
+
+        -- Only show the popup the first time we detect this, so users don't
+        -- get spammed on every reload after the initial migration.
+        if first then
+            -- Defer the popup until after the GUI is ready (popup system lives
+            -- in Popup.lua which loads later in the TOC and needs ADDON_LOADED
+            -- to finish).
+            C_Timer.After(2, function()
+                if DF.ShowPopupAlert then
+                    -- Inline arrow icon for bullet points. Uses a texture
+                    -- escape sequence so we're not relying on unicode symbols
+                    -- (WoW's font doesn't render ► / ▸ etc. — they show as
+                    -- tofu squares). The 14:14:0:0 sizing lines the icon up
+                    -- with the GameFontNormal baseline.
+                    local arrow = "|TInterface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right:14:14:0:0|t"
+
+                    -- Filter settings we'll highlight when the user clicks
+                    -- "Show Me" — same list the old Aura Filter Setup wizard
+                    -- used. Covers every Direct API buff + debuff filter plus
+                    -- the sort-order dropdowns so users can review everything
+                    -- in one place.
+                    local directFilterKeys = {
+                        "directBuffShowAll", "directBuffOnlyMine",
+                        "directBuffFilterRaid", "directBuffFilterRaidInCombat",
+                        "directBuffFilterCancelable", "directBuffFilterNotCancelable",
+                        "directBuffFilterImportant", "directBuffFilterBigDefensive",
+                        "directBuffFilterExternalDefensive", "directBuffSortOrder",
+                        "directDebuffShowAll", "directDebuffFilterRaid",
+                        "directDebuffFilterRaidInCombat", "directDebuffFilterCrowdControl",
+                        "directDebuffFilterImportant", "directDebuffSortOrder",
+                    }
+
+                    local function openAuraFiltersTabAndHighlight()
+                        -- Open GUI if not already open
+                        local guiOpen = DF.GUIFrame and DF.GUIFrame:IsShown()
+                        if not guiOpen and DF.ToggleGUI then
+                            DF:ToggleGUI()
+                        end
+                        -- Give the GUI a tick to finish building, then switch
+                        -- to the Aura Filters tab and highlight the filter
+                        -- controls.
+                        C_Timer.After(0.3, function()
+                            if DF.GUI and DF.GUI.SelectTab then
+                                DF.GUI.SelectTab("auras_filters")
+                            end
+                            C_Timer.After(0.3, function()
+                                if DF.HighlightSettings then
+                                    DF:HighlightSettings("auras_filters", directFilterKeys)
+                                end
+                            end)
+                        end)
+                    end
+
+                    DF:ShowPopupAlert({
+                        title = "|cffff3333!!! PLEASE READ !!!|r",
+                        icon  = "Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew",
+                        width = 500,
+                        message =
+                            "|cffff9900Aura Data Source changed — action may be required|r\n\n"
+                            .. "Blizzard has removed the ability for addons to read buff and debuff data from their default compact party/raid frames in WoW 12.0.5.\n\n"
+                            .. "This breaks the |cffffffff\"Blizzard\"|r aura data source in DandersFrames. To keep your buffs, debuffs, and dispels working, DandersFrames has automatically switched you to the |cff88ff88\"Direct API\"|r source, which reads aura data directly from the game and is unaffected by this change.\n\n"
+                            .. arrow .. " |cffccccccYour buffs and debuffs should appear normally on DandersFrames.|r\n"
+                            .. arrow .. " |cffccccccYou may want to review the Direct API filter options in the Aura Filters settings tab.|r\n"
+                            .. arrow .. " |cffccccccGoing forward, unless Blizzard reverses this change, Direct API will be the only supported aura data source.|r",
+                        buttons = {
+                            { label = "Show Me",       onClick = openAuraFiltersTabAndHighlight },
+                            { label = "I Understand" },
+                        },
+                    })
+                end
+            end)
+        end
+    end
+
+    DF:Debug("BLIZAURA", "CompactUnitFrame_UpdateAuras is nil — forced DIRECT aura source mode (Blizzard pipeline removed in 12.0.5)")
+end
+
+-- Iterate a Blizzard aura container (frame.buffs / frame.debuffs / etc).
+-- Calls visit(aura) for each aura table in the container.
+--
+-- Blizzard's container :Iterate API differs across builds:
+--   * Retail (live): callback form — `container:Iterate(function(key, aura) end)`
+--     Calling without a callback errors with "attempt to call local 'callback' (a nil value)".
+--   * PTR 12.0.5: stateless form — `for key, aura in container:Iterate() do end`
+--     Calling with a callback silently does nothing (the first yielded
+--     pair is (key, auraTable); a single loop variable would get the key).
+--
+-- We detect which form this build uses once (cached) by inspecting the
+-- Iterate function's declared parameter count via debug.getinfo. The
+-- callback form is defined as `:Iterate(callback)` → nparams >= 2 (self,
+-- callback). The stateless form is `:Iterate()` → nparams == 1 (self).
+-- If detection fails (debug unavailable), default to "callback" since
+-- that's the currently-shipping retail API.
+local iterateApiMode  -- "callback" | "stateless" | nil (unknown)
+
+local function DetectIterateApi(container)
+    if iterateApiMode then return iterateApiMode end
+    if not container or not container.Iterate then return nil end
+    local info = debug and debug.getinfo and debug.getinfo(container.Iterate, "u")
+    if info and info.nparams and info.nparams >= 1 then
+        if info.nparams >= 2 then
+            iterateApiMode = "callback"
+        else
+            iterateApiMode = "stateless"
+        end
+    else
+        -- Detection failed — default to callback form (retail).
+        iterateApiMode = "callback"
+    end
+    return iterateApiMode
+end
+
+local function IterateAuraContainer(container, visit)
+    if not container or not container.Iterate then return end
+    local mode = DetectIterateApi(container)
+    if mode == "callback" then
+        container:Iterate(function(key, aura)
+            -- Callback form passes (key, aura) where key is the
+            -- auraInstanceID and aura is the aura data table.
+            local auraTable = (type(aura) == "table") and aura or { auraInstanceID = key }
+            visit(auraTable)
+            return false  -- continue iterating (true would stop)
+        end)
+    else
+        -- Stateless form: `for key, aura in container:Iterate() do`.
+        -- We capture both values and pick whichever is the table.
+        for a, b in container:Iterate() do
+            if type(b) == "table" then
+                visit(b)
+            elseif type(a) == "table" then
+                visit(a)
+            end
+        end
+    end
+end
+
 local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     -- PERF TEST: Skip if disabled
     if DF.PerfTest and not DF.PerfTest.enableBlizzardAuraCache then return end
-    
+
+    -- 12.0.5+ short-circuit: if Blizzard removed the aura pipeline, there is
+    -- literally no data to capture from the frame. Exit immediately before
+    -- touching frame.buffs / frame.debuffs (which are nil on these builds).
+    -- Also catches the load-time ScanAllBlizzardFrames() call which runs
+    -- before the delayed detection in InitializeEnhancedAuras has had a
+    -- chance to set DF.BlizzardAuraSourceUnavailable — hence the direct
+    -- function check as a fallback.
+    if DF.BlizzardAuraSourceUnavailable
+       or type(_G.CompactUnitFrame_UpdateAuras) ~= "function" then
+        return
+    end
+
     if not frame or not frame.unit then return end
     
     -- CRITICAL GUARD: Skip frames where unitExists is false
@@ -602,14 +825,43 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
         end
     end
 
-    -- Skip Blizzard cache population when Direct mode is active for this unit
-    local modeFrame = DF.unitFrameMap and DF.unitFrameMap[unit]
-    if modeFrame then
-        local modeDb = DF:GetFrameDB(modeFrame)
-        if modeDb and modeDb.auraSourceMode == "DIRECT" then
-            DF:Debug("BLIZAURA", "Capture SKIPPED for %s — Direct mode active", unit)
-            return
+    -- Skip Blizzard cache population when Direct mode is active for this unit.
+    -- Three resolution paths, in order:
+    --   1. Unit is mapped to a DF frame → check that frame's mode db
+    --   2. DF.db is built but unit isn't mapped yet (race during init) →
+    --      check both party and raid profile dbs
+    --   3. DF.db isn't built yet (file-load-time scan from
+    --      InitializeEnhancedAuras, before Core.lua wires up the profile) →
+    --      read SavedVariables directly
+    local function IsDirectModeActiveForUnit(u)
+        local mf = DF.unitFrameMap and DF.unitFrameMap[u]
+        if mf then
+            local modeDb = DF:GetFrameDB(mf)
+            return modeDb and modeDb.auraSourceMode == "DIRECT"
         end
+
+        local partyDb = DF.db and DF.db.party
+        local raidDb = DF.db and DF.db.raid
+        if partyDb or raidDb then
+            return (partyDb and partyDb.auraSourceMode == "DIRECT")
+                or (raidDb and raidDb.auraSourceMode == "DIRECT")
+        end
+
+        -- Pre-init: dig into SavedVariables directly
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            local profileName = DandersFramesDB_v2.currentProfile or "Default"
+            local profile = DandersFramesDB_v2.profiles[profileName]
+            if profile then
+                if profile.party and profile.party.auraSourceMode == "DIRECT" then return true end
+                if profile.raid and profile.raid.auraSourceMode == "DIRECT" then return true end
+            end
+        end
+        return false
+    end
+
+    if IsDirectModeActiveForUnit(unit) then
+        DF:Debug("BLIZAURA", "Capture SKIPPED for %s — Direct mode active", unit)
+        return
     end
 
     DF:Debug("BLIZAURA", "Capture START for %s (frame: %s, trigger: %s)", unit, frameName or "?", tostring(triggerUpdate))
@@ -632,39 +884,52 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     wipe(cache.allDispellable)
     wipe(cache.defensives)
 
-    -- Capture buff auraInstanceIDs from Blizzard's container
-    -- In 12.0.8+ Blizzard moved aura data from frame arrays (buffFrames/debuffFrames)
-    -- to container objects with :Iterate()/:Size() methods. The containers provide full
-    -- aura data directly, including canActivePlayerDispel for dispel detection.
+    -- Capture buff auraInstanceIDs from Blizzard's container.
+    --
+    -- Blizzard's aura containers expose :Iterate, but the API shape differs
+    -- between builds: live uses a callback form `container:Iterate(callback)`,
+    -- PTR 12.0.5 uses a stateless iterator `for key, aura in container:Iterate()`.
+    -- IterateAuraContainer auto-detects which form this build supports (via
+    -- debug.getinfo on the Iterate function) and routes to the right path.
+    --
+    -- frame.buffs returns only the auras Blizzard chose to display (a heavily
+    -- filtered subset). We use this for the buff bar display only — defensive
+    -- classification is done separately below against the FULL helpful aura
+    -- list so the dedup set isn't biased.
     if frame.buffs and frame.buffs.Iterate then
-        frame.buffs:Iterate(function(auraInstanceID, data)
-            if auraInstanceID then
-                cache.buffs[auraInstanceID] = true
-                cache.buffOrder[#cache.buffOrder + 1] = auraInstanceID
+        IterateAuraContainer(frame.buffs, function(aura)
+            local id = aura.auraInstanceID
+            if id then
+                cache.buffs[id] = true
+                cache.buffOrder[#cache.buffOrder + 1] = id
             end
-            return false
         end)
     else
         DF:DebugWarn("BLIZAURA", "No buffs container on frame for %s (buffs: %s, Iterate: %s)", unit, tostring(frame.buffs ~= nil), tostring(frame.buffs and frame.buffs.Iterate ~= nil))
     end
 
-    -- Capture debuff auraInstanceIDs from Blizzard's container
-    -- All aura data fields are secret/tainted in combat, so we can only capture the
-    -- auraInstanceID (iterator key). For dispel detection we use Direct API's
-    -- IsAuraFilteredOutByInstanceID which is secret-safe — same approach as Direct mode.
-    -- Use Direct API for dispel detection — IsAuraFilteredOutByInstanceID is secret-safe
+    -- Defensives are handled entirely by DF:PopulateDefensiveCache, called
+    -- directly from UpdateDefensiveBar. This capture path does not touch
+    -- cache.defensives so the defensive icon is fully decoupled from the
+    -- Blizzard aura source and from whether this capture succeeded.
+
+    -- Capture debuff auraInstanceIDs from Blizzard's container.
+    -- All aura data fields are secret/tainted in combat, so we only read
+    -- auraInstanceID (a non-secret integer). For dispel detection we run
+    -- each ID through IsAuraFilteredOutByInstanceID which is secret-safe.
+    -- See IterateAuraContainer above for how we handle the callback vs
+    -- stateless API difference between retail and PTR builds.
     local dispelFilterStr = "HARMFUL|RAID_PLAYER_DISPELLABLE"
     if frame.debuffs and frame.debuffs.Iterate then
-        frame.debuffs:Iterate(function(auraInstanceID)
-            if auraInstanceID then
-                cache.debuffs[auraInstanceID] = true
-                cache.debuffOrder[#cache.debuffOrder + 1] = auraInstanceID
-                -- Dispel check via Direct API (secret-safe C function)
-                if IsAuraFilteredOut and not IsAuraFilteredOut(unit, auraInstanceID, dispelFilterStr) then
-                    cache.playerDispellable[auraInstanceID] = true
+        IterateAuraContainer(frame.debuffs, function(aura)
+            local id = aura.auraInstanceID
+            if id then
+                cache.debuffs[id] = true
+                cache.debuffOrder[#cache.debuffOrder + 1] = id
+                if IsAuraFilteredOut and not IsAuraFilteredOut(unit, id, dispelFilterStr) then
+                    cache.playerDispellable[id] = true
                 end
             end
-            return false
         end)
     else
         DF:DebugWarn("BLIZAURA", "No debuffs container on frame for %s (debuffs: %s, Iterate: %s)", unit, tostring(frame.debuffs ~= nil), tostring(frame.debuffs and frame.debuffs.Iterate ~= nil))
@@ -712,15 +977,10 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     for _ in pairs(cache.playerDispellable) do dispelCount = dispelCount + 1 end
     DF:Debug("BLIZAURA", "Capture DONE for %s — buffs: %d, debuffs: %d, dispel: %d", unit, #cache.buffOrder, #cache.debuffOrder, dispelCount)
 
-    -- Capture defensive auras from CenterDefensiveBuff frame
-    -- This is a single frame that shows the "big defensive" aura Blizzard chose to display
-    if frame.CenterDefensiveBuff then
-        local defFrame = frame.CenterDefensiveBuff
-        if defFrame.IsShown and defFrame:IsShown() and defFrame.auraInstanceID then
-            DF.BlizzardAuraCache[unit].defensives[defFrame.auraInstanceID] = true
-        end
-    end
-    
+    -- (Defensive classification is now handled inline during the buff
+    -- iteration above, using IsAuraFilteredOutByInstanceID. We no longer
+    -- read frame.CenterDefensiveBuff — it restructured in 12.0.5.)
+
     -- Cache is now populated. Trigger display update if requested.
     --
     -- ARCHITECTURE: This hooksecurefunc callback fires AFTER
@@ -872,7 +1132,9 @@ local function BuildDirectDebuffFilters(db)
 end
 
 -- Build defensive filter table (BIG_DEFENSIVE + EXTERNAL_DEFENSIVE, nil if unavailable)
-local function BuildDirectDefensiveFilters()
+-- Assigned to the forward-declared local at the top of the file so it is
+-- visible inside CaptureAurasFromBlizzardFrame.
+function BuildDirectDefensiveFilters()
     if cachedDefensiveFilters then return cachedDefensiveFilters end
     local filters = {}
     if AuraFilters.BigDefensive then filters[#filters + 1] = "HELPFUL|" .. AuraFilters.BigDefensive end
@@ -893,7 +1155,9 @@ end
 -- Check if an aura passes any filter in a table (OR logic)
 -- Returns true if IsAuraFilteredOutByInstanceID says the aura is NOT filtered out
 -- for at least one of the provided filter strings.
-local function AuraPassesAnyFilter(unit, auraInstanceID, filters)
+-- Assigned to the forward-declared local at the top of the file so it is
+-- visible inside CaptureAurasFromBlizzardFrame.
+function AuraPassesAnyFilter(unit, auraInstanceID, filters)
     if not IsAuraFilteredOut then return true end
     for i = 1, #filters do
         if not IsAuraFilteredOut(unit, auraInstanceID, filters[i]) then
@@ -901,6 +1165,41 @@ local function AuraPassesAnyFilter(unit, auraInstanceID, filters)
         end
     end
     return false
+end
+
+-- ============================================================
+-- DEFENSIVE CACHE POPULATOR (mode-independent)
+-- ============================================================
+-- Rebuilds cache.defensives for a unit by scanning every helpful aura via
+-- GetUnitAuras and running each through the secret-safe IsAuraFilteredOut
+-- against BIG_DEFENSIVE / EXTERNAL_DEFENSIVE filters.
+--
+-- This is called from UpdateDefensiveBar (in Frames/Icons.lua) directly
+-- so the defensive icon is fully decoupled from either capture path —
+-- Blizzard's frame.buffs:Iterate doesn't have to succeed for defensive
+-- icons to render. The icon renderer always reads fresh data, regardless
+-- of whether the Blizzard or Direct capture ran (or failed) first.
+function DF:PopulateDefensiveCache(unit)
+    if not unit then return end
+    if not DF.BlizzardAuraCache then DF.BlizzardAuraCache = {} end
+    local cache = DF.BlizzardAuraCache[unit]
+    if not cache then
+        cache = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
+        DF.BlizzardAuraCache[unit] = cache
+    end
+    if not cache.defensives then cache.defensives = {} end
+    wipe(cache.defensives)
+
+    local defFilters = BuildDirectDefensiveFilters()
+    if not defFilters or not GetUnitAuras then return end
+    local helpfulAuras = GetUnitAuras(unit, "HELPFUL", 40)
+    if not helpfulAuras then return end
+    for _, auraData in ipairs(helpfulAuras) do
+        local id = auraData.auraInstanceID
+        if id and AuraPassesAnyFilter(unit, id, defFilters) then
+            cache.defensives[id] = true
+        end
+    end
 end
 
 -- Sort comparators for Direct mode
@@ -982,9 +1281,11 @@ local function ScanUnitDirect(unit)
     local buffFilters = isRaid
         and (cachedRaidBuffFilters or BuildDirectBuffFilters(db))
         or (cachedPartyBuffFilters or BuildDirectBuffFilters(db))
-    local defFilters = db.defensiveIconEnabled and BuildDirectDefensiveFilters() or nil
 
-    -- === HELPFUL AURAS (buffs + defensives in a single pass) ===
+    -- === HELPFUL AURAS ===
+    -- Defensives are NOT classified here — that's handled by
+    -- DF:PopulateDefensiveCache, called directly from UpdateDefensiveBar
+    -- so the defensive icon is fully decoupled from the aura source mode.
     local helpfulAuras = GetUnitAuras(unit, "HELPFUL", 40)
     if helpfulAuras then
         -- Apply sort if requested (for buff display order)
@@ -997,19 +1298,13 @@ local function ScanUnitDirect(unit)
 
         -- Post-classify each aura against enabled filters (OR logic).
         -- buffFilters = nil means "show all buffs" (no post-classification).
-        -- defFilters = nil means defensive constants unavailable (skip).
         for _, auraData in ipairs(helpfulAuras) do
             local id = auraData.auraInstanceID
             if id then
-                -- Buff classification
                 if not buffFilters or AuraPassesAnyFilter(unit, id, buffFilters) then
                     cache.buffs[id] = true
                     cache.buffOrder[#cache.buffOrder + 1] = id
                     cache.buffData[#cache.buffData + 1] = auraData
-                end
-                -- Defensive classification (independent of buff filters)
-                if defFilters and AuraPassesAnyFilter(unit, id, defFilters) then
-                    cache.defensives[id] = true
                 end
             end
         end
@@ -2359,6 +2654,20 @@ local function InitializeEnhancedAuras()
     -- Check if Direct mode should be active on load
     -- Delayed slightly to ensure unitFrameMap is populated
     C_Timer.After(0.5, function()
+        -- Re-apply persisted "Blizzard aura source unavailable" state first,
+        -- so the forced DIRECT mode is set BEFORE EnableDirectAuraMode reads
+        -- the setting. This restores the flag across reloads.
+        if DandersFramesDB_v2 and DandersFramesDB_v2.apiBlocked
+           and DandersFramesDB_v2.apiBlocked.blizzardAuraSource then
+            DF.BlizzardAuraSourceUnavailable = true
+            ForceDirectAuraSourceMode()
+        end
+
+        -- Runtime detection: on a fresh install / first encounter with
+        -- 12.0.5+, CompactUnitFrame_UpdateAuras is nil and we flip the
+        -- flag + show the popup.
+        DF:CheckBlizzardAuraSourceAvailable()
+
         local db = DF.db and DF.db.party
         local raidDb = DF.db and DF.db.raid
         if (db and db.auraSourceMode == "DIRECT") or (raidDb and raidDb.auraSourceMode == "DIRECT") then

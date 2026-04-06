@@ -4398,8 +4398,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end)
 
-        -- Show Aura Filter Setup wizard for existing users on first login after update
-        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenAuraSetupWizard then
+        -- Show Aura Filter Setup wizard for existing users on first login after update.
+        -- Skip entirely when Blizzard's aura pipeline has been removed (12.0.5+):
+        -- the wizard walks users through migrating from Blizzard → Direct API
+        -- filtering, which is meaningless when Blizzard source no longer exists.
+        -- The API-block popup already tells users what happened and points them
+        -- at the Aura Filters tab.
+        local blizzardAuraSourceGone =
+            DandersFramesDB_v2 and DandersFramesDB_v2.apiBlocked
+            and DandersFramesDB_v2.apiBlocked.blizzardAuraSource
+        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenAuraSetupWizard
+           and not blizzardAuraSourceGone then
             DandersFramesDB_v2.seenAuraSetupWizard = true
             C_Timer.After(3, function()
                 if DF.WizardBuilder and not InCombatLockdown() then
@@ -4413,6 +4422,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     end
                 end
             end)
+        elseif blizzardAuraSourceGone and DandersFramesDB_v2 then
+            -- Mark as "seen" so that if/when Blizzard reverses the change and
+            -- this block stops catching, we don't suddenly pop the wizard on a
+            -- user who's been running for months without it.
+            DandersFramesDB_v2.seenAuraSetupWizard = true
         end
 
         -- Show Private Aura Overlay Setup wizard for existing users on first login after update

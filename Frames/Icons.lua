@@ -925,11 +925,19 @@ function DF:UpdateDefensiveBar(frame)
         frame.defensiveIcon:Hide()
         return
     end
-    
-    -- Check for Direct mode multi-defensive
+
+    -- Populate defensive cache directly. This is the ONLY place cache.defensives
+    -- gets written — neither the Blizzard nor Direct capture paths touch it.
+    -- That means the defensive icon is fully independent of the user's aura
+    -- source mode and cannot be broken by iterator issues in the capture path.
+    if DF.PopulateDefensiveCache then
+        DF:PopulateDefensiveCache(unit)
+    end
+
+    -- Defensive icons always use the multi-defensive renderer regardless of
+    -- the user's aura source mode.
     local cache = DF.BlizzardAuraCache and DF.BlizzardAuraCache[unit]
-    if db.auraSourceMode == "DIRECT" then
-        -- DIRECT MODE: Show multiple big defensives
+    do
         local maxDefs = db.defensiveBarMax or 4
         local iconSize = db.defensiveIconSize or 24
         local borderSize = db.defensiveIconBorderSize or 2
@@ -1060,228 +1068,10 @@ function DF:UpdateDefensiveBar(frame)
         return
     end
 
-    -- BLIZZARD MODE: Single defensive from CenterDefensiveBuff (existing behavior)
-    local auraInstanceID = nil
-
-    if cache and cache.defensives then
-        -- Get the first (and only) defensive from cache
-        for id in pairs(cache.defensives) do
-            auraInstanceID = id
-            break
-        end
-    end
-
-    if not auraInstanceID then
-        frame.defensiveIcon:Hide()
-        return
-    end
-    
-    -- PERFORMANCE FIX: Use module-level state and functions instead of closures
-    -- OLD CODE:
-    --[[
-    local auraData = nil
-    pcall(function()
-        auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
-    end)
-    --]]
-    DefensiveBarState.unit = unit
-    DefensiveBarState.auraInstanceID = auraInstanceID
-    DefensiveBarState.auraData = nil
-    DefensiveBarState.frame = frame
-    DefensiveBarState.textureSet = false
-    
-    pcall(GetDefensiveAuraData)
-    local auraData = DefensiveBarState.auraData
-    
-    if not auraData then
-        frame.defensiveIcon:Hide()
-        return
-    end
-    
-    -- Settings
-    -- PERFORMANCE FIX: Use module-level default colors instead of inline tables
-    local iconSize = db.defensiveIconSize or 24
-    local borderSize = db.defensiveIconBorderSize or 2
-    local borderColor = db.defensiveIconBorderColor or DEFAULT_DEFENSIVE_BORDER_COLOR
-    local anchor = db.defensiveIconAnchor or "CENTER"
-    local x = db.defensiveIconX or 0
-    local y = db.defensiveIconY or 0
-    local scale = db.defensiveIconScale or 1.0
-    local showDuration = db.defensiveIconShowDuration ~= false
-    
-    -- Apply pixel perfect to border size 
-    if db.pixelPerfect then
-        borderSize = DF:PixelPerfect(borderSize)
-    end
-    
-    -- Duration text settings
-    local durationScale = db.defensiveIconDurationScale or 1.0
-    local durationFont = db.defensiveIconDurationFont or "Fonts\\FRIZQT__.TTF"
-    local durationOutline = db.defensiveIconDurationOutline or "OUTLINE"
-    if durationOutline == "NONE" then durationOutline = "" end
-    local durationX = db.defensiveIconDurationX or 0
-    local durationY = db.defensiveIconDurationY or 0
-    local durationColor = db.defensiveIconDurationColor or DEFAULT_DEFENSIVE_DURATION_COLOR
-    
-    -- PERFORMANCE FIX: Use module-level function instead of closure
-    -- OLD CODE:
-    --[[
-    local textureSet = false
-    pcall(function()
-        frame.defensiveIcon.texture:SetTexture(auraData.icon)
-        textureSet = true
-    end)
-    --]]
-    DefensiveBarState.auraData = auraData  -- Store for SetDefensiveTexture
-    pcall(SetDefensiveTexture)
-    
-    if not DefensiveBarState.textureSet then
-        frame.defensiveIcon:Hide()
-        return
-    end
-    
-    -- PERFORMANCE FIX: Reuse existing auraData table instead of creating new one
-    -- OLD CODE: frame.defensiveIcon.auraData = { auraInstanceID = auraInstanceID }
-    if not frame.defensiveIcon.auraData then
-        frame.defensiveIcon.auraData = { auraInstanceID = nil }
-    end
-    frame.defensiveIcon.auraData.auraInstanceID = auraInstanceID
-    
-    -- PERFORMANCE FIX: Use module-level function instead of closure
-    -- OLD CODE:
-    --[[
-    pcall(function()
-        if frame.defensiveIcon.cooldown.SetCooldownFromExpirationTime and auraData.expirationTime and auraData.duration then
-            frame.defensiveIcon.cooldown:SetCooldownFromExpirationTime(auraData.expirationTime, auraData.duration)
-        end
-    end)
-    --]]
-    pcall(SetDefensiveCooldown)
-    
-    -- Check expiration using secret-safe API
-    -- Result may be a secret boolean - pass directly to SetShownFromBoolean without any boolean test
-    local hasExpiration = nil
-    if auraInstanceID and C_UnitAuras.DoesAuraHaveExpirationTime then
-        hasExpiration = C_UnitAuras.DoesAuraHaveExpirationTime(unit, auraInstanceID)
-    end
-    
-    -- Show/hide cooldown using secret-safe API (handles nil/secret values)
-    if frame.defensiveIcon.cooldown.SetShownFromBoolean then
-        frame.defensiveIcon.cooldown:SetShownFromBoolean(hasExpiration, true, false)
-    else
-        frame.defensiveIcon.cooldown:Show()
-    end
-    
-    -- Swipe toggle (hideSwipe = true means no swipe)
-    local showSwipe = not db.defensiveIconHideSwipe
-    frame.defensiveIcon.cooldown:SetDrawSwipe(showSwipe)
-    
-    -- Duration text
-    frame.defensiveIcon.cooldown:SetHideCountdownNumbers(not showDuration)
-    
-    -- Find and style the native cooldown text
-    if not frame.defensiveIcon.nativeCooldownText then
-        local regions = {frame.defensiveIcon.cooldown:GetRegions()}
-        for _, region in ipairs(regions) do
-            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                frame.defensiveIcon.nativeCooldownText = region
-                break
-            end
-        end
-    end
-    
-    -- Apply duration text styling
-    if frame.defensiveIcon.nativeCooldownText then
-        local durationSize = 10 * durationScale
-        DF:SafeSetFont(frame.defensiveIcon.nativeCooldownText, durationFont, durationSize, durationOutline)
-        frame.defensiveIcon.nativeCooldownText:ClearAllPoints()
-        frame.defensiveIcon.nativeCooldownText:SetPoint("CENTER", frame.defensiveIcon, "CENTER", durationX, durationY)
-        frame.defensiveIcon.nativeCooldownText:SetTextColor(durationColor.r, durationColor.g, durationColor.b, 1)
-    end
-    
-    -- Stack count using secret-safe API (no pcall needed)
-    frame.defensiveIcon.count:SetText("")
-    if auraInstanceID and C_UnitAuras.GetAuraApplicationDisplayCount then
-        local stackText = C_UnitAuras.GetAuraApplicationDisplayCount(unit, auraInstanceID, 2, 99)
-        if stackText then
-            frame.defensiveIcon.count:SetText(stackText)
-        end
-    end
-    
-    -- Apply border if enabled
-    local showBorder = db.defensiveIconShowBorder ~= false
-    if showBorder then
-        -- Set color on all border edges
-        if frame.defensiveIcon.borderLeft then
-            frame.defensiveIcon.borderLeft:SetColorTexture(borderColor.r, borderColor.g, borderColor.b, borderColor.a)
-            frame.defensiveIcon.borderLeft:SetWidth(borderSize)
-            frame.defensiveIcon.borderLeft:Show()
-        end
-        if frame.defensiveIcon.borderRight then
-            frame.defensiveIcon.borderRight:SetColorTexture(borderColor.r, borderColor.g, borderColor.b, borderColor.a)
-            frame.defensiveIcon.borderRight:SetWidth(borderSize)
-            frame.defensiveIcon.borderRight:Show()
-        end
-        if frame.defensiveIcon.borderTop then
-            frame.defensiveIcon.borderTop:SetColorTexture(borderColor.r, borderColor.g, borderColor.b, borderColor.a)
-            frame.defensiveIcon.borderTop:SetHeight(borderSize)
-            frame.defensiveIcon.borderTop:ClearAllPoints()
-            frame.defensiveIcon.borderTop:SetPoint("TOPLEFT", borderSize, 0)
-            frame.defensiveIcon.borderTop:SetPoint("TOPRIGHT", -borderSize, 0)
-            frame.defensiveIcon.borderTop:Show()
-        end
-        if frame.defensiveIcon.borderBottom then
-            frame.defensiveIcon.borderBottom:SetColorTexture(borderColor.r, borderColor.g, borderColor.b, borderColor.a)
-            frame.defensiveIcon.borderBottom:SetHeight(borderSize)
-            frame.defensiveIcon.borderBottom:ClearAllPoints()
-            frame.defensiveIcon.borderBottom:SetPoint("BOTTOMLEFT", borderSize, 0)
-            frame.defensiveIcon.borderBottom:SetPoint("BOTTOMRIGHT", -borderSize, 0)
-            frame.defensiveIcon.borderBottom:Show()
-        end
-        
-        frame.defensiveIcon.texture:ClearAllPoints()
-        frame.defensiveIcon.texture:SetPoint("TOPLEFT", borderSize, -borderSize)
-        frame.defensiveIcon.texture:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
-    else
-        -- Hide all border edges
-        if frame.defensiveIcon.borderLeft then frame.defensiveIcon.borderLeft:Hide() end
-        if frame.defensiveIcon.borderRight then frame.defensiveIcon.borderRight:Hide() end
-        if frame.defensiveIcon.borderTop then frame.defensiveIcon.borderTop:Hide() end
-        if frame.defensiveIcon.borderBottom then frame.defensiveIcon.borderBottom:Hide() end
-        frame.defensiveIcon.texture:ClearAllPoints()
-        frame.defensiveIcon.texture:SetPoint("TOPLEFT", 0, 0)
-        frame.defensiveIcon.texture:SetPoint("BOTTOMRIGHT", 0, 0)
-    end
-    
-    -- Size, scale, and position
-    local adjustedIconSize = iconSize
-    if db.pixelPerfect then
-        adjustedIconSize = DF:PixelPerfect(iconSize)
-    end
-    frame.defensiveIcon:SetSize(adjustedIconSize, adjustedIconSize)
-    frame.defensiveIcon:SetScale(scale)
-    frame.defensiveIcon:ClearAllPoints()
-    frame.defensiveIcon:SetPoint(anchor, frame, anchor, x, y)
-    
-    -- Frame level
-    local frameLevel = db.defensiveIconFrameLevel or 0
-    if frameLevel == 0 then
-        frame.defensiveIcon:SetFrameLevel(frame.contentOverlay:GetFrameLevel() + 15)
-    else
-        frame.defensiveIcon:SetFrameLevel(frame:GetFrameLevel() + frameLevel)
-    end
-    
-    -- Use SetMouseClickEnabled(false) to allow tooltips while passing clicks through
-    if frame.defensiveIcon.SetMouseClickEnabled then
-        frame.defensiveIcon:SetMouseClickEnabled(false)
-    end
-    
-    frame.defensiveIcon:Show()
-    
-    -- Apply range-based fading to the newly shown icon
-    if DF.UpdateDefensiveIconAppearance then
-        DF:UpdateDefensiveIconAppearance(frame)
-    end
+    -- (Legacy single-icon BLIZZARD branch removed — all defensive rendering
+    -- now goes through the multi-defensive renderer above. The defensive
+    -- cache is populated identically in both modes via the secret-safe
+    -- IsAuraFilteredOutByInstanceID Direct API.)
 end
 
 -- Update defensive icons for all frames

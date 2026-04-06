@@ -3823,43 +3823,47 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     -- Auras > Aura Filters (master switch for Blizzard vs Direct API mode)
     local pageAuraFilters = CreateSubTab("auras", "auras_filters", L["Aura Filters"])
     BuildPage(pageAuraFilters, function(self, db, Add, AddSpace, AddSyncPoint)
-        -- Setup wizard banner
-        local banner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
-        banner:SetSize(520, 44)
-        if not banner.SetBackdrop then Mixin(banner, BackdropTemplateMixin) end
-        banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        banner:SetBackdropColor(0.15, 0.18, 0.28, 1)
-        local themeColor = GUI.GetThemeColor()
-        banner:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 0.5)
+        -- Setup wizard banner (hidden when Blizzard's aura pipeline is gone
+        -- on 12.0.5+: the wizard walks users through choosing between Blizzard
+        -- and Direct sources, which is meaningless when only Direct exists).
+        if not DF.BlizzardAuraSourceUnavailable then
+            local banner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+            banner:SetSize(520, 44)
+            if not banner.SetBackdrop then Mixin(banner, BackdropTemplateMixin) end
+            banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            banner:SetBackdropColor(0.15, 0.18, 0.28, 1)
+            local themeColor = GUI.GetThemeColor()
+            banner:SetBackdropBorderColor(themeColor.r, themeColor.g, themeColor.b, 0.5)
 
-        local bannerIcon = banner:CreateTexture(nil, "OVERLAY")
-        bannerIcon:SetPoint("LEFT", 12, 0)
-        bannerIcon:SetSize(20, 20)
-        bannerIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\help")
+            local bannerIcon = banner:CreateTexture(nil, "OVERLAY")
+            bannerIcon:SetPoint("LEFT", 12, 0)
+            bannerIcon:SetSize(20, 20)
+            bannerIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\help")
 
-        local bannerText = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        bannerText:SetPoint("LEFT", bannerIcon, "RIGHT", 8, 0)
-        bannerText:SetPoint("RIGHT", banner, "RIGHT", -110, 0)
-        bannerText:SetText(L["Having trouble with buffs or debuffs? Run the setup wizard for guided help."])
-        bannerText:SetTextColor(0.85, 0.85, 0.85)
-        bannerText:SetJustifyH("LEFT")
+            local bannerText = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bannerText:SetPoint("LEFT", bannerIcon, "RIGHT", 8, 0)
+            bannerText:SetPoint("RIGHT", banner, "RIGHT", -110, 0)
+            bannerText:SetText(L["Having trouble with buffs or debuffs? Run the setup wizard for guided help."])
+            bannerText:SetTextColor(0.85, 0.85, 0.85)
+            bannerText:SetJustifyH("LEFT")
 
-        local bannerBtn = GUI:CreateButton(banner, L["Run Setup Wizard"], 105, 28, function()
-            if DF.WizardBuilder then
-                local builtins = DF.WizardBuilder:GetBuiltinWizards()
-                for _, entry in ipairs(builtins) do
-                    if entry.name == "Aura Filter Setup" and entry.build then
-                        local config = entry.build()
-                        if config then DF:ShowPopupWizard(config) end
-                        break
+            local bannerBtn = GUI:CreateButton(banner, L["Run Setup Wizard"], 105, 28, function()
+                if DF.WizardBuilder then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Aura Filter Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
                     end
                 end
-            end
-        end)
-        bannerBtn:SetPoint("RIGHT", -8, 0)
+            end)
+            bannerBtn:SetPoint("RIGHT", -8, 0)
 
-        Add(banner, 50, "both")
-        AddSpace(4, "both")
+            Add(banner, 50, "both")
+            AddSpace(4, "both")
+        end
 
         -- Copy button at top
         Add(CreateCopyButton(self.child, {"auraSourceMode", "directBuff", "directDebuff"}, L["Aura Filters"], "auras_filters"), 25, 2)
@@ -3888,14 +3892,26 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             BLIZZARD = L["Blizzard (Default)"],
             DIRECT = L["Direct API"],
         }
-        modeGroup:AddWidget(GUI:CreateDropdown(self.child, L["Source Mode"], modeOptions, db, "auraSourceMode", function()
+        local modeDropdown = modeGroup:AddWidget(GUI:CreateDropdown(self.child, L["Source Mode"], modeOptions, db, "auraSourceMode", function()
             if DF.SetAuraSourceMode then
                 DF:SetAuraSourceMode(db.auraSourceMode)
             end
             self:RefreshStates()
         end), 55)
+        -- Disable the dropdown when Blizzard's aura pipeline has been removed
+        -- (12.0.5+). The forced-DIRECT migration in Features/Auras.lua ensures
+        -- the value is correct; this just prevents the user from trying to
+        -- switch back to a source that no longer exists.
+        modeDropdown.disableOn = function() return DF.BlizzardAuraSourceUnavailable end
 
         modeGroup:AddWidget(GUI:CreateLabel(self.child, "|cff888888Blizzard: Uses Blizzard's built-in aura filtering. No customisation available.\n\nDirect API: Queries the aura API directly. Full control over which buffs and debuffs appear.|r", 250), 80)
+
+        -- Warning note shown when the Blizzard source has been force-disabled.
+        -- Uses hideOn (not disableOn) since it's informational text.
+        local apiBlockedNote = modeGroup:AddWidget(GUI:CreateLabel(self.child,
+            "|cffffcc00WoW 12.0.5 removed addon access to Blizzard's party-frame aura data. The Blizzard source is no longer available; DandersFrames has switched to Direct API automatically.|r", 250), 60)
+        apiBlockedNote.hideOn = function() return not DF.BlizzardAuraSourceUnavailable end
+
         Add(modeGroup, nil, 1)
 
         -- ===== BUFF FILTERS (Column 2, Direct mode only) =====
@@ -5355,8 +5371,77 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             {pageId = "general_integrations", label = L["Integrations"]},
             {pageId = "indicators_personal_targeted", label = L["Personal Targeted Spells"]},
         }), 30, "both")
+
+        -- ============================================================
+        -- API COMPATIBILITY OVERLAY
+        -- Group-frame Targeted Spells relies on UnitIsUnit comparing a
+        -- nameplateXtarget against a party/raid token. WoW 12.0.5 made
+        -- that combination return nil, breaking the feature with no
+        -- in-addon workaround. When detected at runtime, we hide the
+        -- whole page behind this overlay and point users at the
+        -- Personal Targeted Spells page (which still works).
+        --
+        -- The overlay is parented to the page (not self.child) so it
+        -- survives Refresh() rebuilds and floats above the scroll
+        -- content. We create it once and toggle visibility based on
+        -- DF.GroupTargetedSpellsAPIBlocked.
+        -- ============================================================
+        if not self.apiBlockedOverlay then
+            -- Parent to the page (ScrollFrame). The GUI window is in DIALOG
+            -- strata; widgets inside it inherit DIALOG. We bump the overlay
+            -- to FULLSCREEN_DIALOG and crank the frame level so it draws
+            -- above everything in the page including the scroll child.
+            local overlay = CreateFrame("Frame", nil, self, "BackdropTemplate")
+            overlay:SetFrameStrata("FULLSCREEN_DIALOG")
+            overlay:SetFrameLevel(500)
+            overlay:SetAllPoints(self)
+            overlay:EnableMouse(true) -- block clicks to underlying controls
+            overlay:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            overlay:SetBackdropColor(0, 0, 0, 0.85)
+
+            local title = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+            title:SetPoint("CENTER", 0, 80)
+            title:SetText(L["Disabled — WoW API Change"])
+            title:SetTextColor(1, 0.82, 0)
+
+            local body = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            body:SetPoint("TOP", title, "BOTTOM", 0, -20)
+            body:SetWidth(520)
+            body:SetJustifyH("CENTER")
+            body:SetText(L["A WoW API change prevents addons from detecting which party or raid member an enemy is targeting. Group-frame Targeted Spells can no longer function and has been disabled.\n\nThe Personal Targeted Spells display still works and will warn you about casts targeting you."])
+
+            local gotoBtn = GUI:CreateButton(overlay, L["Open Personal Targeted Spells"], 260, 30, function()
+                if GUI.SelectTab then GUI.SelectTab("indicators_personal_targeted") end
+            end)
+            gotoBtn:SetParent(overlay)
+            gotoBtn:SetFrameStrata("FULLSCREEN_DIALOG")
+            gotoBtn:SetFrameLevel(501)
+            gotoBtn:SetPoint("TOP", body, "BOTTOM", 0, -25)
+
+            self.apiBlockedOverlay = overlay
+            overlay:Hide()
+        end
+
+        if DF.GroupTargetedSpellsAPIBlocked then
+            self.apiBlockedOverlay:Show()
+        else
+            self.apiBlockedOverlay:Hide()
+        end
     end)
-    
+
+    -- Expose a refresh hook so the runtime detector can flip the overlay
+    -- on without waiting for the user to navigate away and back.
+    GUI.RefreshTargetedSpellsOverlay = function()
+        local page = GUI.Pages and GUI.Pages["indicators_targetedspells"]
+        if page and page.apiBlockedOverlay then
+            if DF.GroupTargetedSpellsAPIBlocked then
+                page.apiBlockedOverlay:Show()
+            else
+                page.apiBlockedOverlay:Hide()
+            end
+        end
+    end
+
     -- Indicators > Personal Targeted Spells (center of screen display for player)
     local pagePersonalTargeted = CreateSubTab("indicators", "indicators_personal_targeted", L["Personal Targeted"])
     BuildPage(pagePersonalTargeted, function(self, db, Add, AddSpace, AddSyncPoint)

@@ -95,7 +95,11 @@ Features\MyBuffIndicators.lua
 # Aura Designer
 AuraDesigner\Config.lua
 AuraDesigner\SecretAuras.lua
-AuraDesigner\LinkedAuras.lua
+# AuraDesigner\LinkedAuras.lua - DISABLED: WoW 12.0.5 marks UnitIsUnit results
+#   secret in some cases, which floods the error log via the UNIT_AURA guard.
+#   Only consumer is Symbiotic Relationship target inference for Resto Druid;
+#   minor functionality loss. Re-enable once Blizzard provides a non-secret
+#   path or after the guard is rewritten to use string comparison.
 AuraDesigner\AuraAdapter.lua
 AuraDesigner\Engine.lua
 AuraDesigner\Indicators.lua

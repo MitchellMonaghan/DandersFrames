@@ -194,8 +194,30 @@ end
 -- INTERNAL LOGGING
 -- ============================================================
 
+-- Returns true if the given value is a WoW "secret" (secret-tainted) value.
+-- Secret values cannot be used in table.concat or most string operations
+-- without errors. We use this to sanitize log messages so a tainted value
+-- can never corrupt the debug log. Gracefully no-ops on builds without the API.
+local isSecretValue = _G.issecretvalue or function() return false end
+
+-- Sanitizes a message string for safe storage in the log. If the string
+-- itself is secret-tainted (because one of the format args was a secret),
+-- returns a non-secret placeholder instead.
+local function sanitizeLogMessage(msg)
+    if msg == nil then return "nil" end
+    if type(msg) ~= "string" then
+        msg = tostring(msg)
+    end
+    if isSecretValue(msg) then
+        return "<SECRET — log arg was a secret value>"
+    end
+    return msg
+end
+
 function DebugConsole:Log(level, category, fmt, ...)
-    -- Format the message
+    -- Format the message. If any format arg is a secret-tainted value, the
+    -- resulting string inherits the taint and cannot be safely concatenated
+    -- later. sanitizeLogMessage replaces tainted messages with a placeholder.
     local msg
     if select("#", ...) > 0 then
         local ok, result = pcall(format, fmt, ...)
@@ -203,6 +225,7 @@ function DebugConsole:Log(level, category, fmt, ...)
     else
         msg = tostring(fmt)
     end
+    msg = sanitizeLogMessage(msg)
 
     -- Create entry: {timestamp, level, category, message}
     local entry = {
@@ -294,10 +317,28 @@ function DebugConsole:RefreshDisplay()
     local lines = {}
 
     for _, entry in ipairs(debugLog) do
-        local timestamp = entry[1]
-        local level     = entry[2]
-        local category  = entry[3]
+        local timestamp = entry[1] or "??:??:??"
+        local level     = entry[2] or "INFO"
+        local category  = entry[3] or "GENERAL"
         local message   = entry[4]
+
+        -- Sanitize every field BEFORE passing to format. Legacy entries
+        -- (logged before the write-time sanitizer existed) may have nil or
+        -- secret-tainted messages which would crash format().
+        if message == nil then
+            message = "<nil>"
+        elseif type(message) ~= "string" then
+            message = tostring(message) or "<nonstring>"
+        end
+        if isSecretValue(message) then
+            message = "<SECRET — legacy tainted entry>"
+        end
+        if type(timestamp) ~= "string" or isSecretValue(timestamp) then
+            timestamp = "??:??:??"
+        end
+        if type(category) ~= "string" or isSecretValue(category) then
+            category = "GENERAL"
+        end
 
         -- Check severity filter
         local sev = SEVERITY[level]
@@ -305,8 +346,14 @@ function DebugConsole:RefreshDisplay()
             -- Check category filter (absent = visible, explicit false = hidden)
             if filters[category] ~= false then
                 local colorCode = sev.color or "|cffffffff"
-                tinsert(lines, format("%s %s[%s]|r [%s] %s",
-                    timestamp, colorCode, sev.label, category, message))
+                local ok, formatted = pcall(format, "%s %s[%s]|r [%s] %s",
+                    timestamp, colorCode, sev.label, category, message)
+                if ok and not isSecretValue(formatted) then
+                    tinsert(lines, formatted)
+                else
+                    tinsert(lines, timestamp .. " [" .. (sev.label or "?") ..
+                        "] [" .. category .. "] <unrenderable entry>")
+                end
             end
         end
     end
@@ -389,8 +436,28 @@ function DebugConsole:GetExportText()
     for _, entry in ipairs(debugLog) do
         local sev = SEVERITY[entry[2]]
         if sev and sev.level >= minLevelNum and filters[entry[3]] ~= false then
-            tinsert(entries, format("%s [%s] [%s] %s",
-                entry[1], entry[2], entry[3], entry[4]))
+            -- Sanitize each field before format — legacy entries may have
+            -- nil or secret-tainted values which would crash format/concat.
+            local ts  = entry[1]
+            local lvl = entry[2]
+            local cat = entry[3]
+            local msg = entry[4]
+            if type(ts)  ~= "string" or isSecretValue(ts)  then ts  = "??:??:??" end
+            if type(lvl) ~= "string" or isSecretValue(lvl) then lvl = "INFO" end
+            if type(cat) ~= "string" or isSecretValue(cat) then cat = "GENERAL" end
+            if msg == nil then
+                msg = "<nil>"
+            elseif type(msg) ~= "string" then
+                msg = tostring(msg) or "<nonstring>"
+            end
+            if isSecretValue(msg) then msg = "<SECRET — legacy tainted entry>" end
+
+            local ok, formatted = pcall(format, "%s [%s] [%s] %s", ts, lvl, cat, msg)
+            if ok and not isSecretValue(formatted) then
+                tinsert(entries, formatted)
+            else
+                tinsert(entries, ts .. " [" .. lvl .. "] [" .. cat .. "] <unrenderable entry>")
+            end
         end
     end
 
@@ -403,7 +470,11 @@ function DebugConsole:GetExportText()
     tinsert(result, "========================================")
     tinsert(result, "")
     for i = 1, #entries do
-        result[#result + 1] = entries[i]
+        local entry = entries[i]
+        if isSecretValue(entry) then
+            entry = "<SECRET — export line was tainted>"
+        end
+        result[#result + 1] = entry
     end
 
     return table.concat(result, "\n")

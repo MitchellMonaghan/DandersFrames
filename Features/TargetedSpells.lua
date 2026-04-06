@@ -35,6 +35,80 @@ local C_CVar = C_CVar
 -- Using unit token (e.g. "nameplate7") as key instead of GUID because GUIDs are secret values
 local activeCasters = {}
 
+-- ============================================================
+-- API COMPATIBILITY: Group-frame targeted spells
+-- ------------------------------------------------------------
+-- WoW 12.0.5 changed UnitIsUnit so that comparing a compound
+-- token like "nameplateXtarget" against a party/raid token now
+-- returns nil. That kills our per-frame "is this enemy targeting
+-- THIS party member" detection. There is no in-addon workaround
+-- (UnitGUID/UnitName on nameplate units become secret in instance
+-- combat, so we can't compare those either).
+--
+-- The personal-display path (compares against "player") still
+-- works, so we only force-disable the group-frame side.
+--
+-- Detection: the first time UnitIsUnit returns nil for a
+-- known-existing nameplate target vs a known-existing group
+-- unit, we flip DF.GroupTargetedSpellsAPIBlocked = true, persist
+-- it to SavedVariables, and force-disable the group-frame
+-- targetedSpellEnabled setting on both party and raid profiles.
+-- The settings page draws an overlay over the Targeted Spells
+-- tab. The personal display keeps its own event registration so
+-- it survives the group feature being disabled.
+-- ============================================================
+
+-- Force-disables the group-frame targetedSpellEnabled setting on both
+-- party and raid profiles for the current profile. Called both when
+-- the runtime detector trips and on Init when the persisted flag is
+-- already set.
+local function ForceDisableGroupTargetedSpellSettings()
+    if not DF.db then return end
+    if DF.db.party then DF.db.party.targetedSpellEnabled = false end
+    if DF.db.raid then DF.db.raid.targetedSpellEnabled = false end
+end
+
+local function MarkGroupTargetedSpellsBlocked()
+    if DF.GroupTargetedSpellsAPIBlocked then return end
+    DF.GroupTargetedSpellsAPIBlocked = true
+
+    -- Persist across reloads
+    if DandersFramesDB_v2 then
+        DandersFramesDB_v2.apiBlocked = DandersFramesDB_v2.apiBlocked or {}
+        DandersFramesDB_v2.apiBlocked.groupTargetedSpells = true
+    end
+
+    DF:Debug("TARGETEDSPELLS", "UnitIsUnit returned nil for nameplateXtarget vs party/raid unit — group-frame Targeted Spells force-disabled (API change)")
+
+    -- Force the user-facing setting off so the GUI reflects reality
+    ForceDisableGroupTargetedSpellSettings()
+
+    -- Tear down the group-frame side of the feature. We call DisableTargetedSpells
+    -- which unregisters events and hides icons; if personal display is enabled,
+    -- we re-register events for the personal-only path right after.
+    if DF.DisableTargetedSpells then DF:DisableTargetedSpells() end
+    if DF.UpdateTargetedSpellEventRegistration then DF:UpdateTargetedSpellEventRegistration() end
+
+    -- Refresh the options page if it's open so the overlay appears and the
+    -- now-toggled-off checkbox state is reflected.
+    if DF.GUI and DF.GUI.RefreshTargetedSpellsOverlay then
+        DF.GUI.RefreshTargetedSpellsOverlay()
+    end
+    if DF.GUI and DF.GUI.RefreshCurrentPage then
+        DF.GUI.RefreshCurrentPage()
+    end
+end
+
+-- Returns true if it's safe to call SetAlphaFromBoolean with this result.
+-- If result is nil (new API rule), trips the block and returns false.
+local function CheckGroupTargetingResult(result)
+    if result == nil then
+        MarkGroupTargetedSpellsBlocked()
+        return false
+    end
+    return true
+end
+
 -- Personal display variables (declared early for HandleTargetChange access)
 local personalContainer = nil
 local personalIcons = {}
@@ -1469,25 +1543,34 @@ local function ProcessCastInternal(casterUnit, isChannel)
     -- Check content type for raid frames
     local showOnRaidFrames = ShouldShowRaidTargetedSpells(raidDb)
     
-    for _, targetUnit in ipairs(groupUnits) do
-        local frame = GetFrameForUnit(targetUnit)
-        if frame then
-            -- Check if this frame type should show targeted spells in current content
-            local shouldShow = frame.isRaidFrame and showOnRaidFrames or showOnPartyFrames
-            
-            if shouldShow then
-                -- Show icon (creates/reuses icon for this caster on this frame)
-                local icon = DF:ShowTargetedSpellIcon(frame, casterUnit, casterUnit, texture, name, durationObject, isChannel, spellID, startTime)
-                
-                -- Control visibility: show if enemy is targeting this unit
-                -- Using UnitIsUnit for broader detection (catches AoE and target-focused casts)
-                if icon then
-                    local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
-                    icon:SetAlphaFromBoolean(isTargeted, 1, 0)
+    if not DF.GroupTargetedSpellsAPIBlocked then
+        for _, targetUnit in ipairs(groupUnits) do
+            local frame = GetFrameForUnit(targetUnit)
+            if frame then
+                -- Check if this frame type should show targeted spells in current content
+                local shouldShow = frame.isRaidFrame and showOnRaidFrames or showOnPartyFrames
+
+                if shouldShow then
+                    -- Show icon (creates/reuses icon for this caster on this frame)
+                    local icon = DF:ShowTargetedSpellIcon(frame, casterUnit, casterUnit, texture, name, durationObject, isChannel, spellID, startTime)
+
+                    -- Control visibility: show if enemy is targeting this unit
+                    -- Using UnitIsUnit for broader detection (catches AoE and target-focused casts)
+                    if icon then
+                        local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
+                        if CheckGroupTargetingResult(isTargeted) then
+                            icon:SetAlphaFromBoolean(isTargeted, 1, 0)
+                        else
+                            -- API change detected: hide this icon and bail out of the loop.
+                            -- MarkGroupTargetedSpellsBlocked already cleans up other frames.
+                            DF:HideTargetedSpellIcon(frame, casterUnit)
+                            break
+                        end
+                    end
+
+                    -- Position icons (all at same spot - invisible ones don't matter)
+                    PositionIcons(frame)
                 end
-                
-                -- Position icons (all at same spot - invisible ones don't matter)
-                PositionIcons(frame)
             end
         end
     end
@@ -1603,16 +1686,22 @@ local function HandleTargetChange(casterUnit)
     
     -- Update visibility for all group members (unit frame icons)
     local groupUnits = GetGroupUnits()
-    
-    for _, targetUnit in ipairs(groupUnits) do
-        local frame = GetFrameForUnit(targetUnit)
-        if frame and frame.dfActiveTargetedSpells then
-            local iconIndex = frame.dfActiveTargetedSpells[casterUnit]
-            if iconIndex then
-                local icon = frame.targetedSpellIcons and frame.targetedSpellIcons[iconIndex]
-                if icon and icon.isActive and not icon.isInterrupted then
-                    local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
-                    icon:SetAlphaFromBoolean(isTargeted, 1, 0)
+
+    if not DF.GroupTargetedSpellsAPIBlocked then
+        for _, targetUnit in ipairs(groupUnits) do
+            local frame = GetFrameForUnit(targetUnit)
+            if frame and frame.dfActiveTargetedSpells then
+                local iconIndex = frame.dfActiveTargetedSpells[casterUnit]
+                if iconIndex then
+                    local icon = frame.targetedSpellIcons and frame.targetedSpellIcons[iconIndex]
+                    if icon and icon.isActive and not icon.isInterrupted then
+                        local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
+                        if CheckGroupTargetingResult(isTargeted) then
+                            icon:SetAlphaFromBoolean(isTargeted, 1, 0)
+                        else
+                            break
+                        end
+                    end
                 end
             end
         end
@@ -1779,8 +1868,10 @@ end
 -- ENABLE/DISABLE
 -- ============================================================
 
-function DF:EnableTargetedSpells()
-    -- Register events
+-- Internal: register the cast-tracking events on eventFrame.
+-- Used by both the group-frame Enable path and the personal-only path
+-- (when group is API-blocked but personal display is on).
+local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
@@ -1796,29 +1887,67 @@ function DF:EnableTargetedSpells()
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     eventFrame:Show()
-    
+end
+
+-- Returns true if either the group or personal display needs cast events.
+-- Checks both party and raid mode profiles because the addon may switch
+-- modes based on group composition without us re-running this check.
+local function NeedsCastEvents()
+    if not DF.db then return false end
+    local function modeNeeds(modeDb)
+        if not modeDb then return false end
+        local groupOn = (not DF.GroupTargetedSpellsAPIBlocked) and modeDb.targetedSpellEnabled
+        local personalOn = modeDb.personalTargetedSpellEnabled
+        return groupOn or personalOn
+    end
+    return modeNeeds(DF.db.party) or modeNeeds(DF.db.raid)
+end
+
+-- Public: re-evaluate whether eventFrame should be registered. Call this
+-- whenever any of the gating settings change (group toggle, personal toggle,
+-- API block trip).
+function DF:UpdateTargetedSpellEventRegistration()
+    if NeedsCastEvents() then
+        RegisterTargetedSpellEvents()
+    else
+        eventFrame:UnregisterAllEvents()
+        eventFrame:Hide()
+        wipe(activeCasters)
+    end
+end
+
+function DF:EnableTargetedSpells()
+    -- If the API has blocked group-frame targeted spells, do not enable the
+    -- group side at all. Personal display registration is handled separately.
+    if DF.GroupTargetedSpellsAPIBlocked then
+        ForceDisableGroupTargetedSpellSettings()
+        DF:UpdateTargetedSpellEventRegistration()
+        return
+    end
+
+    RegisterTargetedSpellEvents()
+
     -- Track enabled state for unified handler
     DF.targetedSpellsEnabled = true
-    
+
     -- Initial scan
     ScanAllEnemyCasts()
 end
 
 function DF:DisableTargetedSpells()
-    eventFrame:UnregisterAllEvents()
-    eventFrame:Hide()
-    
     -- Track enabled state
     DF.targetedSpellsEnabled = false
-    
-    -- Hide all icons
+
+    -- Hide all group-frame icons
     DF:IterateAllFrames(function(frame)
         if frame then
             DF:HideAllTargetedSpells(frame)
         end
     end)
-    
-    wipe(activeCasters)
+
+    -- Re-evaluate whether events still need to be registered for personal display.
+    -- If personal display is off too, this unregisters everything.
+    DF:UpdateTargetedSpellEventRegistration()
 end
 
 -- Export scan function for unified roster handler
@@ -2831,6 +2960,9 @@ function DF:TogglePersonalTargetedSpells(enabled)
     else
         DF:HideAllPersonalTargetedSpells()
     end
+    -- Re-evaluate event registration: personal display can keep events alive
+    -- even when the group-frame side is off or API-blocked.
+    DF:UpdateTargetedSpellEventRegistration()
 end
 
 -- ============================================================
@@ -3460,17 +3592,32 @@ end
 
 function DF:InitTargetedSpells()
     local db = DF:GetDB()
-    if db.targetedSpellEnabled then
+
+    -- Restore persisted API block state. If a previous session detected the
+    -- 12.0.5 UnitIsUnit change, the group-frame feature stays force-disabled
+    -- across reloads until the user clears it (or we ship a build that knows
+    -- the API has been restored).
+    if DandersFramesDB_v2 and DandersFramesDB_v2.apiBlocked
+       and DandersFramesDB_v2.apiBlocked.groupTargetedSpells then
+        DF.GroupTargetedSpellsAPIBlocked = true
+        ForceDisableGroupTargetedSpellSettings()
+    end
+
+    if db.targetedSpellEnabled and not DF.GroupTargetedSpellsAPIBlocked then
         DF:EnableTargetedSpells()
     end
-    
+
     -- Apply nameplate offscreen setting if enabled
     if db.targetedSpellNameplateOffscreen then
         DF:SetNameplateOffscreen(true)
     end
-    
-    -- Initialize personal targeted spells
+
+    -- Initialize personal targeted spells. Note: TogglePersonalTargetedSpells
+    -- only manages the container/icons; the events that drive cast tracking
+    -- are registered separately so personal display can run even when the
+    -- group-frame feature is off or API-blocked.
     if db.personalTargetedSpellEnabled then
         DF:TogglePersonalTargetedSpells(true)
     end
+    DF:UpdateTargetedSpellEventRegistration()
 end
