@@ -1,8 +1,23 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-04T18:41:44Z"
+DF.BUILD_DATE = "2026-04-06T18:33:44Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [4.2.5] - 2026-04-06
+
+### Improvements
+* (Debug Console) Redesigned page with collapsible sections and a wider log viewer
+* (Debug Console) Category checkboxes grouped by feature and always visible, with descriptions on hover
+* (Debug Console) Unchecking a category now stops it from being logged, not just hidden
+
+### Diagnostics
+* (Raid Frames) Added logging to help track down the "raid frames jump on roster change" bug. If affected, open `/df console`, enable the **RAIDPOS**, **LAYOUT**, **ROSTER**, and **FRAMESORT** categories, reproduce, then send the log with your bug report.
+
+## [4.2.4] - 2026-04-05
+
+### Bug Fixes
+* (Dispel Overlay) Fix health bars appearing darkened/black when a unit had any non-dispellable debuff in "All Dispellable" mode with the gradient darken option enabled
 
 ## [4.2.3] - 2026-04-05
 
