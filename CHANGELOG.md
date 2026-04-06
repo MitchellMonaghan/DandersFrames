@@ -8,7 +8,7 @@
 * (Debug Console) Page redesigned with four collapsible sections in a single page (Settings, Logged Categories, Live Log, Script Runner). All four start expanded; click any section header to collapse. Descriptions no longer overflow the panel because the category list spans the full page width and category rows show hover tooltips. The full-width Live Log viewer has much more reading room than before.
 
 ### Diagnostics
-* (Raid Frames) Add targeted diagnostic logging for the long-standing "raid frames jump on roster change and stay stuck" bug. If you experience this issue, please enable `/df debug`, reproduce the bug, then open `/df console`, filter to the `RAIDPOS` category, and copy/paste the log to a bug report. Logging is account-wide and persists across `/reload`.
+* (Raid Frames) Add targeted diagnostic logging for the long-standing "raid frames jump on roster change and stay stuck" bug. If you experience this issue please help us track it down: open `/df console`, enable **Debug Logging**, in the **Logged Categories** section click **None** and then re-check **RAIDPOS**, **LAYOUT**, **ROSTER**, and **FRAMESORT**, reproduce the bug, then click **Copy to Clipboard** and paste the trace into your bug report.
 
 ## [4.2.4] - 2026-04-05
 
