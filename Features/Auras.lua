@@ -616,11 +616,12 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
 
     -- Initialize cache for this unit
     if not DF.BlizzardAuraCache[unit] then
-        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, defensives = {} }
+        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
     end
 
     -- Clear previous cache for this unit (wipe instead of new table to reduce GC)
     local cache = DF.BlizzardAuraCache[unit]
+    if not cache.allDispellable then cache.allDispellable = {} end
     wipe(cache.buffs)
     wipe(cache.debuffs)
     wipe(cache.buffOrder)
@@ -628,6 +629,7 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     wipe(cache.buffData)
     wipe(cache.debuffData)
     wipe(cache.playerDispellable)
+    wipe(cache.allDispellable)
     wipe(cache.defensives)
 
     -- Capture buff auraInstanceIDs from Blizzard's container
@@ -959,9 +961,10 @@ local function ScanUnitDirect(unit)
 
     -- Initialize cache for this unit
     if not DF.BlizzardAuraCache[unit] then
-        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, defensives = {} }
+        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
     end
     local cache = DF.BlizzardAuraCache[unit]
+    if not cache.allDispellable then cache.allDispellable = {} end
     wipe(cache.buffs)
     wipe(cache.debuffs)
     wipe(cache.buffOrder)
@@ -969,6 +972,7 @@ local function ScanUnitDirect(unit)
     wipe(cache.buffData)
     wipe(cache.debuffData)
     wipe(cache.playerDispellable)
+    wipe(cache.allDispellable)
     wipe(cache.defensives)
 
     if not GetUnitAuras then return end
@@ -1032,6 +1036,12 @@ local function ScanUnitDirect(unit)
         for _, auraData in ipairs(harmfulAuras) do
             local id = auraData.auraInstanceID
             if id then
+                -- All-dispellable classification (independent of debuff filters).
+                -- Used by the dispel overlay's "All Dispellable" mode so it fires
+                -- even when the debuff is filtered out of icon display.
+                if auraData.dispelName ~= nil then
+                    cache.allDispellable[id] = true
+                end
                 -- Debuff classification
                 local addedAsDebuff = false
                 if not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters) then

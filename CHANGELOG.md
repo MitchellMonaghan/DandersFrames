@@ -7,6 +7,9 @@
 * (Debug Console) Category checkboxes grouped by feature and always visible, with descriptions on hover
 * (Debug Console) Unchecking a category now stops it from being logged, not just hidden
 
+### Bug Fixes
+* (Dispel Overlay) Fix "All Dispellable" mode not firing in Direct API aura mode when the dispellable debuff was filtered out of the icon display — the overlay now triggers on any dispellable debuff regardless of aura filters
+
 ### Diagnostics
 * (Raid Frames) Added logging to help track down the "raid frames jump on roster change" bug. If affected, open `/df console`, enable the **RAIDPOS**, **LAYOUT**, **ROSTER**, and **FRAMESORT** categories, reproduce, then send the log with your bug report.
 
