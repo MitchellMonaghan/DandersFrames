@@ -2,6 +2,9 @@
 
 ## [4.2.5] - 2026-04-06
 
+### Improvements
+* (Debug Console) Per-category checkboxes now control whether each category is **logged at all**, not just whether it's displayed. Unchecking a category drops it at the source so noisy categories cannot evict the relevant trace under the max-lines cap. Useful when capturing a specific bug during high-volume events like joining a large raid.
+
 ### Diagnostics
 * (Raid Frames) Add targeted diagnostic logging for the long-standing "raid frames jump on roster change and stay stuck" bug. If you experience this issue, please enable `/df debug`, reproduce the bug, then open `/df console`, filter to the `RAIDPOS` category, and copy/paste the log to a bug report. Logging is account-wide and persists across `/reload`.
 

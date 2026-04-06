@@ -7444,9 +7444,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
         AddToSection(consoleSettingsGroup, nil, 1)
 
-        -- Settings Group: Category Filters
+        -- Settings Group: Logged Categories
+        -- Unchecking a category stops it from being logged at the source — useful
+        -- for keeping the maxLines buffer focused on the category you're debugging.
         local filterGroup = GUI:CreateSettingsGroup(self.child, 280)
-        filterGroup:AddWidget(GUI:CreateHeader(self.child, L["Category Filters"]), 40)
+        filterGroup:AddWidget(GUI:CreateHeader(self.child, L["Logged Categories"]), 40)
+        filterGroup:AddWidget(GUI:CreateLabel(self.child, "|cff888888" .. L["Unchecked categories are not logged. New categories auto-appear here."] .. "|r", 260), 28)
 
         -- All / None buttons row
         local filterBtnRow = CreateFrame("Frame", nil, self.child)

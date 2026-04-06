@@ -110,18 +110,32 @@ end
 -- PUBLIC API
 -- ============================================================
 
+-- Per-category logging gate. An explicit `false` in filters disables the
+-- category at the source so it never enters the log buffer — preventing
+-- noise categories from evicting the relevant trace under the maxLines cap.
+-- Absent (nil) or `true` = log it. Auto-discovery still works because new
+-- categories aren't in `filters` until the user explicitly disables them.
+local function IsCategoryLogged(category)
+    local filters = debugDb and debugDb.filters
+    if not filters or not category then return true end
+    return filters[category] ~= false
+end
+
 function DF:Debug(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("INFO", category, fmt, ...)
 end
 
 function DF:DebugWarn(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("WARN", category, fmt, ...)
 end
 
 function DF:DebugError(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("ERROR", category, fmt, ...)
 end
 
