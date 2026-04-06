@@ -5,11 +5,6 @@
 ### Bug Fixes
 * (Dispel Overlay) Fix health bars appearing darkened/black when a unit had any non-dispellable debuff in "All Dispellable" mode with the gradient darken option enabled
 
-### Improvements
-* (CI) Fix Discord notifications showing wrong changelog on stable releases
-* (CI) Only send dev channel Discord notifications for tag builds, not branch pushes
-* (CI) Auto-sync TOC version at build time so alpha/beta builds show correct version
-
 ## [4.2.3] - 2026-04-05
 
 ### Bug Fixes
