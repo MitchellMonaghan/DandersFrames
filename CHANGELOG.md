@@ -1,5 +1,10 @@
 # DandersFrames Changelog
 
+## [4.2.5] - 2026-04-06
+
+### Diagnostics
+* (Raid Frames) Add targeted diagnostic logging for the long-standing "raid frames jump on roster change and stay stuck" bug. If you experience this issue, please enable `/df debug`, reproduce the bug, then open `/df console`, filter to the `RAIDPOS` category, and copy/paste the log to a bug report. Logging is account-wide and persists across `/reload`.
+
 ## [4.2.4] - 2026-04-05
 
 ### Bug Fixes

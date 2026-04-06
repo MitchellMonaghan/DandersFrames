@@ -7,6 +7,35 @@ local format = string.format
 -- Contains mover, grid overlay, and position panel
 -- ============================================================
 
+-- ============================================================
+-- RAIDPOS DIAGNOSTIC HELPERS
+-- Targeted instrumentation for the "raid frames jump on roster
+-- change and stay stuck" bug. Output goes through DF:Debug under
+-- the "RAIDPOS" category so users can copy/paste from the Debug
+-- Console. Logging cost is one boolean check when disabled.
+-- ============================================================
+
+local function ShortCaller(level)
+    -- Returns "filename:line" of the caller `level` frames up.
+    -- level=2 -> direct caller of the function that calls ShortCaller.
+    local info = debugstack(level or 2, 1, 0)
+    if not info then return "?" end
+    -- debugstack format: "...\Frames\Position.lua:1841: in function 'NudgePosition'\n"
+    local file, line = info:match("([^\\/]+):(%d+):")
+    if file then return file .. ":" .. line end
+    return "?"
+end
+
+-- Log a write to db.raidAnchorX/Y. Call BEFORE the assignment so
+-- we can capture the old value, then perform the assignment.
+function DF:LogRaidAnchorWrite(reason, newX, newY)
+    if not DF.Debug then return end
+    local db = DF:GetRaidDB()
+    local oldX, oldY = db and db.raidAnchorX or 0, db and db.raidAnchorY or 0
+    DF:Debug("RAIDPOS", "raidAnchor WRITE [%s] @ %s : (%.1f,%.1f) -> (%.1f,%.1f)",
+        tostring(reason), ShortCaller(3), oldX, oldY, newX or 0, newY or 0)
+end
+
 function DF:CreateMoverFrame()
     -- Cannot create UI elements during combat
     if InCombatLockdown() then return end
@@ -560,6 +589,7 @@ function DF:CreatePermanentMover(container, mode)
 
         if isRaid then
             local stopDb = DF:GetRaidDB()
+            DF:LogRaidAnchorWrite("DragMover:OnDragStop", x, y)
             stopDb.raidAnchorX = x
             stopDb.raidAnchorY = y
             DF:UpdateRaidContainerPosition()
@@ -1338,6 +1368,7 @@ function DF:CreatePositionPanel()
         if val then
             local db = GetPositionDB()
             if DF.positionPanelMode == "raid" then
+                DF:LogRaidAnchorWrite("PositionPanel:xInput", val, db.raidAnchorY or 0)
                 db.raidAnchorX = val
                 -- If editing profile, save as override
                 if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
@@ -1402,6 +1433,7 @@ function DF:CreatePositionPanel()
         if val then
             local db = GetPositionDB()
             if DF.positionPanelMode == "raid" then
+                DF:LogRaidAnchorWrite("PositionPanel:yInput", db.raidAnchorX or 0, val)
                 db.raidAnchorY = val
                 -- If editing profile, save as override
                 if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
@@ -1513,9 +1545,10 @@ function DF:CreatePositionPanel()
             local globalY = DF.AutoProfilesUI:GetGlobalValue("raidAnchorY") or 0
             
             local db = GetPositionDB()
+            DF:LogRaidAnchorWrite("PositionPanel:resetOverride", globalX, globalY)
             db.raidAnchorX = globalX
             db.raidAnchorY = globalY
-            
+
             -- Update container position
             DF:UpdateRaidContainerPosition()
             
@@ -1813,6 +1846,7 @@ function DF:ResetPosition()
     if DF.positionPanelMode == "raid" then
         if DF.savedRaidPositionX and DF.savedRaidPositionY then
             local db = DF:GetRaidDB()
+            DF:LogRaidAnchorWrite("ResetPosition:savedRaid", DF.savedRaidPositionX, DF.savedRaidPositionY)
             db.raidAnchorX = DF.savedRaidPositionX
             db.raidAnchorY = DF.savedRaidPositionY
             DF:UpdateRaidContainerPosition()
@@ -1838,6 +1872,7 @@ end
 function DF:NudgePosition(dx, dy)
     if DF.positionPanelMode == "raid" then
         local db = DF:GetRaidDB()
+        DF:LogRaidAnchorWrite("NudgePosition", (db.raidAnchorX or 0) + dx, (db.raidAnchorY or 0) + dy)
         db.raidAnchorX = (db.raidAnchorX or 0) + dx
         db.raidAnchorY = (db.raidAnchorY or 0) + dy
         -- If editing profile, save as override
@@ -1861,6 +1896,7 @@ end
 function DF:CenterFrames()
     if DF.positionPanelMode == "raid" then
         local db = DF:GetRaidDB()
+        DF:LogRaidAnchorWrite("CenterFrames", 0, 0)
         db.raidAnchorX = 0
         db.raidAnchorY = 0
         -- If editing profile, save as override
@@ -1966,6 +2002,11 @@ function DF:UpdateRaidContainerPosition()
     local db = DF:GetRaidDB()
     local x, y = db.raidAnchorX or 0, db.raidAnchorY or 0
     local scale = db.frameScale or 1.0
+
+    if DF.Debug then
+        DF:Debug("RAIDPOS", "UpdateRaidContainerPosition @ %s : applying (%.1f,%.1f) scale=%.3f combat=%s",
+            ShortCaller(3), x, y, scale, tostring(InCombatLockdown()))
+    end
 
     DF.raidContainer:SetScale(scale)
     DF.raidContainer:ClearAllPoints()

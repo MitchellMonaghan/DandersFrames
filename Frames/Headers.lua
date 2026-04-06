@@ -3960,6 +3960,9 @@ function DF:ApplyRaidGroupSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
 
+    DF:Debug("RAIDPOS", "ApplyRaidGroupSorting ENTRY: members=%d anchor=(%.1f,%.1f)",
+        GetNumGroupMembers(), db.raidAnchorX or 0, db.raidAnchorY or 0)
+
     -- FrameSort integration: yield sorting to FrameSort when active
     if DF:IsFrameSortActive() then return end
 
@@ -7934,6 +7937,19 @@ function DF:ProcessRosterUpdate()
     local numGroup = GetNumGroupMembers()
     local inRaid = IsInRaid()
     DF:Debug("ROSTER", "ProcessRosterUpdate: %d members, inRaid=%s", numGroup, tostring(inRaid))
+
+    -- RAIDPOS diagnostic: capture container position state at the start of every
+    -- roster processing pass so we can correlate "frames jumped" reports with the
+    -- exact db values + auto-profile state at that moment.
+    if DF.raidContainer and DF.Debug then
+        local rdb = DF:GetRaidDB()
+        local activeAuto = (DF.AutoProfilesUI and DF.AutoProfilesUI.activeRuntimeProfile
+            and DF.AutoProfilesUI.activeRuntimeProfile.name) or "none"
+        DF:Debug("RAIDPOS", "ProcessRosterUpdate ENTRY: members=%d inRaid=%s anchor=(%.1f,%.1f) scale=%.3f autoProfile=%s",
+            numGroup, tostring(inRaid),
+            rdb and rdb.raidAnchorX or 0, rdb and rdb.raidAnchorY or 0,
+            rdb and rdb.frameScale or 1.0, activeAuto)
+    end
 
     -- Clear range cache so stale unit→range mappings are flushed
     -- (moved here from Range.lua's own GROUP_ROSTER_UPDATE handler)

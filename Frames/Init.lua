@@ -779,6 +779,7 @@ function DF:CreateRaidMoverFrame()
         end
 
         -- Save position
+        if DF.LogRaidAnchorWrite then DF:LogRaidAnchorWrite("RaidMover:OnDragStop", x, y) end
         db.raidAnchorX = x
         db.raidAnchorY = y
 

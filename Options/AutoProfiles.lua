@@ -3549,6 +3549,7 @@ function AutoProfilesUI:EvaluateAndApply()
     if newProfile == nil and self.activeRuntimeProfile == nil then return end
 
     DF:Debug("LAYOUT", "EvaluateAndApply: switching \"%s\" -> \"%s\"", oldName, newName)
+    DF:Debug("RAIDPOS", "AutoProfile SWITCH: \"%s\" -> \"%s\" (raid size=%d)", oldName, newName, GetNumGroupMembers())
 
     -- Capture whether an old profile was active before clearing state
     local oldWasActive = (self.activeRuntimeProfile ~= nil)
@@ -3590,10 +3591,13 @@ autoProfileThrottleFrame:SetScript("OnUpdate", function(self)
         DF._rosterThrottleFrame:Hide()
     end
 
+    DF:Debug("RAIDPOS", "AutoProfile throttle FIRE: rosterPending=%s combat=%s", tostring(rosterPending), tostring(InCombatLockdown()))
+
     AutoProfilesUI:EvaluateAndApply()
 
     -- Now process roster with correct overlay state
     if rosterPending then
+        DF:Debug("RAIDPOS", "AutoProfile throttle: running deferred ProcessRosterUpdate after EvaluateAndApply")
         if not InCombatLockdown() then
             DF:ProcessRosterUpdate()
         else
