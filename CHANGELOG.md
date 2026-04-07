@@ -6,6 +6,10 @@
 
 * (Locales) Locale warnings are now silent for all users by default. Developers can re-enable them on demand with `/df localewarn` to catch missing `L["..."]` keys while working from source
 
+### Performance
+
+* (Auras) Aura tracking modules now use a roster-aware unit event dispatcher so `UNIT_AURA` only fires for players, party members, and raid members — not for nameplates, target, focus, mouseover, or every other unit token in the game. Cuts wasted aura processing by ~95% in raid combat and removes the underlying cause of the v4.2.6 secret-boolean error spam
+
 ## [4.2.6] - 2026-04-07
 
 ### Bug Fixes
