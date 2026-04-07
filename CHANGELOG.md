@@ -13,7 +13,7 @@
 
 ### Bug Fixes
 
-* (Auras) Fix `Compound unit tokens are not allowed for this call` error spam in arena when the defensive cache scan was hit with arena enemy frame tokens like `boss1targetpet`
+* (Auras) Fix `Compound unit tokens are not allowed for this call` error spam triggered when the defensive cache scan ran against compound boss-frame child tokens like `boss1targetpet`. Affects raid, arena, and any encounter that spawns boss target frames
 * (Internal) Removed two non-unit events from the per-frame event filter list where they had been silently failing to register
 
 ## [4.2.6] - 2026-04-07
