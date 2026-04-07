@@ -8256,7 +8256,6 @@ local headerChildEventFrame = CreateFrame("Frame")
 -- Core unit events (formerly per-frame RegisterUnitEvent)
 headerChildEventFrame:RegisterEvent("UNIT_HEALTH")
 headerChildEventFrame:RegisterEvent("UNIT_MAXHEALTH")
-headerChildEventFrame:RegisterEvent("UNIT_AURA")
 headerChildEventFrame:RegisterEvent("UNIT_NAME_UPDATE")
 headerChildEventFrame:RegisterEvent("UNIT_POWER_UPDATE")
 headerChildEventFrame:RegisterEvent("UNIT_MAXPOWER")
@@ -8364,28 +8363,11 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
         return
     end
     
-    -- UNIT_AURA: Update external def icon
-    -- NOTE: UpdateAuras and UpdateDispelOverlay are driven by hooksecurefunc on
-    -- CompactUnitFrame_UpdateAuras (Auras.lua) to ensure fresh cache data
-    if event == "UNIT_AURA" then
-        local unit = arg1
-        if unit then
-            local frame = unitFrameMap[unit]
-            if frame and frame.dfEventsEnabled ~= false then
-                if DF.UpdateExternalDefIcon then
-                    DF:UpdateExternalDefIcon(frame)
-                end
-            end
-            local pinnedFrame = FindPinnedFrameForUnit(unit)
-            if pinnedFrame and pinnedFrame.dfEventsEnabled ~= false then
-                if DF.UpdateExternalDefIcon then
-                    DF:UpdateExternalDefIcon(pinnedFrame)
-                end
-            end
-        end
-        return
-    end
-    
+    -- NOTE: UNIT_AURA is no longer handled here — see externalDefSubscriber
+    -- below, which subscribes to the roster unit event dispatcher. UpdateAuras
+    -- and UpdateDispelOverlay are driven by hooksecurefunc on
+    -- CompactUnitFrame_UpdateAuras (Auras.lua) to ensure fresh cache data.
+
     -- UNIT_POWER_UPDATE / UNIT_MAXPOWER / UNIT_DISPLAYPOWER: Update power bar
     if event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
         local unit = arg1
@@ -8773,6 +8755,36 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
         return
     end
 end)
+
+-- ========================================
+-- UNIT_AURA — routed through the roster unit event dispatcher
+-- ========================================
+-- The external defensive icon listens for UNIT_AURA on roster units only.
+-- The dispatcher (RosterEvents.lua) uses RegisterUnitEvent at the C++ level
+-- so this only fires for player/partyN/raidN — never nameplates, target,
+-- focus, mouseover, or any other unit token. UpdateAuras and
+-- UpdateDispelOverlay are still driven by hooksecurefunc on
+-- CompactUnitFrame_UpdateAuras (Auras.lua) for cache freshness, so this
+-- subscriber's only job is to drive UpdateExternalDefIcon.
+local externalDefSubscriber = {}
+function externalDefSubscriber:OnUnitAura(event, unit)
+    if not DF.headersInitialized then return end
+    if not unit then return end
+
+    local frame = unitFrameMap[unit]
+    if frame and frame.dfEventsEnabled ~= false then
+        if DF.UpdateExternalDefIcon then
+            DF:UpdateExternalDefIcon(frame)
+        end
+    end
+    local pinnedFrame = FindPinnedFrameForUnit(unit)
+    if pinnedFrame and pinnedFrame.dfEventsEnabled ~= false then
+        if DF.UpdateExternalDefIcon then
+            DF:UpdateExternalDefIcon(pinnedFrame)
+        end
+    end
+end
+DF:RegisterRosterUnitEvent(externalDefSubscriber, "UNIT_AURA", "OnUnitAura")
 
 -- Slash command for debug
 SLASH_DFHEADERS1 = "/dfheaders"
