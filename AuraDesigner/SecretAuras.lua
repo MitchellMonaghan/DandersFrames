@@ -26,7 +26,6 @@ local addonName, DF = ...
 
 local pairs, ipairs, wipe, type = pairs, ipairs, wipe, type
 local GetTime = GetTime
-local strfind = string.find
 local issecretvalue = issecretvalue or function() return false end
 local canaccesstable = canaccesstable or function() return true end
 
@@ -297,6 +296,51 @@ local function UpdatePlayerSpec()
     end
 end
 
+-- UNIT_AURA handler. Subscribed via the roster dispatcher
+-- (DF:RegisterRosterUnitEvent), so this only fires for player/partyN/raidN —
+-- never for nameplates, targettarget, focus, mouseover, etc. The C++ filter
+-- in the dispatcher means we don't need an in-handler unit guard, and we're
+-- safe to use UnitIsUnit downstream because we know `unit` is a clean token
+-- that the new (post-2026-04-07) UnitIsUnit rules permit comparing to "player".
+function SecretAuras:OnUnitAura(event, unit, updateInfo)
+    if not state.spec or not unit then return end
+    if not SecretAuraInfo or not SecretAuraInfo[state.spec] then return end
+    if not UnitExists(unit) then return end
+
+    -- Ensure unit state exists
+    if not state.auras[unit] then
+        InitUnit(unit, state.spec)
+        return  -- InitUnit already scanned all auras
+    end
+
+    local unitAuras = state.auras[unit]
+
+    -- Remove expired auras
+    if updateInfo and updateInfo.removedAuraInstanceIDs then
+        for _, auraId in ipairs(updateInfo.removedAuraInstanceIDs) do
+            unitAuras[auraId] = nil
+        end
+    end
+
+    -- Match newly added auras via signature fingerprinting
+    if updateInfo and updateInfo.addedAuras then
+        for _, aura in ipairs(updateInfo.addedAuras) do
+            if not unitAuras[aura.auraInstanceID] then
+                local matched = MatchAuraSignature(unit, aura, state.spec)
+                if matched then
+                    unitAuras[aura.auraInstanceID] = matched
+                end
+            end
+        end
+    end
+
+    -- Run spec-specific disambiguation engine
+    local engine = specEngines[state.spec]
+    if engine and updateInfo and updateInfo.addedAuras then
+        engine(unit, updateInfo.addedAuras)
+    end
+end
+
 local function OnEvent(self, event, ...)
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
         local _, _, spellId = ...
@@ -304,70 +348,6 @@ local function OnEvent(self, event, ...)
         local info = SecretAuraInfo and SecretAuraInfo[state.spec]
         if info and info.casts and info.casts[spellId] then
             state.casts[spellId] = GetTime()
-        end
-
-    elseif event == "UNIT_AURA" then
-        local unit, updateInfo = ...
-        if not state.spec or not unit then return end
-
-        -- Filter: only process party/raid/player units. UNIT_AURA is registered
-        -- as a global event so it fires for every unit token in the game —
-        -- nameplates, targettarget, focus, mouseover, pets, etc. — but secret
-        -- auras are only ever cast on the player or group members. Without
-        -- this filter:
-        --   1. We do wasted GetUnitAuras / signature matching work for every
-        --      enemy nameplate dot tick (massive perf cost in busy combat).
-        --   2. We hit the line below where `UnitIsUnit(unit, "player")` is
-        --      called with `unit = "targettarget"`, which after Blizzard's
-        --      2026-04-07 hotfix returns a secret-tainted boolean and
-        --      poisons the rest of the handler — generating thousands of
-        --      "boolean test on a secret boolean value" errors per session.
-        --
-        -- A proper fix is to use frame:RegisterUnitEvent with explicit unit
-        -- filtering at the C++ level (Grid2-style roster-aware dispatcher).
-        -- That's a larger refactor planned for a follow-up. This filter is
-        -- the surgical fix that stops the user-visible error spam now.
-        if unit ~= "player"
-           and not strfind(unit, "^party%d$")
-           and not strfind(unit, "^raid%d+$")
-        then
-            return
-        end
-
-        if not SecretAuraInfo or not SecretAuraInfo[state.spec] then return end
-        if not UnitExists(unit) then return end
-
-        -- Ensure unit state exists
-        if not state.auras[unit] then
-            InitUnit(unit, state.spec)
-            return  -- InitUnit already scanned all auras
-        end
-
-        local unitAuras = state.auras[unit]
-
-        -- Remove expired auras
-        if updateInfo and updateInfo.removedAuraInstanceIDs then
-            for _, auraId in ipairs(updateInfo.removedAuraInstanceIDs) do
-                unitAuras[auraId] = nil
-            end
-        end
-
-        -- Match newly added auras via signature fingerprinting
-        if updateInfo and updateInfo.addedAuras then
-            for _, aura in ipairs(updateInfo.addedAuras) do
-                if not unitAuras[aura.auraInstanceID] then
-                    local matched = MatchAuraSignature(unit, aura, state.spec)
-                    if matched then
-                        unitAuras[aura.auraInstanceID] = matched
-                    end
-                end
-            end
-        end
-
-        -- Run spec-specific disambiguation engine
-        local engine = specEngines[state.spec]
-        if engine and updateInfo and updateInfo.addedAuras then
-            engine(unit, updateInfo.addedAuras)
         end
 
     elseif event == "GROUP_ROSTER_UPDATE" then
@@ -399,8 +379,15 @@ eventFrame:SetScript("OnEvent", OnEvent)
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-eventFrame:RegisterEvent("UNIT_AURA")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+
+-- UNIT_AURA is routed through the roster dispatcher (RosterEvents.lua) so
+-- this module only sees aura updates for player/partyN/raidN. The dispatcher
+-- uses RegisterUnitEvent at the C++ level — never fires for nameplates,
+-- targettarget, focus, mouseover, etc. — which both eliminates wasted work
+-- and avoids the secret-boolean taint case from UnitIsUnit on compound tokens
+-- that necessitated the v4.2.6 interim filter.
+DF:RegisterRosterUnitEvent(SecretAuras, "UNIT_AURA", "OnUnitAura")
 
 -- ============================================================
 -- PUBLIC API
