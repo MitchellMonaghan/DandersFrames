@@ -45,6 +45,7 @@ Changelog.lua
 Profile.lua
 ExportCategories.lua
 Core.lua
+RosterEvents.lua
 
 # Debug Console (loads early so all modules can use DF:Debug)
 Debug\DebugConsole.lua
