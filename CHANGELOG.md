@@ -6,6 +6,7 @@
 
 * (Aura Designer) Fix error spam from secret aura tracking
 * (Locales) Fix locale errors showing to users
+* (Defensive Icon) Fix defensive auras showing in both the buff bar and the defensive icon at the same time
 
 ## [4.2.5] - 2026-04-07
 

@@ -908,10 +908,10 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
         DF:DebugWarn("BLIZAURA", "No buffs container on frame for %s (buffs: %s, Iterate: %s)", unit, tostring(frame.buffs ~= nil), tostring(frame.buffs and frame.buffs.Iterate ~= nil))
     end
 
-    -- Defensives are handled entirely by DF:PopulateDefensiveCache, called
-    -- directly from UpdateDefensiveBar. This capture path does not touch
-    -- cache.defensives so the defensive icon is fully decoupled from the
-    -- Blizzard aura source and from whether this capture succeeded.
+    -- Defensives are populated below via DF:PopulateDefensiveCache (called
+    -- right before TriggerAuraUpdateForUnit). The capture iteration here
+    -- only fills cache.buffs/debuffs — defensive classification is done
+    -- separately so it works on any build / both source modes.
 
     -- Capture debuff auraInstanceIDs from Blizzard's container.
     -- All aura data fields are secret/tainted in combat, so we only read
@@ -977,9 +977,17 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     for _ in pairs(cache.playerDispellable) do dispelCount = dispelCount + 1 end
     DF:Debug("BLIZAURA", "Capture DONE for %s — buffs: %d, debuffs: %d, dispel: %d", unit, #cache.buffOrder, #cache.debuffOrder, dispelCount)
 
-    -- (Defensive classification is now handled inline during the buff
-    -- iteration above, using IsAuraFilteredOutByInstanceID. We no longer
-    -- read frame.CenterDefensiveBuff — it restructured in 12.0.5.)
+    -- Defensive classification: populate cache.defensives via the secret-safe
+    -- Direct API path. This MUST happen before TriggerAuraUpdateForUnit fires
+    -- because the buff bar (UpdateAuras_Enhanced) reads cache.defensives for
+    -- defensive deduplication. If we leave it until UpdateDefensiveBar (which
+    -- runs AFTER UpdateAuras_Enhanced in the trigger chain), the dedup set is
+    -- empty and defensive auras show up in BOTH the buff bar and the
+    -- defensive icon. UpdateDefensiveBar still calls PopulateDefensiveCache
+    -- itself for the standalone case (options refresh, test mode, etc.).
+    if DF.PopulateDefensiveCache then
+        DF:PopulateDefensiveCache(unit)
+    end
 
     -- Cache is now populated. Trigger display update if requested.
     --
@@ -1283,9 +1291,10 @@ local function ScanUnitDirect(unit)
         or (cachedPartyBuffFilters or BuildDirectBuffFilters(db))
 
     -- === HELPFUL AURAS ===
-    -- Defensives are NOT classified here — that's handled by
-    -- DF:PopulateDefensiveCache, called directly from UpdateDefensiveBar
-    -- so the defensive icon is fully decoupled from the aura source mode.
+    -- Defensives are NOT classified here — they're populated by
+    -- DF:PopulateDefensiveCache at the bottom of this function (right
+    -- before the caller fires TriggerAuraUpdateForUnit). Same defensive
+    -- classification works for both source modes.
     local helpfulAuras = GetUnitAuras(unit, "HELPFUL", 40)
     if helpfulAuras then
         -- Apply sort if requested (for buff display order)
@@ -1356,6 +1365,15 @@ local function ScanUnitDirect(unit)
                 end
             end
         end
+    end
+
+    -- Defensive classification: populate cache.defensives via the secret-safe
+    -- Direct API path. This MUST happen before TriggerAuraUpdateForUnit fires
+    -- (which is the caller's next step) because the buff bar reads
+    -- cache.defensives for defensive deduplication. See the matching call in
+    -- CaptureAurasFromBlizzardFrame for the full explanation.
+    if DF.PopulateDefensiveCache then
+        DF:PopulateDefensiveCache(unit)
     end
 end
 
