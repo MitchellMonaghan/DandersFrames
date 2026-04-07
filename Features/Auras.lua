@@ -23,6 +23,22 @@ local C_CurveUtil = C_CurveUtil
 local GetAuraDataByAuraInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
 local GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
 local IsAuraFilteredOut = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+local strfind = string.find
+
+-- Roster-unit allowlist guard. The 12.0.5 C_UnitAuras.GetUnitAuras API
+-- rejects compound unit tokens like `boss1targetpet` with a hard error,
+-- so any aura-scanning function that gets called from a Blizzard frame
+-- hook (where the unit token can be anything) needs to early-return on
+-- non-roster tokens before touching GetUnitAuras. This is the same
+-- allowlist pattern that v4.2.6 added to SecretAuras as an interim
+-- filter — same problem, different code path.
+local function IsRosterUnit(unit)
+    if not unit then return false end
+    if unit == "player" then return true end
+    if strfind(unit, "^party%d$") then return true end
+    if strfind(unit, "^raid%d+$") then return true end
+    return false
+end
 
 -- Safe texture setter that handles secret values
 local function SafeSetTexture(icon, texture)
@@ -811,7 +827,13 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
     if displayedUnit and type(displayedUnit) == "string" and displayedUnit:find("nameplate") then
         return
     end
-    
+
+    -- Roster-only guard: arena enemy frames and boss frames pass compound
+    -- tokens like `boss1targetpet` through this hook, and the 12.0.5
+    -- GetUnitAuras API hard-errors on those. We only ever care about
+    -- player/partyN/raidN auras anyway.
+    if not IsRosterUnit(unit) then return end
+
     -- Now safe to try GetName since we've filtered out nameplates
     local frameName = nil
     if frame.GetName and type(frame.GetName) == "function" then
@@ -1189,6 +1211,9 @@ end
 -- of whether the Blizzard or Direct capture ran (or failed) first.
 function DF:PopulateDefensiveCache(unit)
     if not unit then return end
+    -- Early-return on non-roster tokens (e.g. boss1targetpet from arena
+    -- enemy frame hooks). GetUnitAuras hard-errors on these in 12.0.5.
+    if not IsRosterUnit(unit) then return end
     if not DF.BlizzardAuraCache then DF.BlizzardAuraCache = {} end
     local cache = DF.BlizzardAuraCache[unit]
     if not cache then
@@ -1252,6 +1277,8 @@ end
 -- Scan a single unit with Direct API and populate DF.BlizzardAuraCache
 local function ScanUnitDirect(unit)
     if not unit or not UnitExists(unit) then return end
+    -- Same compound-token guard as PopulateDefensiveCache below.
+    if not IsRosterUnit(unit) then return end
 
     -- Get settings for this unit's frame type
     local frame = DF.unitFrameMap and DF.unitFrameMap[unit]
