@@ -5373,18 +5373,19 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         }), 30, "both")
 
         -- ============================================================
-        -- API COMPATIBILITY OVERLAY
+        -- API COMPATIBILITY OVERLAY (Group-frame Targeted Spells)
+        --
         -- Group-frame Targeted Spells relies on UnitIsUnit comparing a
-        -- nameplateXtarget against a party/raid token. WoW 12.0.5 made
-        -- that combination return nil, breaking the feature with no
-        -- in-addon workaround. When detected at runtime, we hide the
-        -- whole page behind this overlay and point users at the
-        -- Personal Targeted Spells page (which still works).
+        -- nameplateXtarget against a party/raid token. Blizzard's
+        -- 2026-04-07 hotfix made that combination return nil, with no
+        -- in-addon workaround (the new PlayerIsSpellTarget API only
+        -- answers for the player). DF.GroupTargetedSpellsAPIBlocked is
+        -- set permanently at addon load in Features/TargetedSpells.lua,
+        -- so this overlay is always visible on this page.
         --
         -- The overlay is parented to the page (not self.child) so it
         -- survives Refresh() rebuilds and floats above the scroll
-        -- content. We create it once and toggle visibility based on
-        -- DF.GroupTargetedSpellsAPIBlocked.
+        -- content.
         -- ============================================================
         if not self.apiBlockedOverlay then
             -- Parent to the page (ScrollFrame). The GUI window is in DIALOG
@@ -5429,8 +5430,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end
     end)
 
-    -- Expose a refresh hook so the runtime detector can flip the overlay
-    -- on without waiting for the user to navigate away and back.
+    -- Stub kept for ABI compatibility — the overlay is now always visible
+    -- so this is a no-op, but other code paths still call it.
     GUI.RefreshTargetedSpellsOverlay = function()
         local page = GUI.Pages and GUI.Pages["indicators_targetedspells"]
         if page and page.apiBlockedOverlay then
