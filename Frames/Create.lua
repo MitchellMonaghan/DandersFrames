@@ -421,6 +421,12 @@ end
 -- Added: 2025-01-20 for performance optimization
 
 -- List of events that should use RegisterUnitEvent (have unit as first arg)
+-- Events registered per-frame via RegisterUnitEvent (C++-level filtering).
+-- Must be true unit events — i.e. events that deliver a unit token as the
+-- first OnEvent arg. Non-unit events like INCOMING_SUMMON_CHANGED and
+-- INCOMING_RESURRECT_CHANGED do NOT belong here; RegisterUnitEvent silently
+-- fails on them. They're handled globally on headerChildEventFrame in
+-- Headers.lua instead.
 local UNIT_EVENTS_TO_FILTER = {
     "UNIT_HEALTH",
     "UNIT_MAXHEALTH",
@@ -430,8 +436,6 @@ local UNIT_EVENTS_TO_FILTER = {
     "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
     "UNIT_HEAL_PREDICTION",
     "UNIT_CONNECTION",
-    "INCOMING_SUMMON_CHANGED",
-    "INCOMING_RESURRECT_CHANGED",
 }
 
 -- Register unit-specific events for a frame
