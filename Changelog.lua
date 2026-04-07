@@ -1,10 +1,14 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-07T13:53:55Z"
+DF.BUILD_DATE = "2026-04-07T15:14:24Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
 ## [4.2.7] - 2026-04-07
+
+### New Features
+
+* (Auras) Added `Player Dispellable` and `All Dispellable` debuff filters to Direct API mode
 
 ### Improvements
 
