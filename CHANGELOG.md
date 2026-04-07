@@ -4,17 +4,17 @@
 
 ### Improvements
 
-* (Locales) Locale warnings are now silent for all users by default. Developers can re-enable them on demand with `/df localewarn` to catch missing `L["..."]` keys while working from source
+* (Locales) Locale warnings now silent by default
 
 ### Performance
 
-* (Auras) Aura tracking now uses a roster-aware unit event dispatcher so `UNIT_AURA` only fires for players, party members, and raid members — not for nameplates, target, focus, mouseover, or every other unit token in the game. Cuts wasted aura processing by ~95% in raid combat and removes the underlying cause of the v4.2.6 secret-boolean error spam. Covers all four aura tracking paths: Aura Designer, the direct aura API, the aura adapter, and the external defensive icon
-* (Range) Range tracking now uses the roster unit event dispatcher, matching Grid2's pattern. Reduces wasted `UNIT_IN_RANGE_UPDATE` events by ~95% in busy zones
+* (Auras) Reduced wasted aura processing in raid combat
+* (Range) Reduced wasted range update events in busy zones
 
 ### Bug Fixes
 
-* (Auras) Fix `Compound unit tokens are not allowed for this call` error spam triggered when the defensive cache scan ran against compound boss-frame child tokens like `boss1targetpet`. Affects raid, arena, and any encounter that spawns boss target frames
-* (Internal) Removed two non-unit events from the per-frame event filter list where they had been silently failing to register
+* (Auras) Fix "Compound unit tokens are not allowed" error spam in raid and arena
+* (Internal) Removed two non-unit events from per-frame filter list
 
 ## [4.2.6] - 2026-04-07
 
