@@ -802,52 +802,57 @@ eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("UNIT_IN_RANGE_UPDATE")
 
 -- Lazy-cached reference to unitFrameMap (populated by Headers.lua after load)
 local unitFrameMap
 
-eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "UNIT_IN_RANGE_UPDATE" then
-        -- Event-driven range update — instant response instead of waiting for poll timer
-        local unit = ...
-        if not unit then return end
-        if UnitIsUnit(unit, "player") then return end
+-- UNIT_IN_RANGE_UPDATE is routed through the roster unit event dispatcher
+-- (RosterEvents.lua) so it only fires for player/partyN/raidN — never for
+-- nameplates, target, focus, mouseover, or any other unit token. This is one
+-- of only two events Grid2 specifically routes through its dispatcher (the
+-- other being UNIT_AURA) because the per-unit cost adds up enough during
+-- movement to justify the C++-level filter.
+local rangeSubscriber = {}
+function rangeSubscriber:OnUnitInRange(event, unit)
+    if not unit then return end
+    -- Player frame doesn't need range updates (always in range of itself).
+    if unit == "player" then return end
 
-        -- Lazy-init the unitFrameMap reference
-        if not unitFrameMap then
-            unitFrameMap = DF.unitFrameMap
-            if not unitFrameMap then return end
-        end
+    -- Lazy-init the unitFrameMap reference
+    if not unitFrameMap then
+        unitFrameMap = DF.unitFrameMap
+        if not unitFrameMap then return end
+    end
 
-        -- Main frame: O(1) lookup
-        local frame = unitFrameMap[unit]
-        if frame and frame:IsShown() then
-            DF:UpdateRange(frame)
-        end
+    -- Main frame: O(1) lookup
+    local frame = unitFrameMap[unit]
+    if frame and frame:IsShown() then
+        DF:UpdateRange(frame)
+    end
 
-        -- Pinned frames: may show the same unit on a second frame
-        if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.headers then
-            for setIndex = 1, 2 do
-                local header = DF.PinnedFrames.headers[setIndex]
-                if header and header:IsShown() then
-                    local maxChildren = DF.PinnedFrames.currentMode == "raid" and 40 or 5
-                    for i = 1, maxChildren do
-                        local child = header:GetAttribute("child" .. i)
-                        if child and child:IsShown() and child.unit == unit then
-                            DF:UpdateRange(child)
-                        end
+    -- Pinned frames: may show the same unit on a second frame
+    if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.headers then
+        for setIndex = 1, 2 do
+            local header = DF.PinnedFrames.headers[setIndex]
+            if header and header:IsShown() then
+                local maxChildren = DF.PinnedFrames.currentMode == "raid" and 40 or 5
+                for i = 1, maxChildren do
+                    local child = header:GetAttribute("child" .. i)
+                    if child and child:IsShown() and child.unit == unit then
+                        DF:UpdateRange(child)
                     end
                 end
             end
         end
-
-        -- Pet frames: UNIT_IN_RANGE_UPDATE doesn't fire for pets,
-        -- but pet range is derived from the owner — update it here.
-        UpdatePetForOwner(unit)
-        return
     end
 
+    -- Pet frames: UNIT_IN_RANGE_UPDATE doesn't fire for pets,
+    -- but pet range is derived from the owner — update it here.
+    UpdatePetForOwner(unit)
+end
+DF:RegisterRosterUnitEvent(rangeSubscriber, "UNIT_IN_RANGE_UPDATE", "OnUnitInRange")
+
+eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
         local unit = ...
         -- PLAYER_TALENT_UPDATE fires without a unit arg, so always update
