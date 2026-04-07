@@ -294,31 +294,36 @@ end
 -- SELF-TEST (Phase 1 verification)
 -- ============================================================
 --
--- When `DF.debugRosterEvents` is set BEFORE this file loads (or any time
--- before PLAYER_LOGIN), this installs a probe handler that logs every
--- UNIT_AURA event the dispatcher routes. Use it to verify in-game that:
+-- Runtime-toggleable probe handler that logs every UNIT_AURA event the
+-- dispatcher routes. Use it to verify in-game that:
 --   * The dispatcher fires for player and roster units only
 --   * It does NOT fire for nameplate / targettarget / focus / mouseover units
---   * Roster transitions (party↔raid, joins, leaves) work correctly
+--   * Roster transitions (party<->raid, joins, leaves) work correctly
 --
--- To enable: set `DandersFrames.debugRosterEvents = true` in /run before
--- /reload, or hard-code it temporarily.
-if DF.debugRosterEvents then
-    local probe = {}
-    function probe:UNIT_AURA(event, unit, info)
-        if DF.Debug then
-            DF:Debug("ROSTER", "Self-test: %s on %s", event, tostring(unit))
-        end
-    end
+-- Usage (no /reload required):
+--   /run DandersFrames:EnableRosterEventsSelfTest()
+--   -- ... do stuff, watch /df console ROSTER category ...
+--   /run DandersFrames:DisableRosterEventsSelfTest()
+--
+-- The probe is a single shared object so calling Enable twice is idempotent.
 
-    -- Wait for PLAYER_LOGIN before subscribing so DF.Debug is available.
-    local probeFrame = CreateFrame("Frame")
-    probeFrame:RegisterEvent("PLAYER_LOGIN")
-    probeFrame:SetScript("OnEvent", function(self)
-        DF:RegisterRosterUnitEvent(probe, "UNIT_AURA")
-        if DF.Debug then
-            DF:Debug("ROSTER", "Self-test handler registered")
-        end
-        self:UnregisterAllEvents()
-    end)
+local selfTestProbe = {}
+function selfTestProbe:UNIT_AURA(event, unit, info)
+    if DF.Debug then
+        DF:Debug("ROSTER", "Self-test: %s on %s", event, tostring(unit))
+    end
+end
+
+function DF:EnableRosterEventsSelfTest()
+    DF:RegisterRosterUnitEvent(selfTestProbe, "UNIT_AURA")
+    if DF.Debug then
+        DF:Debug("ROSTER", "Self-test ENABLED. Watch /df console ROSTER category for UNIT_AURA events.")
+    end
+end
+
+function DF:DisableRosterEventsSelfTest()
+    DF:UnregisterRosterUnitEvent(selfTestProbe, "UNIT_AURA")
+    if DF.Debug then
+        DF:Debug("ROSTER", "Self-test DISABLED.")
+    end
 end
