@@ -1,5 +1,11 @@
 # DandersFrames Changelog
 
+## [4.2.7] - 2026-04-07
+
+### Improvements
+
+* (Locales) Locale warnings are now silent for all users by default. Developers can re-enable them on demand with `/df localewarn` to catch missing `L["..."]` keys while working from source
+
 ## [4.2.6] - 2026-04-07
 
 ### Bug Fixes

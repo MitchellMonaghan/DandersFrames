@@ -1,23 +1,13 @@
--- AceLocale silent mode is enabled in release builds only.
+-- AceLocale silent mode is ALWAYS on by default. AceLocale's default
+-- `readmeta` metatable calls geterrorhandler() on missing keys, which
+-- causes spurious errors when external code (BugSack, debug helpers
+-- calling :ToDebugString() etc.) introspects our L table — and also
+-- fires for any source-build run where translations haven't been pulled.
 --
--- In local/source runs, the long-comment block below is inert: `silent`
--- stays nil, so AceLocale uses its default `readmeta` metatable which
--- warns about missing keys via geterrorhandler(). This is what we want
--- during development — we WANT to see when a `L["..."]` lookup misses,
--- because it usually means we forgot to add a key to this file.
---
--- In packaged release builds, the BigWigs packager strips the
--- `--[==[@non-debug@ ... @end-non-debug@]==]` wrapping, activating
--- `silent = true`. This switches AceLocale to its `readmetasilent`
--- metatable which still returns the missing key as a fallback string
--- but does NOT call the error handler. This stops users from seeing
--- spurious AceLocale warnings caused by external code (BugSack, debug
--- helpers calling :ToDebugString() etc.) introspecting our L table.
-local silent = nil
---[==[@non-debug@
-silent = true
---@end-non-debug@]==]
-local L = LibStub("AceLocale-3.0"):NewLocale("DandersFrames", "enUS", true, silent)
+-- To opt back into warnings (useful when developing locally to catch
+-- missing L["..."] keys), use `/df localewarn` in-game. That swaps the
+-- L table's metatable to one that calls geterrorhandler() on misses.
+local L = LibStub("AceLocale-3.0"):NewLocale("DandersFrames", "enUS", true, true)
 if not L then return end
 
 -- ============================================================

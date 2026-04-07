@@ -16,6 +16,26 @@ DF.VERSION = GetAddOnMetadata(addonName, "Version") or "Unknown"
 DF.L = LibStub("AceLocale-3.0"):GetLocale("DandersFrames")
 local L = DF.L
 
+-- Locale warnings: silent by default (see Locales/enUS.lua for rationale).
+-- Call DF:SetLocaleWarnings(true) — or use /df localewarn — to enable
+-- error-handler warnings on missing L["..."] keys for the current session.
+DF.localeWarningsEnabled = false
+function DF:SetLocaleWarnings(enabled)
+    if enabled then
+        setmetatable(DF.L, { __index = function(self, key)
+            rawset(self, key, key)
+            geterrorhandler()(("AceLocale-3.0: DandersFrames: Missing entry for '%s'"):format(tostring(key)))
+            return key
+        end })
+    else
+        setmetatable(DF.L, { __index = function(self, key)
+            rawset(self, key, key)
+            return key
+        end })
+    end
+    DF.localeWarningsEnabled = enabled and true or false
+end
+
 -- Debug flags
 DF.debugEnabled = false
 DF.demoMode = false
@@ -4285,6 +4305,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 else
                     print("|cffff0000DandersFrames:|r Popup module not loaded")
                 end
+            elseif msg == "localewarn" or msg == "localewarnings" then
+                -- Toggle AceLocale missing-key warnings for this session
+                DF:SetLocaleWarnings(not DF.localeWarningsEnabled)
+                print("|cff00ff00DandersFrames:|r Locale warnings " .. (DF.localeWarningsEnabled and "|cff00ff00ENABLED|r" or "|cffff9900DISABLED|r") .. " for this session")
             elseif msg == "profiler" then
                 -- Toggle the function profiler UI
                 if DF.Profiler then
