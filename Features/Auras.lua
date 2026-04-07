@@ -1381,10 +1381,14 @@ end
 -- DIRECT MODE EVENT HANDLING
 -- ============================================================
 
-local directModeFrame = CreateFrame("Frame")
+-- Direct-mode UNIT_AURA subscriber. Routed through the roster dispatcher
+-- (RosterEvents.lua) so we only see player/partyN/raidN events — never
+-- nameplates, target, focus, mouseover, etc. The dispatcher uses
+-- RegisterUnitEvent at the C++ level for filtering.
+local directModeSubscriber = {}
 local directModeActive = false
 
-local function OnDirectModeUnitAura(self, event, unit, updateInfo)
+function directModeSubscriber:OnUnitAura(event, unit, updateInfo)
     if not unit then return end
     -- Only process units we care about (party/raid members with DF frames)
     if not DF.unitFrameMap or not DF.unitFrameMap[unit] then return end
@@ -1397,13 +1401,7 @@ function DF:EnableDirectAuraMode()
     if directModeActive then return end
     directModeActive = true
 
-    directModeFrame:SetScript("OnEvent", OnDirectModeUnitAura)
-
-    -- Register UNIT_AURA globally — handler filters via unitFrameMap.
-    -- RegisterUnitEvent only supports 2 units per call and each call
-    -- replaces the previous registration, so a per-unit loop silently
-    -- drops all but the last unit.
-    directModeFrame:RegisterEvent("UNIT_AURA")
+    DF:RegisterRosterUnitEvent(directModeSubscriber, "UNIT_AURA", "OnUnitAura")
 
     -- Rebuild filter strings from current settings
     DF:RebuildDirectFilterStrings()
@@ -1416,8 +1414,7 @@ function DF:DisableDirectAuraMode()
     if not directModeActive then return end
     directModeActive = false
 
-    directModeFrame:UnregisterAllEvents()
-    directModeFrame:SetScript("OnEvent", nil)
+    DF:UnregisterRosterUnitEvent(directModeSubscriber, "UNIT_AURA")
 end
 
 -- Full scan of all units currently in the frame map
@@ -1434,8 +1431,9 @@ function DF:DirectModeRosterUpdate()
     if not directModeActive then return end
     if not DF.unitFrameMap then return end
 
-    -- UNIT_AURA is already registered globally (RegisterEvent, not
-    -- RegisterUnitEvent), so no re-registration needed — just rescan.
+    -- The roster dispatcher handles add/remove of units automatically when
+    -- GROUP_ROSTER_UPDATE fires, so no re-registration is needed here — just
+    -- rescan to populate state for the new roster.
     DF:DirectScanAllUnits()
 end
 
@@ -1450,8 +1448,7 @@ function DF:SetAuraSourceMode(mode)
     -- when the mode hasn't changed (filters or profile may still differ)
     if directModeActive then
         directModeActive = false
-        directModeFrame:UnregisterAllEvents()
-        directModeFrame:SetScript("OnEvent", nil)
+        DF:UnregisterRosterUnitEvent(directModeSubscriber, "UNIT_AURA")
     end
 
     if mode == "DIRECT" then
