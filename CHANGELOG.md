@@ -4,11 +4,7 @@
 
 ### New Features
 
-* (Auras) Added `Player Dispellable` and `All Dispellable` debuff filters to Direct API mode. `Player Dispellable` is on by default and includes debuffs your current character can dispel. `All Dispellable` is opt-in and includes any dispellable debuff regardless of who can dispel it. Both combine with the existing debuff filters via OR logic.
-
-### Changes
-
-* (Auras) Direct API mode no longer auto-includes dispellable debuffs in the debuff list — inclusion is now driven by the new `Player Dispellable` checkbox. Existing profiles get this setting enabled by default, so most users won't see any visible change. If you had every debuff filter unchecked and relied on dispellables still appearing, make sure `Player Dispellable` is enabled.
+* (Auras) Added `Player Dispellable` and `All Dispellable` debuff filters to Direct API mode
 
 ### Improvements
 
