@@ -1,16 +1,5 @@
 # DandersFrames Changelog
 
-## [4.2.8] - 2026-04-07
-
-### Performance
-
-* (Auras) The header-child external defensive icon is now driven through the roster unit event dispatcher, completing the UNIT_AURA migration started in v4.2.7 — fewer wasted aura events from nameplates and other off-frame units
-* (Range) Range tracking now uses the roster unit event dispatcher, matching Grid2's pattern. Reduces wasted UNIT_IN_RANGE_UPDATE events by ~95% in busy zones
-
-### Bug Fixes
-
-* (Internal) Removed two non-unit events from the per-frame event filter list where they had been silently failing to register
-
 ## [4.2.7] - 2026-04-07
 
 ### Improvements
@@ -19,7 +8,12 @@
 
 ### Performance
 
-* (Auras) Aura tracking modules now use a roster-aware unit event dispatcher so `UNIT_AURA` only fires for players, party members, and raid members — not for nameplates, target, focus, mouseover, or every other unit token in the game. Cuts wasted aura processing by ~95% in raid combat and removes the underlying cause of the v4.2.6 secret-boolean error spam
+* (Auras) Aura tracking now uses a roster-aware unit event dispatcher so `UNIT_AURA` only fires for players, party members, and raid members — not for nameplates, target, focus, mouseover, or every other unit token in the game. Cuts wasted aura processing by ~95% in raid combat and removes the underlying cause of the v4.2.6 secret-boolean error spam. Covers all four aura tracking paths: Aura Designer, the direct aura API, the aura adapter, and the external defensive icon
+* (Range) Range tracking now uses the roster unit event dispatcher, matching Grid2's pattern. Reduces wasted `UNIT_IN_RANGE_UPDATE` events by ~95% in busy zones
+
+### Bug Fixes
+
+* (Internal) Removed two non-unit events from the per-frame event filter list where they had been silently failing to register
 
 ## [4.2.6] - 2026-04-07
 
