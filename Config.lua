@@ -917,6 +917,8 @@ DF.PartyDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
+    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
+    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
@@ -2134,6 +2136,8 @@ DF.RaidDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
+    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
+    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",

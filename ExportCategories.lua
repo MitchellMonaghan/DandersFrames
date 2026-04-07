@@ -440,6 +440,8 @@ DF.ExportCategories = {
         "directDebuffFilterRaidInCombat",
         "directDebuffFilterCrowdControl",
         "directDebuffFilterImportant",
+        "directDebuffFilterRaidPlayerDispellable",
+        "directDebuffFilterAllDispellable",
         "directDebuffSortOrder",
 
         -- Dead Auras

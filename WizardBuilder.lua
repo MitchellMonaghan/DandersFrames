@@ -2092,7 +2092,9 @@ WB:RegisterBuiltinWizard({
             "directBuffFilterExternalDefensive", "directBuffSortOrder",
             "directDebuffShowAll", "directDebuffFilterRaid",
             "directDebuffFilterRaidInCombat", "directDebuffFilterCrowdControl",
-            "directDebuffFilterImportant", "directDebuffSortOrder",
+            "directDebuffFilterImportant",
+            "directDebuffFilterRaidPlayerDispellable", "directDebuffFilterAllDispellable",
+            "directDebuffSortOrder",
         }
 
         return {
@@ -2185,6 +2187,8 @@ WB:RegisterBuiltinWizard({
                         ["party.directDebuffFilterRaidInCombat"] = true,
                         ["party.directDebuffFilterCrowdControl"] = true,
                         ["party.directDebuffFilterImportant"] = true,
+                        ["party.directDebuffFilterRaidPlayerDispellable"] = true,
+                        ["party.directDebuffFilterAllDispellable"] = false,
                         ["party.directDebuffSortOrder"] = "TIME",
                         -- Same for raid
                         ["raid.directBuffShowAll"] = false,
@@ -2202,6 +2206,8 @@ WB:RegisterBuiltinWizard({
                         ["raid.directDebuffFilterRaidInCombat"] = true,
                         ["raid.directDebuffFilterCrowdControl"] = true,
                         ["raid.directDebuffFilterImportant"] = true,
+                        ["raid.directDebuffFilterRaidPlayerDispellable"] = true,
+                        ["raid.directDebuffFilterAllDispellable"] = false,
                         ["raid.directDebuffSortOrder"] = "TIME",
                     },
                     manual = {

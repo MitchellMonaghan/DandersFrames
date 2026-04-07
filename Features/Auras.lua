@@ -684,7 +684,9 @@ function DF:CheckBlizzardAuraSourceAvailable()
                         "directBuffFilterExternalDefensive", "directBuffSortOrder",
                         "directDebuffShowAll", "directDebuffFilterRaid",
                         "directDebuffFilterRaidInCombat", "directDebuffFilterCrowdControl",
-                        "directDebuffFilterImportant", "directDebuffSortOrder",
+                        "directDebuffFilterImportant",
+                        "directDebuffFilterRaidPlayerDispellable", "directDebuffFilterAllDispellable",
+                        "directDebuffSortOrder",
                     }
 
                     local function openAuraFiltersTabAndHighlight()
@@ -1156,6 +1158,11 @@ local function BuildDirectDebuffFilters(db)
     if db.directDebuffFilterImportant then
         filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.Important or "IMPORTANT")
     end
+    if db.directDebuffFilterRaidPlayerDispellable then
+        filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.RaidPlayerDispellable or "RAID_PLAYER_DISPELLABLE")
+    end
+    -- Note: directDebuffFilterAllDispellable has no Blizzard filter constant —
+    -- it's post-classified in ScanUnitDirect via auraData.dispelName ~= nil.
     -- No sub-filters selected = show all (backward compat)
     if #filters == 0 then return nil end
     return filters
@@ -1370,25 +1377,28 @@ local function ScanUnitDirect(unit)
                 -- All-dispellable classification (independent of debuff filters).
                 -- Used by the dispel overlay's "All Dispellable" mode so it fires
                 -- even when the debuff is filtered out of icon display.
-                if auraData.dispelName ~= nil then
+                local isAllDispellable = auraData.dispelName ~= nil
+                if isAllDispellable then
                     cache.allDispellable[id] = true
                 end
-                -- Debuff classification
-                local addedAsDebuff = false
-                if not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters) then
+                -- Debuff classification — OR across the filter-string filters
+                -- and the post-classified "All Dispellable" toggle. The Raid
+                -- Player Dispellable filter goes through debuffFilters like
+                -- the others; All Dispellable is checked here because there
+                -- is no Blizzard filter constant for "any dispellable".
+                local passesFilters = not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters)
+                local passesAllDispellable = db.directDebuffFilterAllDispellable and isAllDispellable
+                if passesFilters or passesAllDispellable then
                     cache.debuffs[id] = true
                     cache.debuffOrder[#cache.debuffOrder + 1] = id
                     cache.debuffData[#cache.debuffData + 1] = auraData
-                    addedAsDebuff = true
                 end
-                -- Dispel classification (also merges into debuffs if not already present)
+                -- Player-dispellable bookkeeping for the dispel overlay.
+                -- This is independent of which user checkboxes are on — the
+                -- overlay reads cache.playerDispellable directly and must
+                -- fire even when dispellable debuffs aren't in the icon list.
                 if dispelFilter and (not IsAuraFilteredOut or not IsAuraFilteredOut(unit, id, dispelFilter)) then
                     cache.playerDispellable[id] = true
-                    if not addedAsDebuff and not cache.debuffs[id] then
-                        cache.debuffs[id] = true
-                        cache.debuffOrder[#cache.debuffOrder + 1] = id
-                        cache.debuffData[#cache.debuffData + 1] = auraData
-                    end
                 end
             end
         end

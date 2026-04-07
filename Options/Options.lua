@@ -4014,6 +4014,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         dfImportant.hideOn = HideDebuffSubFilters
         dfImportant.tooltip = L["Spells flagged as important by Blizzard."]
 
+        local dfPlayerDispel = debuffGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Player Dispellable"], db, "directDebuffFilterRaidPlayerDispellable", DirectFilterChanged), 30)
+        dfPlayerDispel.hideOn = HideDebuffSubFilters
+        dfPlayerDispel.tooltip = L["Debuffs your current character can dispel."]
+
+        local dfAllDispel = debuffGroup:AddWidget(GUI:CreateCheckbox(self.child, L["All Dispellable"], db, "directDebuffFilterAllDispellable", DirectFilterChanged), 30)
+        dfAllDispel.hideOn = HideDebuffSubFilters
+        dfAllDispel.tooltip = L["Any debuff that can be dispelled, regardless of whether you can dispel it."]
+
         local debuffSortOptions = {
             DEFAULT = L["Default (Slot Order)"],
             TIME = L["Time Remaining"],
