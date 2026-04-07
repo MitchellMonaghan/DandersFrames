@@ -248,29 +248,33 @@ function Provider:GetUnitAuras(unit, spec)
     return result
 end
 
--- Uses a simple event frame for UNIT_AURA
+-- UNIT_AURA is routed through the roster dispatcher (RosterEvents.lua) so
+-- we only see updates for player/partyN/raidN — never nameplates, target,
+-- focus, mouseover, etc. The dispatcher uses RegisterUnitEvent at the C++
+-- level for filtering.
 local callbacks = {}
-local eventFrame
+local subscribed = false
+
+function Provider:OnUnitAura(event, unit)
+    for _, cb in pairs(callbacks) do
+        cb(unit)
+    end
+end
 
 function Provider:RegisterCallback(owner, callback)
     callbacks[owner] = callback
-    if not eventFrame then
-        eventFrame = CreateFrame("Frame")
-        eventFrame:RegisterEvent("UNIT_AURA")
-        eventFrame:SetScript("OnEvent", function(_, _, unit)
-            for _, cb in pairs(callbacks) do
-                cb(unit)
-            end
-        end)
+    if not subscribed then
+        DF:RegisterRosterUnitEvent(Provider, "UNIT_AURA", "OnUnitAura")
+        subscribed = true
     end
 end
 
 function Provider:UnregisterCallback(owner)
     callbacks[owner] = nil
-    -- Clean up event frame if no callbacks remain
-    if eventFrame and not next(callbacks) then
-        eventFrame:UnregisterAllEvents()
-        eventFrame = nil
+    -- Tear down the dispatcher subscription if no callbacks remain.
+    if subscribed and not next(callbacks) then
+        DF:UnregisterRosterUnitEvent(Provider, "UNIT_AURA")
+        subscribed = false
     end
 end
 
