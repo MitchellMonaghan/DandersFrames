@@ -1,4 +1,23 @@
-local L = LibStub("AceLocale-3.0"):NewLocale("DandersFrames", "enUS", true)
+-- AceLocale silent mode is enabled in release builds only.
+--
+-- In local/source runs, the long-comment block below is inert: `silent`
+-- stays nil, so AceLocale uses its default `readmeta` metatable which
+-- warns about missing keys via geterrorhandler(). This is what we want
+-- during development — we WANT to see when a `L["..."]` lookup misses,
+-- because it usually means we forgot to add a key to this file.
+--
+-- In packaged release builds, the BigWigs packager strips the
+-- `--[==[@non-debug@ ... @end-non-debug@]==]` wrapping, activating
+-- `silent = true`. This switches AceLocale to its `readmetasilent`
+-- metatable which still returns the missing key as a fallback string
+-- but does NOT call the error handler. This stops users from seeing
+-- spurious AceLocale warnings caused by external code (BugSack, debug
+-- helpers calling :ToDebugString() etc.) introspecting our L table.
+local silent = nil
+--[==[@non-debug@
+silent = true
+--@end-non-debug@]==]
+local L = LibStub("AceLocale-3.0"):NewLocale("DandersFrames", "enUS", true, silent)
 if not L then return end
 
 -- ============================================================

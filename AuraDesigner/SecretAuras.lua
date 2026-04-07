@@ -26,6 +26,7 @@ local addonName, DF = ...
 
 local pairs, ipairs, wipe, type = pairs, ipairs, wipe, type
 local GetTime = GetTime
+local strfind = string.find
 local issecretvalue = issecretvalue or function() return false end
 local canaccesstable = canaccesstable or function() return true end
 
@@ -308,6 +309,31 @@ local function OnEvent(self, event, ...)
     elseif event == "UNIT_AURA" then
         local unit, updateInfo = ...
         if not state.spec or not unit then return end
+
+        -- Filter: only process party/raid/player units. UNIT_AURA is registered
+        -- as a global event so it fires for every unit token in the game —
+        -- nameplates, targettarget, focus, mouseover, pets, etc. — but secret
+        -- auras are only ever cast on the player or group members. Without
+        -- this filter:
+        --   1. We do wasted GetUnitAuras / signature matching work for every
+        --      enemy nameplate dot tick (massive perf cost in busy combat).
+        --   2. We hit the line below where `UnitIsUnit(unit, "player")` is
+        --      called with `unit = "targettarget"`, which after Blizzard's
+        --      2026-04-07 hotfix returns a secret-tainted boolean and
+        --      poisons the rest of the handler — generating thousands of
+        --      "boolean test on a secret boolean value" errors per session.
+        --
+        -- A proper fix is to use frame:RegisterUnitEvent with explicit unit
+        -- filtering at the C++ level (Grid2-style roster-aware dispatcher).
+        -- That's a larger refactor planned for a follow-up. This filter is
+        -- the surgical fix that stops the user-visible error spam now.
+        if unit ~= "player"
+           and not strfind(unit, "^party%d$")
+           and not strfind(unit, "^raid%d+$")
+        then
+            return
+        end
+
         if not SecretAuraInfo or not SecretAuraInfo[state.spec] then return end
         if not UnitExists(unit) then return end
 

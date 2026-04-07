@@ -1,5 +1,12 @@
 # DandersFrames Changelog
 
+## [4.2.6] - 2026-04-07
+
+### Bug Fixes
+
+* (Aura Designer) Fix error spam from secret aura tracking
+* (Locales) Fix locale errors showing to users
+
 ## [4.2.5] - 2026-04-07
 
 ### Improvements
