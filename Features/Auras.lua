@@ -23,6 +23,9 @@ local C_CurveUtil = C_CurveUtil
 local GetAuraDataByAuraInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
 local GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
 local IsAuraFilteredOut = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+-- Fix A additions: slot-based iteration APIs (used by ScanUnitFull)
+local GetAuraSlots = C_UnitAuras and C_UnitAuras.GetAuraSlots
+local GetAuraDataBySlot = C_UnitAuras and C_UnitAuras.GetAuraDataBySlot
 local strfind = string.find
 
 -- Roster-unit allowlist guard. The 12.0.5 C_UnitAuras.GetUnitAuras API
@@ -458,16 +461,74 @@ function DF:UnregisterIconFromAuraTimer(icon)
     end
 end
 
--- Cache of auras that Blizzard's raid frames decided to show
--- Key: unitToken (e.g., "party1"), Value: {
---   buffs = {auraInstanceID = true},          -- Set for fast lookups
---   debuffs = {auraInstanceID = true},        -- Set for fast lookups
---   buffOrder = {auraInstanceID, ...},        -- Ordered array matching Blizzard's display order
---   debuffOrder = {auraInstanceID, ...},      -- Ordered array matching Blizzard's display order
---   playerDispellable = {auraInstanceID = true},  -- Only debuffs the current player can dispel
---   defensives = {auraInstanceID = true}  -- Defensive auras from CenterDefensiveBuff
--- }
-DF.BlizzardAuraCache = {}
+-- Per-unit aura cache, the single source of truth for aura data across
+-- all DF consumers (Direct mode aura pipeline, Aura Designer, defensive
+-- icon, dispel overlay, sound engine, missing-buff detection, etc.).
+--
+-- Originally named DF.BlizzardAuraCache because it was populated only
+-- from Blizzard's compact frame state. Since Direct mode was added and
+-- Blizzard mode is being removed in the upcoming 12.0.5 patch, the
+-- cache is no longer Blizzard-specific. `DF.AuraCache` is the new
+-- canonical name; `DF.BlizzardAuraCache` is kept as an alias for the
+-- ~35 existing call sites and for third-party code that may reference
+-- the old name. Both names reference the same underlying table.
+--
+-- Cache entry shape (per unit):
+--
+--   buffs             = { [auraInstanceID] = true }   -- buffs that pass the user's buff filter
+--   debuffs           = { [auraInstanceID] = true }   -- debuffs that pass the user's debuff filter
+--   buffOrder         = { [i] = auraInstanceID }      -- sorted display order for buffs
+--   debuffOrder       = { [i] = auraInstanceID }      -- sorted display order for debuffs
+--   buffData          = { [i] = auraData }            -- legacy sorted array (Direct mode only)
+--   debuffData        = { [i] = auraData }            -- legacy sorted array (Direct mode only)
+--   playerDispellable = { [auraInstanceID] = true }   -- debuffs the player can dispel
+--   allDispellable    = { [auraInstanceID] = true }   -- debuffs anyone can dispel
+--   defensives        = { [auraInstanceID] = true }   -- tracked defensive auras
+--
+-- Fix A extensions (added 2026-04-08, consumers not yet migrated):
+--
+--   buffsByID         = { [auraInstanceID] = auraData }  -- raw aura data, unsorted, keyed by ID
+--   debuffsByID       = { [auraInstanceID] = auraData }  -- raw aura data, unsorted, keyed by ID
+--   hasFullScan       = boolean                          -- true once ScanUnitFull has run for this unit
+--   buffOrderDirty    = boolean                          -- true if buffOrder needs to be re-sorted
+--   debuffOrderDirty  = boolean                          -- true if debuffOrder needs to be re-sorted
+--
+-- Fix A commit 1 (infrastructure): the new ScanUnitFull and
+-- ApplyAuraDelta helpers populate the new fields, but the hot path
+-- (directModeSubscriber:OnUnitAura) still calls the old ScanUnitDirect
+-- which populates the legacy fields. Both old and new fields coexist
+-- until commit 2 flips the hot path to the incremental model.
+DF.AuraCache = {}
+DF.BlizzardAuraCache = DF.AuraCache  -- backward-compat alias, same table
+
+-- Ensure a cache entry exists for a unit. Creates the full shape (old
+-- legacy fields + new Fix A fields) on first access. Safe to call
+-- multiple times — no-op if the entry already exists. Returns the
+-- entry table.
+local function EnsureAuraCacheEntry(unit)
+    local entry = DF.AuraCache[unit]
+    if entry then return entry end
+    entry = {
+        -- Legacy fields (populated by old ScanUnitDirect / Blizzard capture)
+        buffs             = {},
+        debuffs           = {},
+        buffOrder         = {},
+        debuffOrder       = {},
+        buffData          = {},
+        debuffData        = {},
+        playerDispellable = {},
+        allDispellable    = {},
+        defensives        = {},
+        -- Fix A new fields (populated by ScanUnitFull / ApplyAuraDelta)
+        buffsByID         = {},
+        debuffsByID       = {},
+        hasFullScan       = false,
+        buffOrderDirty    = false,
+        debuffOrderDirty  = false,
+    }
+    DF.AuraCache[unit] = entry
+    return entry
+end
 
 -- Track if we've successfully hooked Blizzard's frames
 DF.BlizzardHookActive = false
@@ -890,13 +951,10 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
 
     DF:Debug("BLIZAURA", "Capture START for %s (frame: %s, trigger: %s)", unit, frameName or "?", tostring(triggerUpdate))
 
-    -- Initialize cache for this unit
-    if not DF.BlizzardAuraCache[unit] then
-        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
-    end
+    -- Initialize cache for this unit (helper creates the full shape)
+    local cache = EnsureAuraCacheEntry(unit)
 
     -- Clear previous cache for this unit (wipe instead of new table to reduce GC)
-    local cache = DF.BlizzardAuraCache[unit]
     if not cache.allDispellable then cache.allDispellable = {} end
     wipe(cache.buffs)
     wipe(cache.debuffs)
@@ -1205,6 +1263,264 @@ function AuraPassesAnyFilter(unit, auraInstanceID, filters)
 end
 
 -- ============================================================
+-- FIX A: INCREMENTAL AURA CACHE HELPERS
+-- ============================================================
+--
+-- These two helpers implement the oUF-style incremental aura update
+-- pattern. See _Reference/fix-a-plan.md for the full design.
+--
+-- ScanUnitFull(unit)
+--     Full aura scan for a unit. Wipes and rebuilds the entire
+--     AuraCache entry from scratch via GetAuraSlots + GetAuraDataBySlot.
+--     Called on first access, on isFullUpdate, on mode transitions,
+--     and on filter settings changes. Sets cache.hasFullScan = true.
+--
+-- ApplyAuraDelta(unit, updateInfo)
+--     Incremental update for a unit. Applies updateInfo.addedAuras,
+--     updateInfo.updatedAuraInstanceIDs, and updateInfo.removedAuraInstanceIDs
+--     to the existing cache entry. Called on UNIT_AURA when
+--     updateInfo is present and isFullUpdate is false.
+--
+-- COMMIT 1 STATUS: infrastructure only. These helpers are defined but
+-- the hot path (directModeSubscriber:OnUnitAura) still calls the old
+-- ScanUnitDirect. Commit 2 will flip the hot path to use these.
+--
+-- Both helpers populate the NEW cache fields (buffsByID, debuffsByID,
+-- classification sets, hasFullScan, buffOrderDirty, debuffOrderDirty)
+-- but do NOT touch the legacy fields (buffOrder, buffData, etc.) that
+-- the current hot path depends on. Commit 3 and 4 migrate consumers
+-- off the legacy fields.
+-- ============================================================
+
+-- Resolve a unit's filter arrays (per-mode-cached).
+-- Returns: buffFilters, debuffFilters, defensiveFilters, dispelFilter
+-- Any of these can be nil meaning "show all" for that category.
+local function ResolveFiltersForUnit(unit)
+    local frame = DF.unitFrameMap and DF.unitFrameMap[unit]
+    local db, isRaid
+    if frame then
+        isRaid = frame.isRaidFrame
+        db = isRaid and DF:GetRaidDB() or DF:GetDB()
+    else
+        db = DF:GetDB()
+        isRaid = false
+    end
+    if not db then return nil, nil, nil, nil end
+
+    local buffFilters = isRaid
+        and (cachedRaidBuffFilters or BuildDirectBuffFilters(db))
+        or (cachedPartyBuffFilters or BuildDirectBuffFilters(db))
+    local debuffFilters = isRaid
+        and (cachedRaidDebuffFilters or BuildDirectDebuffFilters(db))
+        or (cachedPartyDebuffFilters or BuildDirectDebuffFilters(db))
+    local defFilters = BuildDirectDefensiveFilters()
+    local dispelFilter = BuildDirectDispelFilter()
+
+    return buffFilters, debuffFilters, defFilters, dispelFilter, db
+end
+
+-- Classify a single aura against all filter categories and write the
+-- result into the cache's classification sets. Called from both
+-- ScanUnitFull (bulk) and ApplyAuraDelta (incremental) so classification
+-- logic lives in exactly one place.
+--
+-- `kind` is either "buff" (helpful auras) or "debuff" (harmful auras).
+-- The caller has already done the HELPFUL/HARMFUL split.
+local function ClassifyAura(cache, unit, auraData, kind, buffFilters, debuffFilters, defFilters, dispelFilter, db)
+    local id = auraData.auraInstanceID
+    if not id then return end
+
+    if kind == "buff" then
+        -- User-configurable buff filter (nil means show all)
+        if not buffFilters or AuraPassesAnyFilter(unit, id, buffFilters) then
+            cache.buffs[id] = true
+        end
+        -- Defensive classification (filter-list, independent of user buff filter)
+        if defFilters and AuraPassesAnyFilter(unit, id, defFilters) then
+            cache.defensives[id] = true
+        end
+    else  -- "debuff"
+        -- All-dispellable classification (independent of debuff filters).
+        -- Used by the dispel overlay's "All Dispellable" mode.
+        local isAllDispellable = auraData.dispelName ~= nil
+        if isAllDispellable then
+            cache.allDispellable[id] = true
+        end
+        -- User-configurable debuff filter (nil means show all)
+        local passesFilters = not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters)
+        local passesAllDispellable = db and db.directDebuffFilterAllDispellable and isAllDispellable
+        if passesFilters or passesAllDispellable then
+            cache.debuffs[id] = true
+        end
+        -- Player-dispellable bookkeeping (dispel overlay reads this)
+        if dispelFilter and (not IsAuraFilteredOut or not IsAuraFilteredOut(unit, id, dispelFilter)) then
+            cache.playerDispellable[id] = true
+        end
+    end
+end
+
+-- Remove a single aura from all classification sets.
+local function UnclassifyAura(cache, id)
+    cache.buffs[id] = nil
+    cache.debuffs[id] = nil
+    cache.defensives[id] = nil
+    cache.playerDispellable[id] = nil
+    cache.allDispellable[id] = nil
+end
+
+-- Full scan — wipes and rebuilds the entire cache entry for a unit.
+local function ScanUnitFull(unit)
+    if not unit or not UnitExists(unit) then return end
+    if not IsRosterUnit(unit) then return end
+    if not GetAuraSlots or not GetAuraDataBySlot then return end
+
+    local cache = EnsureAuraCacheEntry(unit)
+
+    -- Wipe the new Fix A fields
+    wipe(cache.buffsByID)
+    wipe(cache.debuffsByID)
+    -- Wipe the classification sets (shared with legacy fields)
+    wipe(cache.buffs)
+    wipe(cache.debuffs)
+    wipe(cache.defensives)
+    wipe(cache.playerDispellable)
+    wipe(cache.allDispellable)
+
+    local buffFilters, debuffFilters, defFilters, dispelFilter, db = ResolveFiltersForUnit(unit)
+
+    -- HELPFUL pass
+    -- GetAuraSlots returns (continuationToken, slot1, slot2, ...) as varargs.
+    -- We don't use continuation beyond the first 40-ish slots because our
+    -- max aura count is 40. Ignore the continuation token by starting at i=2
+    -- in oUF's pattern, but since we use select() we can just iterate all
+    -- returns and skip the first one.
+    do
+        local helpfulReturns = { GetAuraSlots(unit, "HELPFUL") }
+        -- helpfulReturns[1] is the continuation token; slots start at [2]
+        for i = 2, #helpfulReturns do
+            local slot = helpfulReturns[i]
+            local auraData = GetAuraDataBySlot(unit, slot)
+            if auraData and auraData.auraInstanceID then
+                cache.buffsByID[auraData.auraInstanceID] = auraData
+                ClassifyAura(cache, unit, auraData, "buff",
+                    buffFilters, debuffFilters, defFilters, dispelFilter, db)
+            end
+        end
+    end
+
+    -- HARMFUL pass
+    do
+        local harmfulReturns = { GetAuraSlots(unit, "HARMFUL") }
+        for i = 2, #harmfulReturns do
+            local slot = harmfulReturns[i]
+            local auraData = GetAuraDataBySlot(unit, slot)
+            if auraData and auraData.auraInstanceID then
+                cache.debuffsByID[auraData.auraInstanceID] = auraData
+                ClassifyAura(cache, unit, auraData, "debuff",
+                    buffFilters, debuffFilters, defFilters, dispelFilter, db)
+            end
+        end
+    end
+
+    cache.buffOrderDirty = true
+    cache.debuffOrderDirty = true
+    cache.hasFullScan = true
+end
+
+-- Incremental delta — process updateInfo.addedAuras,
+-- updatedAuraInstanceIDs, and removedAuraInstanceIDs.
+local function ApplyAuraDelta(unit, updateInfo)
+    if not unit or not updateInfo then return end
+    if not IsRosterUnit(unit) then return end
+
+    local cache = EnsureAuraCacheEntry(unit)
+
+    -- If we've never done a full scan for this unit, the classification
+    -- sets are empty — incremental updates alone would produce an
+    -- incomplete cache. Bail out and let the caller run ScanUnitFull.
+    if not cache.hasFullScan then return false end
+
+    local buffFilters, debuffFilters, defFilters, dispelFilter, db = ResolveFiltersForUnit(unit)
+
+    -- Added auras: Blizzard provides full auraData in the event payload.
+    -- Zero API calls on our side for the data itself.
+    --
+    -- addedAuras is a FLAT list containing both helpful and harmful auras.
+    -- We cannot use auraData.isHarmful to categorize because it is a
+    -- secret value on Midnight (see oUF auras.lua:276 — "isHarmful is a
+    -- secret, use a different name"). Instead, categorize via the
+    -- secret-safe IsAuraFilteredOutByInstanceID with the base filters
+    -- "HELPFUL" and "HARMFUL". If the aura matches HELPFUL (not filtered
+    -- out), it's a buff; otherwise check HARMFUL.
+    if updateInfo.addedAuras then
+        for _, auraData in ipairs(updateInfo.addedAuras) do
+            local id = auraData.auraInstanceID
+            if id and IsAuraFilteredOut then
+                if not IsAuraFilteredOut(unit, id, "HELPFUL") then
+                    cache.buffsByID[id] = auraData
+                    ClassifyAura(cache, unit, auraData, "buff",
+                        buffFilters, debuffFilters, defFilters, dispelFilter, db)
+                    cache.buffOrderDirty = true
+                elseif not IsAuraFilteredOut(unit, id, "HARMFUL") then
+                    cache.debuffsByID[id] = auraData
+                    ClassifyAura(cache, unit, auraData, "debuff",
+                        buffFilters, debuffFilters, defFilters, dispelFilter, db)
+                    cache.debuffOrderDirty = true
+                end
+            end
+        end
+    end
+
+    -- Updated auras: we only get the instance IDs, so fetch fresh data
+    -- via GetAuraDataByAuraInstanceID. Typically 1-3 entries.
+    if updateInfo.updatedAuraInstanceIDs then
+        for _, id in ipairs(updateInfo.updatedAuraInstanceIDs) do
+            if cache.buffsByID[id] then
+                local fresh = GetAuraDataByAuraInstanceID and GetAuraDataByAuraInstanceID(unit, id)
+                if fresh then
+                    cache.buffsByID[id] = fresh
+                    -- Re-classify: filter matches may have changed
+                    UnclassifyAura(cache, id)
+                    ClassifyAura(cache, unit, fresh, "buff",
+                        buffFilters, debuffFilters, defFilters, dispelFilter, db)
+                    cache.buffOrderDirty = true
+                end
+            elseif cache.debuffsByID[id] then
+                local fresh = GetAuraDataByAuraInstanceID and GetAuraDataByAuraInstanceID(unit, id)
+                if fresh then
+                    cache.debuffsByID[id] = fresh
+                    UnclassifyAura(cache, id)
+                    ClassifyAura(cache, unit, fresh, "debuff",
+                        buffFilters, debuffFilters, defFilters, dispelFilter, db)
+                    cache.debuffOrderDirty = true
+                end
+            end
+        end
+    end
+
+    -- Removed auras: delete from cache and classification sets.
+    if updateInfo.removedAuraInstanceIDs then
+        for _, id in ipairs(updateInfo.removedAuraInstanceIDs) do
+            if cache.buffsByID[id] then
+                cache.buffsByID[id] = nil
+                UnclassifyAura(cache, id)
+                cache.buffOrderDirty = true
+            elseif cache.debuffsByID[id] then
+                cache.debuffsByID[id] = nil
+                UnclassifyAura(cache, id)
+                cache.debuffOrderDirty = true
+            end
+        end
+    end
+
+    return true
+end
+
+-- Expose on DF so the dev slash command and tests can call them directly
+DF.ScanUnitFull   = function(self, unit) ScanUnitFull(unit) end
+DF.ApplyAuraDelta = function(self, unit, updateInfo) return ApplyAuraDelta(unit, updateInfo) end
+
+-- ============================================================
 -- DEFENSIVE CACHE POPULATOR (mode-independent)
 -- ============================================================
 -- Rebuilds cache.defensives for a unit by scanning every helpful aura via
@@ -1221,13 +1537,7 @@ function DF:PopulateDefensiveCache(unit)
     -- Early-return on non-roster tokens (e.g. boss1targetpet from arena
     -- enemy frame hooks). GetUnitAuras hard-errors on these in 12.0.5.
     if not IsRosterUnit(unit) then return end
-    if not DF.BlizzardAuraCache then DF.BlizzardAuraCache = {} end
-    local cache = DF.BlizzardAuraCache[unit]
-    if not cache then
-        cache = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
-        DF.BlizzardAuraCache[unit] = cache
-    end
-    if not cache.defensives then cache.defensives = {} end
+    local cache = EnsureAuraCacheEntry(unit)
     wipe(cache.defensives)
 
     local defFilters = BuildDirectDefensiveFilters()
@@ -1300,12 +1610,8 @@ local function ScanUnitDirect(unit)
 
     if not db or db.auraSourceMode ~= "DIRECT" then return end
 
-    -- Initialize cache for this unit
-    if not DF.BlizzardAuraCache[unit] then
-        DF.BlizzardAuraCache[unit] = { buffs = {}, debuffs = {}, buffOrder = {}, debuffOrder = {}, buffData = {}, debuffData = {}, playerDispellable = {}, allDispellable = {}, defensives = {} }
-    end
-    local cache = DF.BlizzardAuraCache[unit]
-    if not cache.allDispellable then cache.allDispellable = {} end
+    -- Initialize cache for this unit (helper creates the full shape)
+    local cache = EnsureAuraCacheEntry(unit)
     wipe(cache.buffs)
     wipe(cache.debuffs)
     wipe(cache.buffOrder)
@@ -3752,5 +4058,69 @@ SlashCmdList["DFDEFDUP"] = function()
 
     if not anyUnit then
         print("  |cffff8800No cached aura data found. Are you in a group?|r")
+    end
+end
+
+-- ============================================================
+-- FIX A DEV COMMAND: manually trigger a full scan + dump the cache
+-- Usage: /dfscan <unit>
+--   e.g. /dfscan player
+--   e.g. /dfscan party1
+-- ============================================================
+
+SLASH_DFSCAN1 = "/dfscan"
+SlashCmdList["DFSCAN"] = function(msg)
+    local unit = (msg and msg:match("^%s*(%S+)") or "player")
+    local header = "|cff00ff00DandersFrames|r |cff00ccff[Fix A ScanUnitFull]|r " .. unit
+    print(header)
+
+    if not UnitExists(unit) then
+        print("  |cffff8800Unit does not exist|r")
+        return
+    end
+
+    -- Trigger a full scan
+    DF:ScanUnitFull(unit)
+
+    local cache = DF.AuraCache[unit]
+    if not cache then
+        print("  |cffff8800No cache entry after scan|r")
+        return
+    end
+
+    print(string.format("  hasFullScan = %s, buffOrderDirty = %s, debuffOrderDirty = %s",
+        tostring(cache.hasFullScan), tostring(cache.buffOrderDirty), tostring(cache.debuffOrderDirty)))
+
+    local function countKeys(t)
+        local n = 0
+        if t then for _ in pairs(t) do n = n + 1 end end
+        return n
+    end
+
+    print(string.format("  buffsByID: %d entries", countKeys(cache.buffsByID)))
+    print(string.format("  debuffsByID: %d entries", countKeys(cache.debuffsByID)))
+    print(string.format("  classification sets: buffs=%d defensives=%d debuffs=%d playerDispellable=%d allDispellable=%d",
+        countKeys(cache.buffs), countKeys(cache.defensives),
+        countKeys(cache.debuffs), countKeys(cache.playerDispellable), countKeys(cache.allDispellable)))
+
+    -- Dump a few sample aura names if non-secret
+    local issecret = issecretvalue or function() return false end
+    local shown = 0
+    for id, auraData in pairs(cache.buffsByID) do
+        if shown >= 5 then break end
+        local name = auraData.name
+        if name and not issecret(name) then
+            print(string.format("    buff[%s] = %s", tostring(id), tostring(name)))
+            shown = shown + 1
+        end
+    end
+    shown = 0
+    for id, auraData in pairs(cache.debuffsByID) do
+        if shown >= 5 then break end
+        local name = auraData.name
+        if name and not issecret(name) then
+            print(string.format("    debuff[%s] = %s", tostring(id), tostring(name)))
+            shown = shown + 1
+        end
     end
 end
