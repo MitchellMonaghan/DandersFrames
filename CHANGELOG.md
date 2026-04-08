@@ -1,5 +1,21 @@
 # DandersFrames Changelog
 
+## [4.2.8] - 2026-04-08
+
+### New Features
+
+* (Profiler) Major rework of the function profiler. New Events tab shows per-WoW-event CPU cost (UNIT_AURA, UNIT_HEALTH, GROUP_ROSTER_UPDATE, etc.). New OnUpdate tab shows per-every-frame-handler cost. New Peak/tk column flags functions called abnormally many times in a single frame (event cascade storms). New Bytes column shows per-call memory allocation for tracking GC pressure. Right-click "Print to Chat" now emits a Top 5 summary across all three categories
+* (Profiler) Function coverage expanded from ~30 tracked methods to ~140, including status icons, my-buff indicators, health-fade, pets, aura designer, roster handling, range refresh, and the bulk Update/Refresh sweeps
+
+### Performance
+
+* (Highlights) Marching-ants animated border now throttled to 30 FPS with smart dash repositioning and color/size caching — cuts CPU cost of animated borders to about a third of the previous cost with no visible difference
+* (Aura Designer) Expiring border color animation no longer tears down and rebuilds the entire border on every tick — uses a lightweight recolor path instead
+
+### Bug Fixes
+
+* (Profiler) Fix taint errors from the profiler incorrectly wrapping Blizzard's secure compact raid frame handlers. The profiler now only instruments DandersFrames-owned frames
+
 ## [4.2.7] - 2026-04-07
 
 ### New Features
