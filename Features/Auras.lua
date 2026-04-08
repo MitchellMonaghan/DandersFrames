@@ -1675,7 +1675,39 @@ function DF:PopulateDefensiveCache(unit)
     -- Early-return on non-roster tokens (e.g. boss1targetpet from arena
     -- enemy frame hooks). GetUnitAuras hard-errors on these in 12.0.5.
     if not IsRosterUnit(unit) then return end
-    local cache = EnsureAuraCacheEntry(unit)
+
+    -- Fix A commit 3: cache.defensives is now maintained incrementally
+    -- by ScanUnitFull and ApplyAuraDelta via ClassifyAura's defensive-
+    -- filter classification pass. If the cache has a fresh full scan,
+    -- cache.defensives is already up to date and there is nothing to do.
+    -- This is the common-case early-return for Direct mode — the path
+    -- UpdateDefensiveBar takes on every render (~184 calls/sec in a
+    -- 25-player raid). Old behavior: full GetUnitAuras scan every time,
+    -- ~26 KB allocation per call. New behavior: one table lookup, zero
+    -- allocation.
+    local cache = DF.AuraCache[unit]
+    if cache and cache.hasFullScan then
+        return
+    end
+
+    -- --------------------------------------------------------------
+    -- TODO (post-Blizzard-removal, ~2026-04-15): delete the rest of
+    -- this function. The fallback path below is only reachable from:
+    --   (a) Blizzard mode's CaptureAurasFromBlizzardFrame, which calls
+    --       PopulateDefensiveCache to populate cache.defensives because
+    --       the Blizzard frame.buffs container doesn't have defensive
+    --       classification info.
+    --   (b) Rare Direct-mode edge cases where UpdateDefensiveBar fires
+    --       before the first UNIT_AURA event for a unit (initial load
+    --       before ScanUnitFull has run). hasFullScan is false in this
+    --       window and we need some way to populate the cache.
+    --
+    -- Once Blizzard mode is removed next week, case (a) goes away and
+    -- case (b) can be handled by calling ScanUnitFull(unit) here
+    -- instead of doing the legacy GetUnitAuras scan. For now, keep the
+    -- legacy scan so Blizzard mode users still get defensive icons.
+    -- --------------------------------------------------------------
+    cache = EnsureAuraCacheEntry(unit)
     wipe(cache.defensives)
 
     local defFilters = BuildDirectDefensiveFilters()

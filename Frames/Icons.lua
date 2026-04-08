@@ -926,10 +926,19 @@ function DF:UpdateDefensiveBar(frame)
         return
     end
 
-    -- Populate defensive cache directly. This is the ONLY place cache.defensives
-    -- gets written — neither the Blizzard nor Direct capture paths touch it.
-    -- That means the defensive icon is fully independent of the user's aura
-    -- source mode and cannot be broken by iterator issues in the capture path.
+    -- Ensure cache.defensives is populated for this unit.
+    --
+    -- Direct mode (Fix A commit 3): PopulateDefensiveCache is a cheap
+    -- no-op — cache.defensives is maintained incrementally by
+    -- ScanUnitFull / ApplyAuraDelta via the ClassifyAura defensive
+    -- filter pass, and this early-returns when cache.hasFullScan is
+    -- true (the common case in steady-state combat).
+    --
+    -- Blizzard mode (will be removed by Blizzard in 12.0.5 next week):
+    -- PopulateDefensiveCache still runs the legacy GetUnitAuras scan
+    -- because CaptureAurasFromBlizzardFrame doesn't populate
+    -- cache.defensives itself. See the TODO in PopulateDefensiveCache
+    -- for the post-removal cleanup.
     if DF.PopulateDefensiveCache then
         DF:PopulateDefensiveCache(unit)
     end
