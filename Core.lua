@@ -3192,7 +3192,11 @@ eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")  -- Fires when talents change
 eventFrame:RegisterEvent("UNIT_PET")  -- Fires when a pet is summoned/dismissed
 eventFrame:RegisterEvent("PLAYER_UPDATE_RESTING")  -- Fires when entering/leaving rested area
 
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
+-- The handler body is stored on DF as _MainEventDispatcher so the profiler
+-- can swap it for an instrumented version at runtime. The frame's actual
+-- script is a thin trampoline that calls through DF — re-binding takes
+-- effect immediately without re-running SetScript.
+DF._MainEventDispatcher = function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         -- Initialize saved variables with profile support
         if not DandersFramesDB_v2 then
@@ -4768,6 +4772,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF:UpdateRestedIndicator()
         end
     end
+end
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    return DF._MainEventDispatcher(self, event, arg1)
 end)
 
 -- ============================================================

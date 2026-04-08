@@ -134,6 +134,19 @@ local function RouteEvent(self, event, ...)
     end
 end
 
+-- Expose the dispatcher indirectly so the profiler can swap it for an
+-- instrumented version. The trampoline below routes per-unit frame events
+-- through DF._RouteRosterEvent rather than calling RouteEvent directly,
+-- which means re-binding DF._RouteRosterEvent at runtime takes effect
+-- immediately for every roster frame without re-running SetScript.
+-- The cost when the profiler is off is one extra hash lookup + closure
+-- call per dispatch — sub-microsecond and dwarfed by the handlers.
+DF._RouteRosterEvent = RouteEvent
+
+local function DispatchTrampoline(self, event, ...)
+    return DF._RouteRosterEvent(self, event, ...)
+end
+
 -- ============================================================
 -- LAZY FRAME POOL
 -- ============================================================
@@ -147,7 +160,7 @@ frames = setmetatable({}, {
     __index = function(t, unit)
         local f = CreateFrame("Frame")
         f:Hide()
-        f:SetScript("OnEvent", RouteEvent)
+        f:SetScript("OnEvent", DispatchTrampoline)
         t[unit] = f
         return f
     end,

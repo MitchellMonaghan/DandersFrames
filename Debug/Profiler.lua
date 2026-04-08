@@ -40,9 +40,12 @@ local Profiler = {
     stopTime = 0,           -- debugprofilestop() ms when stopped (for accurate elapsed)
     combatAuto = false,     -- auto start/stop on combat enter/leave
     splitByFrame = false,   -- show per-frame-type breakdown
+    viewMode = "functions", -- "functions" | "events"
     data = {},              -- [funcName|type] = { calls, total, max, mem }
     tickStats = {},         -- [funcName] = { lastTick, calls, maxPerTick }
     originals = {},         -- [funcPath] = { table, key, original }
+    eventData = {},         -- [eventName] = { calls, total, max, mem, source }
+    eventOriginals = {},    -- [dispatcherKey] = { container, key, original }
     sortColumn = "total",
     sortDesc = true,
 }
@@ -278,6 +281,22 @@ local PROFILED_FUNCTIONS = {
 }
 
 -- ============================================================
+-- PROFILED EVENT DISPATCHERS
+-- Each entry points at a function on DF that the addon's event frames
+-- call through. Wrapping these gives us per-event timing for everything
+-- those frames receive — without touching individual modules.
+-- ============================================================
+
+local PROFILED_EVENT_DISPATCHERS = {
+    -- Roster UNIT_* events: every UNIT_AURA / UNIT_HEALTH / UNIT_POWER
+    -- for every roster member flows through this single trampoline.
+    { container = DF, key = "_RouteRosterEvent",   source = "Roster" },
+    -- Main eventFrame: ADDON_LOADED, GROUP_ROSTER_UPDATE,
+    -- PLAYER_REGEN_*, PLAYER_SPECIALIZATION_CHANGED, etc.
+    { container = DF, key = "_MainEventDispatcher", source = "Main" },
+}
+
+-- ============================================================
 -- FORMAT HELPERS
 -- ============================================================
 
@@ -366,6 +385,8 @@ function Profiler:Start()
     wipe(self.data)
     wipe(self.tickStats)
     wipe(self.originals)
+    wipe(self.eventData)
+    wipe(self.eventOriginals)
     tickRef[1] = 0
 
     local wrapped = 0
@@ -445,10 +466,52 @@ function Profiler:Start()
         end
     end
 
+    -- ----------------------------------------------------------
+    -- Wrap event dispatchers. Each wrapped dispatcher records into
+    -- self.eventData[eventName], indexed by the event name (the second
+    -- argument the dispatcher receives). One dispatcher feeds many
+    -- event names, so the bucket is created lazily on first occurrence.
+    -- ----------------------------------------------------------
+    local eventData = self.eventData
+    local eventsWrapped = 0
+    for _, dispatcher in ipairs(PROFILED_EVENT_DISPATCHERS) do
+        local container = dispatcher.container
+        local key = dispatcher.key
+        local original = container[key]
+        if type(original) == "function" then
+            self.eventOriginals[key] = { container = container, key = key, original = original }
+            local orig = original
+            local source = dispatcher.source
+
+            container[key] = function(selfArg, event, ...)
+                local m0 = collectgarbage("count")
+                local t0 = debugprofilestop()
+                local r1, r2, r3, r4, r5 = orig(selfArg, event, ...)
+                local elapsed = debugprofilestop() - t0
+                local mDelta = collectgarbage("count") - m0
+                if mDelta < 0 then mDelta = 0 end
+
+                local bucket = eventData[event]
+                if not bucket then
+                    bucket = { calls = 0, total = 0, max = 0, mem = 0, source = source }
+                    eventData[event] = bucket
+                end
+                bucket.calls = bucket.calls + 1
+                bucket.total = bucket.total + elapsed
+                bucket.mem = bucket.mem + mDelta
+                if elapsed > bucket.max then bucket.max = elapsed end
+
+                return r1, r2, r3, r4, r5
+            end
+            eventsWrapped = eventsWrapped + 1
+        end
+    end
+
     -- Start the per-tick OnUpdate that drives spike detection.
     tickFrame:Show()
 
-    print(format("|cff00ff00DF Profiler:|r Recording. %d functions instrumented.", wrapped))
+    print(format("|cff00ff00DF Profiler:|r Recording. %d functions, %d event dispatchers instrumented.",
+        wrapped, eventsWrapped))
 end
 
 function Profiler:Stop()
@@ -458,6 +521,9 @@ function Profiler:Stop()
 
     -- Restore originals on their actual container tables (supports dotted paths)
     for _, entry in pairs(self.originals) do
+        entry.container[entry.key] = entry.original
+    end
+    for _, entry in pairs(self.eventOriginals) do
         entry.container[entry.key] = entry.original
     end
 
@@ -479,6 +545,8 @@ function Profiler:Reset()
         ts.calls = 0
         ts.maxPerTick = 0
     end
+    -- Event buckets are created lazily so just wipe them.
+    wipe(self.eventData)
     if self.active then
         self.startTime = debugprofilestop()
     end
@@ -496,13 +564,15 @@ end
 
 function Profiler:GetTotalCalls()
     local total = 0
-    for _, d in pairs(self.data) do total = total + d.calls end
+    local source = (self.viewMode == "events") and self.eventData or self.data
+    for _, d in pairs(source) do total = total + d.calls end
     return total
 end
 
 function Profiler:GetGrandTotalMs()
     local total = 0
-    for _, d in pairs(self.data) do total = total + d.total end
+    local source = (self.viewMode == "events") and self.eventData or self.data
+    for _, d in pairs(source) do total = total + d.total end
     return total
 end
 
@@ -516,6 +586,10 @@ local TYPE_LABELS = {
 }
 
 function Profiler:GetSortedResults()
+    if self.viewMode == "events" then
+        return self:GetSortedEventResults()
+    end
+
     local results = {}
     local grandTotal = 0
     local tickStats = self.tickStats
@@ -598,6 +672,45 @@ function Profiler:GetSortedResults()
     return results, grandTotal
 end
 
+-- Build sorted rows from event dispatcher data. The shape matches the
+-- function results so the existing UI code can render either without a
+-- branch, except that the "peak" column is unused (always 0) for events
+-- and the "name" carries the event name plus a small source tag.
+function Profiler:GetSortedEventResults()
+    local results = {}
+    local grandTotal = 0
+
+    for eventName, d in pairs(self.eventData) do
+        if d.calls > 0 then
+            grandTotal = grandTotal + d.total
+            results[#results + 1] = {
+                name = eventName .. (d.source and ("  [" .. d.source .. "]") or ""),
+                calls = d.calls,
+                total = d.total,
+                avg = d.total / d.calls,
+                max = d.max,
+                mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                peak = 0,
+            }
+        end
+    end
+
+    for _, r in ipairs(results) do
+        r.pct = grandTotal > 0 and (r.total / grandTotal * 100) or 0
+    end
+
+    local col = self.sortColumn
+    local desc = self.sortDesc
+    sort(results, function(a, b)
+        if col == "name" then
+            if desc then return a.name > b.name else return a.name < b.name end
+        end
+        if desc then return a[col] > b[col] else return a[col] < b[col] end
+    end)
+
+    return results, grandTotal
+end
+
 -- ============================================================
 -- QUICK PROFILE (timed auto-run, prints to chat)
 -- ============================================================
@@ -635,8 +748,8 @@ function Profiler:PrintResults()
     end
 
     print(" ")
-    print(format("|cff00ff00DF Profiler:|r %s | %s calls | %sms profiled CPU",
-        FormatElapsed(elapsed), CommaNumber(totalCalls), FormatMs(grandTotal)))
+    print(format("|cff00ff00DF Profiler:|r [%s] %s | %s calls | %sms profiled CPU",
+        self.viewMode, FormatElapsed(elapsed), CommaNumber(totalCalls), FormatMs(grandTotal)))
     print("|cffaaaaaa------------------------------------------------------------|r")
 
     for i, r in ipairs(results) do
@@ -854,6 +967,15 @@ UpdateUI = function()
             profilerFrame.splitBtn:SetText("Split")
         end
     end
+
+    -- Keep view button text in sync
+    if profilerFrame.viewBtn then
+        if Profiler.viewMode == "events" then
+            profilerFrame.viewBtn:SetText("|cff00ff00Events|r")
+        else
+            profilerFrame.viewBtn:SetText("Functions")
+        end
+    end
 end
 
 function Profiler:CreateUI()
@@ -1004,6 +1126,34 @@ function Profiler:CreateUI()
     end)
     f.combatBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     UpdateCombatBtnText()
+
+    -- View toggle button (Functions / Events). Lives top-right, left of Split.
+    f.viewBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.viewBtn:SetSize(72, btnH)
+    f.viewBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -84, btnY)
+    local function UpdateViewBtnText()
+        if Profiler.viewMode == "events" then
+            f.viewBtn:SetText("|cff00ff00Events|r")
+        else
+            f.viewBtn:SetText("Functions")
+        end
+    end
+    f.viewBtn:SetScript("OnClick", function()
+        Profiler.viewMode = (Profiler.viewMode == "events") and "functions" or "events"
+        UpdateViewBtnText()
+        UpdateUI()
+        UpdateColumnHeaders()
+    end)
+    f.viewBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("View Mode", 1, 1, 1)
+        GameTooltip:AddLine("Toggle between per-function and per-event timing.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Events view shows time spent in each WoW event handler", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("(UNIT_AURA, UNIT_HEALTH, GROUP_ROSTER_UPDATE, etc.).", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    f.viewBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    UpdateViewBtnText()
 
     -- Split by Frame Type toggle button
     f.splitBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
