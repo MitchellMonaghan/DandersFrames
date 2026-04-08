@@ -11,14 +11,25 @@ local DASH_LENGTH = 6
 local GAP_LENGTH = 6
 local PATTERN_LENGTH = DASH_LENGTH + GAP_LENGTH
 
+-- Redraw throttle. The full marching-ants pattern cycle is
+-- PATTERN_LENGTH / ANIMATION_SPEED = 0.3s, so at 30 Hz we get 10 sample
+-- frames per full cycle — visually indistinguishable from 60 Hz but
+-- halves the per-frame cost of the redraw. `elapsed` still accumulates
+-- every WoW tick so the offset stays smooth when we do sample.
+local UPDATE_INTERVAL = 1 / 30
+
 -- Global animator for marching ants effect
 local SelectionAnimator = CreateFrame("Frame")
 SelectionAnimator.elapsed = 0
+SelectionAnimator.accum = 0
 SelectionAnimator.frames = {}
 SelectionAnimator.hasFrames = false  -- Track whether any frames are registered
 
 local function SelectionAnimator_OnUpdate(self, elapsed)
     self.elapsed = self.elapsed + elapsed
+    self.accum = self.accum + elapsed
+    if self.accum < UPDATE_INTERVAL then return end
+    self.accum = 0
     local offset = (self.elapsed * ANIMATION_SPEED) % PATTERN_LENGTH
     for highlightFrame in pairs(self.frames) do
         if highlightFrame:IsShown() then
@@ -30,6 +41,10 @@ end
 -- Add/remove frames and auto-enable/disable the OnUpdate
 local function SelectionAnimator_Add(frame)
     SelectionAnimator.frames[frame] = true
+    -- Prime the throttle so the first tick after a frame is added draws
+    -- immediately. Without this, there's up to 33ms of empty border on
+    -- first appearance.
+    SelectionAnimator.accum = UPDATE_INTERVAL
     if not SelectionAnimator.hasFrames then
         SelectionAnimator.hasFrames = true
         SelectionAnimator:SetScript("OnUpdate", SelectionAnimator_OnUpdate)
@@ -71,49 +86,84 @@ local function InitAnimatedBorder(ch)
 end
 
 -- PERFORMANCE FIX: These functions are defined at module level to avoid creating
--- new closures every frame when UpdateAnimatedBorder runs
+-- new closures every frame when UpdateAnimatedBorder runs.
+--
+-- Additional per-dash optimization (2026-04-08):
+--   * Only hide the *trailing* dashes past numDashes. The leading ones
+--     will be Show()'d again immediately, so hiding them was wasted work.
+--   * Cache r/g/b/a on each dash and skip SetColorTexture when the color
+--     hasn't changed. Highlight colors only change on state transition
+--     (selection / aggro / hover), not per animation tick.
+--   * Cache width/height on each dash and skip SetSize when unchanged.
+--     Sizes only change when an edge length changes or a dash rolls past
+--     an edge boundary — most ticks they stay constant.
+--
+-- ClearAllPoints + SetPoint still run every tick because that IS the
+-- marching animation (dashes shift position each frame). Show() also
+-- still runs because previously-hidden dashes can become visible as the
+-- ants march across the edge.
+
 local function DrawHorizontalEdge(ch, border, dashes, isTop, edgeOffset, width, thick, inset, r, g, b, a)
     local numDashes = math.ceil(width / PATTERN_LENGTH) + 2
-    for i, dash in ipairs(dashes) do dash:Hide() end
+    -- Hide only the trailing dashes we won't touch this frame
+    for i = numDashes + 1, #dashes do dashes[i]:Hide() end
     local startPos = -(edgeOffset % PATTERN_LENGTH)
     for i = 1, numDashes do
         local dashStart = startPos + (i - 1) * PATTERN_LENGTH
         local dashEnd = dashStart + DASH_LENGTH
         local visStart, visEnd = math.max(0, dashStart), math.min(width, dashEnd)
-        if visEnd > visStart and dashes[i] then
-            local dash = dashes[i]
+        local dash = dashes[i]
+        if visEnd > visStart and dash then
+            local dashW = visEnd - visStart
             dash:ClearAllPoints()
-            dash:SetSize(visEnd - visStart, thick)
+            if dash.dfLastW ~= dashW or dash.dfLastH ~= thick then
+                dash:SetSize(dashW, thick)
+                dash.dfLastW, dash.dfLastH = dashW, thick
+            end
             if isTop then
                 dash:SetPoint("TOPLEFT", ch, "TOPLEFT", inset + visStart, -inset)
             else
                 dash:SetPoint("BOTTOMLEFT", ch, "BOTTOMLEFT", inset + visStart, inset)
             end
-            dash:SetColorTexture(r, g, b, a)
+            if dash.dfLastR ~= r or dash.dfLastG ~= g or dash.dfLastB ~= b or dash.dfLastA ~= a then
+                dash:SetColorTexture(r, g, b, a)
+                dash.dfLastR, dash.dfLastG, dash.dfLastB, dash.dfLastA = r, g, b, a
+            end
             dash:Show()
+        elseif dash then
+            dash:Hide()
         end
     end
 end
 
 local function DrawVerticalEdge(ch, border, dashes, isRight, edgeOffset, height, thick, inset, r, g, b, a)
     local numDashes = math.ceil(height / PATTERN_LENGTH) + 2
-    for i, dash in ipairs(dashes) do dash:Hide() end
+    for i = numDashes + 1, #dashes do dashes[i]:Hide() end
     local startPos = -(edgeOffset % PATTERN_LENGTH)
     for i = 1, numDashes do
         local dashStart = startPos + (i - 1) * PATTERN_LENGTH
         local dashEnd = dashStart + DASH_LENGTH
         local visStart, visEnd = math.max(0, dashStart), math.min(height, dashEnd)
-        if visEnd > visStart and dashes[i] then
-            local dash = dashes[i]
+        local dash = dashes[i]
+        if visEnd > visStart and dash then
+            local dashH = visEnd - visStart
             dash:ClearAllPoints()
-            dash:SetSize(thick, visEnd - visStart)
+            if dash.dfLastW ~= thick or dash.dfLastH ~= dashH then
+                dash:SetSize(thick, dashH)
+                dash.dfLastW, dash.dfLastH = thick, dashH
+            end
             if isRight then
                 dash:SetPoint("TOPRIGHT", ch, "TOPRIGHT", -inset, -inset - visStart)
             else
                 dash:SetPoint("TOPLEFT", ch, "TOPLEFT", inset, -inset - visStart)
             end
-            dash:SetColorTexture(r, g, b, a)
+            if dash.dfLastR ~= r or dash.dfLastG ~= g or dash.dfLastB ~= b or dash.dfLastA ~= a then
+                dash:SetColorTexture(r, g, b, a)
+                dash.dfLastR, dash.dfLastG, dash.dfLastB, dash.dfLastA = r, g, b, a
+            end
             dash:Show()
+        elseif dash then
+            dash:Hide()
         end
     end
 end
