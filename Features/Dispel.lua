@@ -441,13 +441,67 @@ end
 -- OVERLAY LAYOUT
 -- ============================================================
 
+-- ============================================================
+-- LAYOUT CHANGE DETECTION
+-- ApplyOverlayLayout used to run on every ShowOverlayWithSecretColor
+-- call (~100x/sec in a raid), re-applying dozens of SetPoint/SetSize
+-- calls even when nothing had changed. The layout only actually
+-- changes when the user adjusts dispel options or the parent frame
+-- is resized — rare events. Compare the 15 relevant settings + parent
+-- dimensions against values cached on the overlay; if all match,
+-- skip the layout pass entirely.
+-- ============================================================
+local function LayoutStateChanged(overlay, db)
+    local gradientParent = overlay.gradient and overlay.gradient:GetParent()
+    local parentH = gradientParent and gradientParent:GetHeight() or 40
+    local parentW = gradientParent and gradientParent:GetWidth() or 80
+    return overlay.dfL_borderSize              ~= db.dispelBorderSize
+        or overlay.dfL_borderInset             ~= db.dispelBorderInset
+        or overlay.dfL_pixelPerfect            ~= db.pixelPerfect
+        or overlay.dfL_iconSize                ~= db.dispelIconSize
+        or overlay.dfL_iconAlpha               ~= db.dispelIconAlpha
+        or overlay.dfL_iconPosition            ~= db.dispelIconPosition
+        or overlay.dfL_iconOffsetX             ~= db.dispelIconOffsetX
+        or overlay.dfL_iconOffsetY             ~= db.dispelIconOffsetY
+        or overlay.dfL_showIcon                ~= db.dispelShowIcon
+        or overlay.dfL_gradientStyle           ~= db.dispelGradientStyle
+        or overlay.dfL_gradientSize            ~= db.dispelGradientSize
+        or overlay.dfL_gradientOnCurrentHealth ~= db.dispelGradientOnCurrentHealth
+        or overlay.dfL_healthOrientation       ~= db.healthOrientation
+        or overlay.dfL_parentH                 ~= parentH
+        or overlay.dfL_parentW                 ~= parentW
+end
+
+local function CacheLayoutState(overlay, db)
+    local gradientParent = overlay.gradient and overlay.gradient:GetParent()
+    overlay.dfL_borderSize              = db.dispelBorderSize
+    overlay.dfL_borderInset             = db.dispelBorderInset
+    overlay.dfL_pixelPerfect            = db.pixelPerfect
+    overlay.dfL_iconSize                = db.dispelIconSize
+    overlay.dfL_iconAlpha               = db.dispelIconAlpha
+    overlay.dfL_iconPosition            = db.dispelIconPosition
+    overlay.dfL_iconOffsetX             = db.dispelIconOffsetX
+    overlay.dfL_iconOffsetY             = db.dispelIconOffsetY
+    overlay.dfL_showIcon                = db.dispelShowIcon
+    overlay.dfL_gradientStyle           = db.dispelGradientStyle
+    overlay.dfL_gradientSize            = db.dispelGradientSize
+    overlay.dfL_gradientOnCurrentHealth = db.dispelGradientOnCurrentHealth
+    overlay.dfL_healthOrientation       = db.healthOrientation
+    overlay.dfL_parentH                 = gradientParent and gradientParent:GetHeight() or 40
+    overlay.dfL_parentW                 = gradientParent and gradientParent:GetWidth() or 80
+end
+
 local function ApplyOverlayLayout(overlay, db, frame)
     if not overlay then return end
-    
+
+    -- Fast path: skip the entire layout pass if nothing that affects
+    -- it has changed since last call. Typical in-combat outcome.
+    if not LayoutStateChanged(overlay, db) then return end
+
     local borderSize = db.dispelBorderSize or 2
     local borderInset = db.dispelBorderInset or 0
-    
-    -- Apply pixel-perfect adjustments 
+
+    -- Apply pixel-perfect adjustments
     if db.pixelPerfect then
         borderSize = DF:PixelPerfect(borderSize)
         borderInset = DF:PixelPerfect(borderInset)
@@ -633,6 +687,10 @@ local function ApplyOverlayLayout(overlay, db, frame)
             overlay.gradientTracksHealth = false
         end
     end
+
+    -- Cache the current layout settings so subsequent calls can
+    -- short-circuit via LayoutStateChanged.
+    CacheLayoutState(overlay, db)
 end
 
 -- ============================================================
@@ -1331,44 +1389,50 @@ end
 -- Just apply the color - alpha handles visibility
 -- ============================================================
 
+-- Hide the dispel overlay and clear the last-rendered-aura cache so
+-- the next valid UpdateDispelOverlay call re-renders the overlay.
+-- Used by every early-return path inside UpdateDispelOverlay — without
+-- clearing dfLastDispelAuraID here, the last-rendered-aura skip below
+-- would incorrectly early-return after the user re-enabled the overlay.
+local function HideDispelAndInvalidate(frame)
+    if frame.dfDispelOverlay then
+        HideOverlay(frame.dfDispelOverlay)
+    end
+    RevertDispelNameText(frame)
+    frame.dfLastDispelAuraID = nil
+end
+
 function DF:UpdateDispelOverlay(frame)
     if not frame then return end
-    
+
     -- PERF TEST: Skip if disabled
     if DF.PerfTest and not DF.PerfTest.enableDispel then
-        if frame.dfDispelOverlay then HideOverlay(frame.dfDispelOverlay) end
-        RevertDispelNameText(frame)
+        HideDispelAndInvalidate(frame)
         return
     end
-    
+
     -- Use raid DB for raid frames, party DB for party frames
     local db = DF:GetFrameDB(frame)
-    
+
     -- Check if in test mode first (allows preview even when dispel overlay is disabled)
     local isRaidFrame = frame.isRaidFrame
     local inRelevantTestMode = (isRaidFrame and DF.raidTestMode) or (not isRaidFrame and DF.testMode)
-    
+
     -- In test mode, check testShowDispelGlow; otherwise check dispelOverlayEnabled
     if inRelevantTestMode then
         if not db or not db.testShowDispelGlow then
-            if frame.dfDispelOverlay then
-                HideOverlay(frame.dfDispelOverlay)
-            end
-            RevertDispelNameText(frame)
+            HideDispelAndInvalidate(frame)
             return
         end
     else
         if not db or not db.dispelOverlayEnabled then
-            if frame.dfDispelOverlay then
-                HideOverlay(frame.dfDispelOverlay)
-            end
-            RevertDispelNameText(frame)
+            HideDispelAndInvalidate(frame)
             return
         end
     end
-    
+
     local unit = frame.unit
-    
+
     -- Handle test mode - only show dispels on the correct frame type
     if inRelevantTestMode then
         local testIndex = frame.index
@@ -1381,36 +1445,33 @@ function DF:UpdateDispelOverlay(frame)
                 testIndex = 0
             end
         end
-        
+
         local testData = DF.GetTestUnitData and DF:GetTestUnitData(testIndex, frame.isRaidFrame)
-        
+
         if testData and testData.dispelType then
             local overlay = CreateDispelOverlay(frame)
             local r, g, b = GetTestDispelColor(testData.dispelType, db)
-            
+
             -- Calculate OOR alpha multiplier for test mode
             local oorMultiplier = 1.0
             if db.testShowOutOfRange and testData.outOfRange and not testData.status then
                 local oorDispelAlpha = db.oorDispelOverlayAlpha or 0.55
                 oorMultiplier = oorDispelAlpha
             end
-            
+
             ShowOverlayWithRGB(overlay, r, g, b, db, testData.dispelType, oorMultiplier, frame, testData)
+            -- Test mode doesn't use the last-rendered-aura skip — it has
+            -- its own lifecycle and can re-render every tick cheaply.
+            frame.dfLastDispelAuraID = nil
         else
-            if frame.dfDispelOverlay then
-                HideOverlay(frame.dfDispelOverlay)
-            end
-            RevertDispelNameText(frame)
+            HideDispelAndInvalidate(frame)
         end
         return
     end
-    
+
     -- If we're in a test mode but this frame type doesn't match, hide any overlay and skip
     if (DF.raidTestMode and not isRaidFrame) or (DF.testMode and isRaidFrame) then
-        if frame.dfDispelOverlay then
-            HideOverlay(frame.dfDispelOverlay)
-        end
-        RevertDispelNameText(frame)
+        HideDispelAndInvalidate(frame)
         return
     end
 
@@ -1419,10 +1480,7 @@ function DF:UpdateDispelOverlay(frame)
         if DF.debugDispel then
             print("|cffff0000DF Dispel:|r Hide - unit doesn't exist: " .. tostring(unit))
         end
-        if frame.dfDispelOverlay then
-            HideOverlay(frame.dfDispelOverlay)
-        end
-        RevertDispelNameText(frame)
+        HideDispelAndInvalidate(frame)
         return
     end
 
@@ -1431,10 +1489,7 @@ function DF:UpdateDispelOverlay(frame)
         if DF.debugDispel then
             print("|cffff0000DF Dispel:|r Hide - API not available")
         end
-        if frame.dfDispelOverlay then
-            HideOverlay(frame.dfDispelOverlay)
-        end
-        RevertDispelNameText(frame)
+        HideDispelAndInvalidate(frame)
         return
     end
     
@@ -1470,10 +1525,11 @@ function DF:UpdateDispelOverlay(frame)
             end
         end
     else
-        -- "All Dispellable": prefer cache.allDispellable (populated by Direct mode
-        -- independently of the user's debuff filters, so the overlay fires even
-        -- when the debuff is filtered out of icon display). Falls back to scanning
-        -- cache.debuffs for Blizzard provider mode.
+        -- "All Dispellable": prefer cache.allDispellable (populated by Direct mode's
+        -- ClassifyAura via ScanUnitFull/ApplyAuraDelta, independently of the user's
+        -- debuff filters, so the overlay fires even when the debuff is filtered out
+        -- of icon display). Falls back to iterating cache.debuffsByID (which has
+        -- full auraData) for Blizzard-mode units where allDispellable may be empty.
         if cache and cache.allDispellable and next(cache.allDispellable) then
             local auraInstanceID = next(cache.allDispellable)
             foundDispellable = true
@@ -1481,17 +1537,18 @@ function DF:UpdateDispelOverlay(frame)
             if debugMode then
                 print("|cff00ff00DF Dispel:|r Found all-dispellable (unfiltered): " .. tostring(auraInstanceID))
             end
-        elseif cache and cache.debuffs then
-            -- iterate ALL debuffs on the unit and nil-check aura.dispelName.
-            -- dispelName is nil for non-dispellable debuffs and a string for Magic/Curse/Disease/Poison.
-            -- Nil checks on secret values are safe in combat (verified) — they don't taint or compare.
-            for auraInstanceID in pairs(cache.debuffs) do
-                local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
-                if aura and aura.dispelName ~= nil then
+        elseif cache and cache.debuffsByID then
+            -- Read dispelName directly from cached aura data — no API call, no
+            -- allocation. Fix A's ScanUnitFull/ApplyAuraDelta populate
+            -- cache.debuffsByID with the full auraData tables we need. Nil
+            -- checks on secret values are safe (verified) — they don't taint
+            -- or compare.
+            for id, aura in pairs(cache.debuffsByID) do
+                if aura.dispelName ~= nil then
                     foundDispellable = true
-                    lastDispellableID = auraInstanceID
+                    lastDispellableID = id
                     if debugMode then
-                        print("|cff00ff00DF Dispel:|r Found all-dispellable: " .. tostring(auraInstanceID))
+                        print("|cff00ff00DF Dispel:|r Found all-dispellable: " .. tostring(id))
                     end
                     break
                 end
@@ -1499,26 +1556,56 @@ function DF:UpdateDispelOverlay(frame)
         end
     end
 
-    -- SLOW PATH: Only scan for bleeds/enrages if enabled AND no regular dispellable found
-    -- Bleeds (dispelType 11) and enrages (dispelType 9) don't appear in dispelDebuffFrames
-    if showBleeds and not foundDispellable then
-        for i = 1, 40 do
-            local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HARMFUL")
-            if not aura then break end
-
+    -- Scan for bleeds/enrages if enabled AND no regular dispellable found.
+    -- Bleeds (dispelType 11) and enrages (dispelType 9) aren't captured by
+    -- the dispellable filters above because they aren't dispellable in the
+    -- standard sense.
+    --
+    -- Fix A optimization: read from cache.debuffsByID (populated by
+    -- ScanUnitFull/ApplyAuraDelta) instead of calling GetAuraDataByIndex
+    -- in a 1..40 loop. The cache already has the full auraData tables,
+    -- so this is a pure read path — zero allocations vs the old slow
+    -- path's ~10-20 fresh aura data tables per call.
+    if showBleeds and not foundDispellable and cache and cache.debuffsByID then
+        for id, aura in pairs(cache.debuffsByID) do
             local dispelType = aura.dispelType
             if dispelType == 11 or dispelType == 9 then
                 foundDispellable = true
-                lastDispellableID = aura.auraInstanceID
+                lastDispellableID = id
                 lastDispelType = dispelType
                 if debugMode then
                     local typeName = dispelType == 11 and "BLEED" or "ENRAGE"
-                    print("|cff00ff00DF Dispel:|r [" .. i .. "] " .. (aura.name or "?") .. " - " .. typeName)
+                    print("|cff00ff00DF Dispel:|r " .. (aura.name or "?") .. " - " .. typeName)
                 end
                 break  -- Found one, stop scanning
             end
         end
     end
+
+    -- Fast path: if the dispellable aura hasn't changed since the last
+    -- render, skip the entire render/hide path. In raid combat a
+    -- dispellable debuff typically lasts several seconds — without this
+    -- skip, UpdateDispelOverlay redraws the same overlay 20+ times for
+    -- the same aura, calling GetAuraDispelTypeColor 8 times per redraw
+    -- (each returning a fresh ColorMixin allocation) and re-running
+    -- ApplyOverlayLayout (dozens of wasted SetPoint/SetSize calls).
+    --
+    -- The skip is safe because:
+    --   * Same auraInstanceID implies same dispelType implies same colors
+    --     (colors are derived deterministically from dispelType via curves).
+    --   * Range state changes are handled by DF:ApplyDispelOverlayAppearance
+    --     (called from ElementAppearance when range changes) — not by
+    --     UpdateDispelOverlay — so we don't need to re-apply OOR alpha here.
+    --   * lastDispelType comparison isn't needed because bleeds/enrages
+    --     use the RGB path below which is driven purely by lastDispelType,
+    --     and lastDispelType never changes for a given auraInstanceID.
+    --   * Aura refreshes (updatedAuraInstanceIDs) keep the same
+    --     auraInstanceID — dispel colors don't depend on duration/stacks.
+    local newID = foundDispellable and lastDispellableID or nil
+    if newID == frame.dfLastDispelAuraID then
+        return  -- no change since last render; overlay is already correct
+    end
+    frame.dfLastDispelAuraID = newID
 
     if foundDispellable and lastDispellableID then
         -- Create overlay only when we need to show it
