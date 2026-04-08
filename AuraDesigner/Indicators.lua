@@ -858,20 +858,28 @@ local function ApplyBorderToOverlay(ch, frame, config, auraData)
             thresholdMode = config.expiringThresholdMode,
             color = ec, originalColor = oc,
             originalAlpha = alpha, expiringAlpha = config.expiringAlpha or 1.0, style = style, thickness = thickness, inset = inset,
+            -- Border expiring callbacks: only the color and alpha change
+            -- as the aura approaches expiration. The style/thickness/inset
+            -- were fixed when ApplyHighlightStyle was originally called in
+            -- the parent function, so every tick here is a pure recolor.
+            -- Use UpdateHighlightStyleColor to skip the full tear-down
+            -- (especially important for ANIMATED where tearing down hides
+            -- 80 dashes, removes from the animator, and re-initializes
+            -- everything 3 times per second).
             applyResult = function(el, result, entry)
                 local oc2 = entry.originalColor
                 local isExp = IsColorExpiring(result, oc2)
                 local a = isExp and entry.expiringAlpha or entry.originalAlpha
-                DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, result.r, result.g, result.b, a)
+                DF.UpdateHighlightStyleColor(el, entry.style, result.r, result.g, result.b, a)
                 UpdatePulseState(el, isExp)
             end,
             applyManual = function(el, isExp, entry)
                 if isExp then
                     local c = entry.color
-                    DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, c.r or 1, c.g or 0.2, c.b or 0.2, entry.expiringAlpha)
+                    DF.UpdateHighlightStyleColor(el, entry.style, c.r or 1, c.g or 0.2, c.b or 0.2, entry.expiringAlpha)
                 else
                     local c = entry.originalColor
-                    DF.ApplyHighlightStyle(el, entry.style, entry.thickness, entry.inset, c.r, c.g, c.b, entry.originalAlpha)
+                    DF.UpdateHighlightStyleColor(el, entry.style, c.r, c.g, c.b, entry.originalAlpha)
                 end
                 UpdatePulseState(el, isExp)
             end,
