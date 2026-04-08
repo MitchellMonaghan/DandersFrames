@@ -79,30 +79,78 @@ end)
 -- function or event wrapping. OnUpdate scripts are bound directly to
 -- frames via SetScript, so there's no DF-owned function we can swap.
 --
--- Strategy: hook Frame:SetScript at addon load. Whenever any frame
--- (DF, Blizzard, or other addon) installs/removes an OnUpdate handler,
--- we record the latest handler in a registry. The registry alone has
--- effectively zero overhead — just one table assignment per SetScript
--- call. No wrapping, no instrumentation.
+-- Strategy: hook Frame:SetScript at addon load. Whenever a *DF-owned*
+-- frame installs/removes an OnUpdate handler, we record the latest
+-- handler in a registry. The registry alone has effectively zero
+-- overhead — just one table assignment per SetScript call. No wrapping,
+-- no instrumentation.
 --
 -- On Profiler:Start, we walk the registry and replace each recorded
 -- handler with a wrapped version that records timing + memory. New
 -- OnUpdate handlers installed *after* Start are wrapped on the spot
 -- by the same hook. On Stop, all originals are restored.
 --
--- The `installing` guard prevents the hook from re-wrapping our own
--- wrapper as we install it (which would otherwise infinite-recurse).
+-- The `installingOnUpdate` guard prevents the hook from re-wrapping
+-- our own wrapper as we install it (otherwise infinite recursion).
 --
--- We do NOT filter to DF frames. Scoping reliably is brittle (no
--- usable caller identification in the WoW sandbox), and surfacing
--- non-DF OnUpdate cost during a raid stutter investigation is useful
--- on its own. The cost when wrapped is ~1us per call — negligible.
+-- CRITICAL: we must filter to DF-owned frames only. If we wrap a
+-- non-DF frame's OnUpdate (especially Blizzard's CompactRaidFrame
+-- secure frames), our wrapper closure runs inside that frame's
+-- update cascade and the execution context gets marked as
+-- "tainted by DandersFrames". That taint propagates to every
+-- UnitIsConnected / UnitHealthMax / etc. secret-value return and
+-- every protected Show()/Hide() call downstream — breaking secure
+-- Blizzard code and producing ADDON_ACTION_BLOCKED errors. This was
+-- the cause of a raid-session bug report on 2026-04-08.
+--
+-- The filter walks the frame's parent chain looking for any ancestor
+-- whose name starts with "Danders" or "DF" — DF's named containers
+-- and headers all use these prefixes (DandersPartyHeader,
+-- DandersArenaHeader, DandersRaidGroupN, DFTestHeader, etc.). If no
+-- ancestor has a DF name, the frame is foreign and must be skipped.
 -- ============================================================
 
 local onUpdateRegistry = {}      -- [frame] = handler ref currently bound (or nil)
 local onUpdateLabels = {}        -- [frame] = stable label for display
+local onUpdateDFCheck = {}       -- [frame] = true/false cached IsDFFrame result
 local onUpdateWrapped = {}       -- [frame] = { original, stats } (only while active)
 local installingOnUpdate = false -- re-entry guard for the SetScript hook
+
+-- Is this frame owned by DandersFrames? Walks up the parent chain
+-- looking for an ancestor whose name starts with "Danders" or "DF".
+-- DF's secure headers and containers are all explicitly named with
+-- one of these prefixes (see Frames/Headers.lua). Anonymous DF child
+-- frames inherit their DF-ness from a named ancestor, so the walk
+-- catches them too.
+--
+-- Results are cached per-frame because this is called from the
+-- SetScript hook on every OnUpdate (re)bind and we don't want to
+-- re-walk the parent chain every time.
+local function IsDFFrame(frame)
+    local cached = onUpdateDFCheck[frame]
+    if cached ~= nil then return cached end
+
+    local walker = frame
+    local depth = 0  -- safety cap against pathological cycles
+    while walker and depth < 32 do
+        if walker.GetName then
+            local name = walker:GetName()
+            if name then
+                local p2 = name:sub(1, 2)
+                local p7 = name:sub(1, 7)
+                if p7 == "Danders" or p2 == "DF" then
+                    onUpdateDFCheck[frame] = true
+                    return true
+                end
+            end
+        end
+        walker = walker.GetParent and walker:GetParent() or nil
+        depth = depth + 1
+    end
+
+    onUpdateDFCheck[frame] = false
+    return false
+end
 
 -- Best-effort label for a frame. Uses GetDebugName() when available
 -- (modern WoW gives a parent-chain path), falls back to GetName(),
@@ -135,6 +183,7 @@ local frameMeta = getmetatable(CreateFrame("Frame")).__index
 hooksecurefunc(frameMeta, "SetScript", function(frame, scriptType, handler)
     if installingOnUpdate then return end
     if scriptType ~= "OnUpdate" then return end
+    if not IsDFFrame(frame) then return end  -- skip non-DF frames (taint safety)
 
     if handler then
         onUpdateRegistry[frame] = handler
@@ -627,16 +676,34 @@ function Profiler:Start()
     end
 
     -- ----------------------------------------------------------
-    -- Wrap all currently-known OnUpdate handlers. The SetScript hook
-    -- has been recording these since addon load, so this catches every
-    -- handler installed before the profiler started. Handlers added
-    -- AFTER this point are wrapped on the spot by the same hook.
+    -- Wrap all currently-known DF OnUpdate handlers. The SetScript
+    -- hook has been recording these since addon load, so this catches
+    -- every handler installed before the profiler started. Handlers
+    -- added AFTER this point are wrapped on the spot by the same hook.
+    --
+    -- Defense in depth: re-run IsDFFrame on each registry entry here.
+    -- The filter was added partway through the profiler's life, so the
+    -- registry may contain stale non-DF frames recorded before the
+    -- filter existed. Scrub them out instead of wrapping them, which
+    -- would cause taint errors in Blizzard's secure frame updates.
     -- ----------------------------------------------------------
     local updatesWrapped = 0
+    local toRemove
     for frame, handler in pairs(onUpdateRegistry) do
-        if frame ~= tickFrame then  -- don't profile our own tick driver
+        if frame == tickFrame then
+            -- don't profile our own tick driver
+        elseif not IsDFFrame(frame) then
+            -- Stale non-DF entry (recorded pre-filter). Drop it.
+            toRemove = toRemove or {}
+            toRemove[#toRemove + 1] = frame
+        else
             WrapFrameOnUpdate(frame, handler)
             updatesWrapped = updatesWrapped + 1
+        end
+    end
+    if toRemove then
+        for i = 1, #toRemove do
+            onUpdateRegistry[toRemove[i]] = nil
         end
     end
 
