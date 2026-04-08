@@ -46,6 +46,7 @@ local Profiler = {
     originals = {},         -- [funcPath] = { table, key, original }
     eventData = {},         -- [eventName] = { calls, total, max, mem, source }
     eventOriginals = {},    -- [dispatcherKey] = { container, key, original }
+    updateData = {},        -- [frameLabel] = { calls, total, max, mem }
     sortColumn = "total",
     sortDesc = true,
 }
@@ -69,6 +70,88 @@ local tickFrame = CreateFrame("Frame")
 tickFrame:Hide()
 tickFrame:SetScript("OnUpdate", function()
     tickRef[1] = tickRef[1] + 1
+end)
+
+-- ============================================================
+-- ONUPDATE REGISTRY + SETSCRIPT HOOK
+-- ----------------------------------------------------------
+-- Tracking OnUpdate handlers requires a different mechanism than
+-- function or event wrapping. OnUpdate scripts are bound directly to
+-- frames via SetScript, so there's no DF-owned function we can swap.
+--
+-- Strategy: hook Frame:SetScript at addon load. Whenever any frame
+-- (DF, Blizzard, or other addon) installs/removes an OnUpdate handler,
+-- we record the latest handler in a registry. The registry alone has
+-- effectively zero overhead — just one table assignment per SetScript
+-- call. No wrapping, no instrumentation.
+--
+-- On Profiler:Start, we walk the registry and replace each recorded
+-- handler with a wrapped version that records timing + memory. New
+-- OnUpdate handlers installed *after* Start are wrapped on the spot
+-- by the same hook. On Stop, all originals are restored.
+--
+-- The `installing` guard prevents the hook from re-wrapping our own
+-- wrapper as we install it (which would otherwise infinite-recurse).
+--
+-- We do NOT filter to DF frames. Scoping reliably is brittle (no
+-- usable caller identification in the WoW sandbox), and surfacing
+-- non-DF OnUpdate cost during a raid stutter investigation is useful
+-- on its own. The cost when wrapped is ~1us per call — negligible.
+-- ============================================================
+
+local onUpdateRegistry = {}      -- [frame] = handler ref currently bound (or nil)
+local onUpdateLabels = {}        -- [frame] = stable label for display
+local onUpdateWrapped = {}       -- [frame] = { original, stats } (only while active)
+local installingOnUpdate = false -- re-entry guard for the SetScript hook
+
+-- Best-effort label for a frame. Uses GetDebugName() when available
+-- (modern WoW gives a parent-chain path), falls back to GetName(),
+-- finally a generic "<anon>". Captured once at first sighting so it
+-- stays stable across renames.
+local function ResolveFrameLabel(frame)
+    local existing = onUpdateLabels[frame]
+    if existing then return existing end
+    local label
+    if frame.GetDebugName then
+        label = frame:GetDebugName()
+    end
+    if (not label or label == "") and frame.GetName then
+        label = frame:GetName()
+    end
+    if not label or label == "" then
+        label = "<anon:" .. tostring(frame):match("0x[%x]+") .. ">"
+    end
+    onUpdateLabels[frame] = label
+    return label
+end
+
+-- Forward declaration so the SetScript hook can call WrapFrameOnUpdate
+-- before it's defined further down (it lives inside Profiler:Start's
+-- closure scope and needs to share state with this hook).
+local WrapFrameOnUpdate
+
+-- The hook itself. Runs after every Frame:SetScript call in the game.
+local frameMeta = getmetatable(CreateFrame("Frame")).__index
+hooksecurefunc(frameMeta, "SetScript", function(frame, scriptType, handler)
+    if installingOnUpdate then return end
+    if scriptType ~= "OnUpdate" then return end
+
+    if handler then
+        onUpdateRegistry[frame] = handler
+        ResolveFrameLabel(frame)
+        -- If profiler is currently recording, wrap the new handler
+        -- right now so this newly added OnUpdate is visible from its
+        -- first frame.
+        if Profiler.active and WrapFrameOnUpdate then
+            WrapFrameOnUpdate(frame, handler)
+        end
+    else
+        -- nil handler = OnUpdate removed; drop bookkeeping.
+        onUpdateRegistry[frame] = nil
+        if onUpdateWrapped[frame] then
+            onUpdateWrapped[frame] = nil
+        end
+    end
 end)
 
 combatFrame:SetScript("OnEvent", function(self, event)
@@ -373,6 +456,41 @@ local function ResolveFunctionPath(path)
     end
 end
 
+-- Wrap a single frame's OnUpdate handler. Idempotent: a second call on
+-- the same frame is a no-op so prospective wrapping from the SetScript
+-- hook can't double-instrument. Stats are keyed by the frame's label,
+-- which means multiple frames sharing a name (rare, e.g. pooled frames)
+-- aggregate into one row — usually what you want.
+WrapFrameOnUpdate = function(frame, original)
+    if onUpdateWrapped[frame] then return end
+
+    local label = ResolveFrameLabel(frame)
+    local stats = Profiler.updateData[label]
+    if not stats then
+        stats = { calls = 0, total = 0, max = 0, mem = 0 }
+        Profiler.updateData[label] = stats
+    end
+
+    local wrapped = function(self, elapsed, ...)
+        local m0 = collectgarbage("count")
+        local t0 = debugprofilestop()
+        original(self, elapsed, ...)
+        local elapsedMs = debugprofilestop() - t0
+        local mDelta = collectgarbage("count") - m0
+        if mDelta < 0 then mDelta = 0 end
+        stats.calls = stats.calls + 1
+        stats.total = stats.total + elapsedMs
+        stats.mem = stats.mem + mDelta
+        if elapsedMs > stats.max then stats.max = elapsedMs end
+    end
+
+    onUpdateWrapped[frame] = { original = original, wrapped = wrapped }
+
+    installingOnUpdate = true
+    frame:SetScript("OnUpdate", wrapped)
+    installingOnUpdate = false
+end
+
 function Profiler:Start()
     if self.active then
         print("|cff00ff00DF Profiler:|r Already recording.")
@@ -387,6 +505,7 @@ function Profiler:Start()
     wipe(self.originals)
     wipe(self.eventData)
     wipe(self.eventOriginals)
+    wipe(self.updateData)
     tickRef[1] = 0
 
     local wrapped = 0
@@ -507,11 +626,25 @@ function Profiler:Start()
         end
     end
 
+    -- ----------------------------------------------------------
+    -- Wrap all currently-known OnUpdate handlers. The SetScript hook
+    -- has been recording these since addon load, so this catches every
+    -- handler installed before the profiler started. Handlers added
+    -- AFTER this point are wrapped on the spot by the same hook.
+    -- ----------------------------------------------------------
+    local updatesWrapped = 0
+    for frame, handler in pairs(onUpdateRegistry) do
+        if frame ~= tickFrame then  -- don't profile our own tick driver
+            WrapFrameOnUpdate(frame, handler)
+            updatesWrapped = updatesWrapped + 1
+        end
+    end
+
     -- Start the per-tick OnUpdate that drives spike detection.
     tickFrame:Show()
 
-    print(format("|cff00ff00DF Profiler:|r Recording. %d functions, %d event dispatchers instrumented.",
-        wrapped, eventsWrapped))
+    print(format("|cff00ff00DF Profiler:|r Recording. %d functions, %d events, %d OnUpdate handlers instrumented.",
+        wrapped, eventsWrapped, updatesWrapped))
 end
 
 function Profiler:Stop()
@@ -526,6 +659,15 @@ function Profiler:Stop()
     for _, entry in pairs(self.eventOriginals) do
         entry.container[entry.key] = entry.original
     end
+
+    -- Restore OnUpdate handlers. The installingOnUpdate guard suppresses
+    -- the SetScript hook so it doesn't immediately re-wrap them.
+    for frame, entry in pairs(onUpdateWrapped) do
+        installingOnUpdate = true
+        frame:SetScript("OnUpdate", entry.original)
+        installingOnUpdate = false
+    end
+    wipe(onUpdateWrapped)
 
     -- Stop the per-tick OnUpdate so profiler has zero idle cost when stopped.
     tickFrame:Hide()
@@ -545,8 +687,14 @@ function Profiler:Reset()
         ts.calls = 0
         ts.maxPerTick = 0
     end
-    -- Event buckets are created lazily so just wipe them.
+    -- Event + update buckets are created lazily so just wipe them.
     wipe(self.eventData)
+    for _, d in pairs(self.updateData) do
+        d.calls = 0
+        d.total = 0
+        d.max = 0
+        d.mem = 0
+    end
     if self.active then
         self.startTime = debugprofilestop()
     end
@@ -562,17 +710,21 @@ function Profiler:GetElapsedSeconds()
     return (endTime - self.startTime) / 1000
 end
 
+local function GetActiveSource(self)
+    if self.viewMode == "events" then return self.eventData end
+    if self.viewMode == "updates" then return self.updateData end
+    return self.data
+end
+
 function Profiler:GetTotalCalls()
     local total = 0
-    local source = (self.viewMode == "events") and self.eventData or self.data
-    for _, d in pairs(source) do total = total + d.calls end
+    for _, d in pairs(GetActiveSource(self)) do total = total + d.calls end
     return total
 end
 
 function Profiler:GetGrandTotalMs()
     local total = 0
-    local source = (self.viewMode == "events") and self.eventData or self.data
-    for _, d in pairs(source) do total = total + d.total end
+    for _, d in pairs(GetActiveSource(self)) do total = total + d.total end
     return total
 end
 
@@ -588,6 +740,9 @@ local TYPE_LABELS = {
 function Profiler:GetSortedResults()
     if self.viewMode == "events" then
         return self:GetSortedEventResults()
+    end
+    if self.viewMode == "updates" then
+        return self:GetSortedUpdateResults()
     end
 
     local results = {}
@@ -652,6 +807,50 @@ function Profiler:GetSortedResults()
                 max = agg.max,
                 mem = agg.calls > 0 and (agg.mem * 1024 / agg.calls) or 0,
                 peak = ts and ts.maxPerTick or 0,
+            }
+        end
+    end
+
+    for _, r in ipairs(results) do
+        r.pct = grandTotal > 0 and (r.total / grandTotal * 100) or 0
+    end
+
+    local col = self.sortColumn
+    local desc = self.sortDesc
+    sort(results, function(a, b)
+        if col == "name" then
+            if desc then return a.name > b.name else return a.name < b.name end
+        end
+        if desc then return a[col] > b[col] else return a[col] < b[col] end
+    end)
+
+    return results, grandTotal
+end
+
+-- Build sorted rows from OnUpdate handler data. Same shape as the
+-- function/event variants. Frame label is shortened to avoid blowing
+-- out the name column when GetDebugName returns a long parent chain.
+function Profiler:GetSortedUpdateResults()
+    local results = {}
+    local grandTotal = 0
+
+    for label, d in pairs(self.updateData) do
+        if d.calls > 0 then
+            grandTotal = grandTotal + d.total
+            -- Trim very long parent-chain labels: keep the last segment.
+            local short = label
+            if #label > 36 then
+                local tail = label:match("([^%.]+)$")
+                short = tail and ("…" .. tail) or label:sub(-36)
+            end
+            results[#results + 1] = {
+                name = short,
+                calls = d.calls,
+                total = d.total,
+                avg = d.total / d.calls,
+                max = d.max,
+                mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                peak = 0,
             }
         end
     end
@@ -769,6 +968,70 @@ function Profiler:PrintResults()
             color, r.pct
         ))
     end
+
+    print("|cffaaaaaa------------------------------------------------------------|r")
+    print(" ")
+end
+
+-- ============================================================
+-- SUMMARY (top-N across all three categories)
+-- ============================================================
+
+-- Helper: temporarily switch viewMode, run GetSortedResults, restore.
+-- Used by PrintSummary so it can collect results from each category
+-- without permanently flipping the user's UI view.
+local function TopN(self, mode, n)
+    local prev = self.viewMode
+    self.viewMode = mode
+    local results, grand = self:GetSortedResults()
+    self.viewMode = prev
+    local out = {}
+    for i = 1, math.min(n, #results) do
+        out[i] = results[i]
+    end
+    return out, grand
+end
+
+function Profiler:PrintSummary()
+    local elapsed = self:GetElapsedSeconds()
+    if elapsed <= 0 then
+        print("|cff00ff00DF Profiler:|r No data collected.")
+        return
+    end
+
+    -- Aggregate totals across all three sources independently. Note
+    -- these will overlap (events drive functions which drive OnUpdate
+    -- ticks) — they're shown as separate lenses, not sums.
+    local _,  funcGrand = TopN(self, "functions", 0)
+    local _,  evtGrand  = TopN(self, "events", 0)
+    local _,  updGrand  = TopN(self, "updates", 0)
+
+    print(" ")
+    print(format("|cff00ff00DF Profiler Summary:|r %s elapsed", FormatElapsed(elapsed)))
+    print(format("  Functions: %sms total CPU across wrapped DF methods", FormatMs(funcGrand)))
+    print(format("  Events:    %sms total CPU across event handlers", FormatMs(evtGrand)))
+    print(format("  OnUpdate:  %sms total CPU across every-frame handlers", FormatMs(updGrand)))
+    print("|cffaaaaaa------------------------------------------------------------|r")
+
+    local function dump(label, mode)
+        local rows = TopN(self, mode, 5)
+        if #rows == 0 then
+            print(format("  |cffaaaaaaTop 5 %s:|r (none)", label))
+            return
+        end
+        print(format("  |cffffd700Top 5 %s:|r", label))
+        for i, r in ipairs(rows) do
+            print(format("    %d. %-34s  %s calls  %sms  %sus avg  %s%%",
+                i, r.name,
+                CommaNumber(r.calls),
+                FormatMs(r.total),
+                FormatUs(r.avg),
+                format("%.1f", r.pct)))
+        end
+    end
+    dump("Functions (by total ms)", "functions")
+    dump("Events (by total ms)",    "events")
+    dump("OnUpdate (by total ms)",  "updates")
 
     print("|cffaaaaaa------------------------------------------------------------|r")
     print(" ")
@@ -972,6 +1235,8 @@ UpdateUI = function()
     if profilerFrame.viewBtn then
         if Profiler.viewMode == "events" then
             profilerFrame.viewBtn:SetText("|cff00ff00Events|r")
+        elseif Profiler.viewMode == "updates" then
+            profilerFrame.viewBtn:SetText("|cff00ff00OnUpdate|r")
         else
             profilerFrame.viewBtn:SetText("Functions")
         end
@@ -1051,9 +1316,22 @@ function Profiler:CreateUI()
     printBtn:SetSize(88, btnH)
     printBtn:SetPoint("LEFT", resetBtn, "RIGHT", 4, 0)
     printBtn:SetText("Print to Chat")
-    printBtn:SetScript("OnClick", function()
-        Profiler:PrintResults()
+    printBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    printBtn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            Profiler:PrintSummary()
+        else
+            Profiler:PrintResults()
+        end
     end)
+    printBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Print to Chat", 1, 1, 1)
+        GameTooltip:AddLine("Left-click: dump the current view (functions/events/onupdate)", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Right-click: print Top 5 across all categories (summary)", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    printBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Custom duration input box
     local durationInput = CreateFrame("EditBox", nil, f, "BackdropTemplate")
@@ -1127,19 +1405,25 @@ function Profiler:CreateUI()
     f.combatBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     UpdateCombatBtnText()
 
-    -- View toggle button (Functions / Events). Lives top-right, left of Split.
+    -- View cycle button (Functions / Events / OnUpdate). Top-right, left of Split.
     f.viewBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    f.viewBtn:SetSize(72, btnH)
+    f.viewBtn:SetSize(82, btnH)
     f.viewBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -84, btnY)
+    local VIEW_LABELS = {
+        functions = "Functions",
+        events    = "|cff00ff00Events|r",
+        updates   = "|cff00ff00OnUpdate|r",
+    }
+    local VIEW_NEXT = {
+        functions = "events",
+        events    = "updates",
+        updates   = "functions",
+    }
     local function UpdateViewBtnText()
-        if Profiler.viewMode == "events" then
-            f.viewBtn:SetText("|cff00ff00Events|r")
-        else
-            f.viewBtn:SetText("Functions")
-        end
+        f.viewBtn:SetText(VIEW_LABELS[Profiler.viewMode] or "Functions")
     end
     f.viewBtn:SetScript("OnClick", function()
-        Profiler.viewMode = (Profiler.viewMode == "events") and "functions" or "events"
+        Profiler.viewMode = VIEW_NEXT[Profiler.viewMode] or "functions"
         UpdateViewBtnText()
         UpdateUI()
         UpdateColumnHeaders()
@@ -1147,9 +1431,10 @@ function Profiler:CreateUI()
     f.viewBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("View Mode", 1, 1, 1)
-        GameTooltip:AddLine("Toggle between per-function and per-event timing.", 0.7, 0.7, 0.7, true)
-        GameTooltip:AddLine("Events view shows time spent in each WoW event handler", 0.7, 0.7, 0.7, true)
-        GameTooltip:AddLine("(UNIT_AURA, UNIT_HEALTH, GROUP_ROSTER_UPDATE, etc.).", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Click to cycle: Functions → Events → OnUpdate.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Functions: time per DF method", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Events: time per WoW event (UNIT_AURA, etc.)", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("OnUpdate: time per OnUpdate handler (every-frame ticks)", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
     end)
     f.viewBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
