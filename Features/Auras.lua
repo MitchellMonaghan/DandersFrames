@@ -1331,6 +1331,30 @@ end
 local sortScratchBuffs  = {}
 local sortScratchDebuffs = {}
 
+-- ============================================================
+-- FIX A DIAGNOSTIC COUNTERS
+-- ============================================================
+-- Track how often the hot path takes ScanUnitFull vs ApplyAuraDelta.
+-- Goal: verify the incremental path is actually being used in steady
+-- state, not just falling through to full rescans. Reset via /dfscan
+-- (or manually via DF.AuraCacheStats:Reset()) before a test run.
+--
+-- TEMPORARY DIAGNOSTIC — remove or demote to debug-only after Fix A
+-- is verified working in raid content.
+-- ============================================================
+DF.AuraCacheStats = {
+    scanFull       = 0,  -- ScanUnitFull invocations
+    deltaApplied   = 0,  -- ApplyAuraDelta invocations that succeeded
+    deltaFallback  = 0,  -- ApplyAuraDelta returned false → fell back to ScanUnitFull
+    eventsSeen     = 0,  -- total UNIT_AURA events that reached directModeSubscriber:OnUnitAura
+}
+function DF.AuraCacheStats:Reset()
+    self.scanFull = 0
+    self.deltaApplied = 0
+    self.deltaFallback = 0
+    self.eventsSeen = 0
+end
+
 -- Rebuild cache.buffData / cache.buffOrder / cache.debuffData /
 -- cache.debuffOrder from cache.buffsByID + cache.debuffsByID + the
 -- classification sets. Sorted according to the user's sort preference
@@ -1743,6 +1767,8 @@ function directModeSubscriber:OnUnitAura(event, unit, updateInfo)
     -- Only process units we care about (party/raid members with DF frames)
     if not DF.unitFrameMap or not DF.unitFrameMap[unit] then return end
 
+    DF.AuraCacheStats.eventsSeen = DF.AuraCacheStats.eventsSeen + 1
+
     -- Fix A hot path: decide between a full scan and an incremental
     -- delta based on updateInfo. Full scans happen only on first-access,
     -- isFullUpdate, or if a delta fails (hasFullScan == false).
@@ -1756,11 +1782,15 @@ function directModeSubscriber:OnUnitAura(event, unit, updateInfo)
                       or not cache.hasFullScan
 
     if needsFull then
+        DF.AuraCacheStats.scanFull = DF.AuraCacheStats.scanFull + 1
         ScanUnitFull(unit)
     else
         -- Try the incremental path. If it returns false (cache in
         -- a state where delta isn't safe), fall back to full scan.
-        if not ApplyAuraDelta(unit, updateInfo) then
+        if ApplyAuraDelta(unit, updateInfo) then
+            DF.AuraCacheStats.deltaApplied = DF.AuraCacheStats.deltaApplied + 1
+        else
+            DF.AuraCacheStats.deltaFallback = DF.AuraCacheStats.deltaFallback + 1
             ScanUnitFull(unit)
         end
     end
@@ -4098,7 +4128,34 @@ end
 
 SLASH_DFSCAN1 = "/dfscan"
 SlashCmdList["DFSCAN"] = function(msg)
-    local unit = (msg and msg:match("^%s*(%S+)") or "player")
+    msg = msg and msg:match("^%s*(.-)%s*$") or ""
+
+    -- /dfscan stats       — print the scan counter breakdown
+    -- /dfscan reset       — reset the scan counters to zero
+    -- /dfscan <unit>      — run ScanUnitFull on <unit> and dump the cache entry
+    if msg == "stats" or msg == "" then
+        local s = DF.AuraCacheStats
+        print("|cff00ff00DandersFrames|r |cff00ccff[AuraCache Stats]|r")
+        print(string.format("  events seen:     %d", s.eventsSeen))
+        print(string.format("  scanFull:        %d", s.scanFull))
+        print(string.format("  deltaApplied:    %d", s.deltaApplied))
+        print(string.format("  deltaFallback:   %d", s.deltaFallback))
+        if s.eventsSeen > 0 then
+            local deltaPct = (s.deltaApplied / s.eventsSeen) * 100
+            print(string.format("  delta hit rate:  %.1f%% (higher = better)", deltaPct))
+        end
+        print("  |cffaaaaaaTip: /dfscan reset to zero the counters, then do a sustained combat test|r")
+        print("  |cffaaaaaaUsage: /dfscan <unit> to dump the cache entry for a unit|r")
+        return
+    end
+
+    if msg == "reset" then
+        DF.AuraCacheStats:Reset()
+        print("|cff00ff00DandersFrames|r AuraCache counters reset.")
+        return
+    end
+
+    local unit = msg
     local header = "|cff00ff00DandersFrames|r |cff00ccff[Fix A ScanUnitFull]|r " .. unit
     print(header)
 
