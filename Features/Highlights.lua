@@ -5,17 +5,32 @@ local addonName, DF = ...
 -- Animated/styled borders for selection and aggro highlights
 -- ============================================================
 
--- Animation settings
-local ANIMATION_SPEED = 40
+-- Animation settings.
+--
+-- ANIMATION_SPEED paired with UPDATE_INTERVAL determines the visual
+-- smoothness. The per-sample pixel delta is ANIMATION_SPEED / Hz.
+-- When that delta exceeds ~1 pixel the eye perceives discrete stepping
+-- rather than continuous motion — the LCD persistence/blur trick that
+-- sells sub-pixel motion as smooth flow breaks down.
+--
+-- The original code ran at 60 Hz with speed 40 → 0.67 px/sample.
+-- That's sub-pixel and looks smooth. When the throttle dropped redraw
+-- to 30 Hz it became 1.33 px/sample (super-pixel) which looks choppy.
+--
+-- Solution: halve the speed. 30 Hz × 20 px/sec = 0.67 px/sample, the
+-- same per-sample delta as the original. Visually identical smoothness
+-- to pre-throttle. The only behavioral change is the full pattern
+-- cycle now takes 0.6s instead of 0.3s — ants march at half speed,
+-- which a lot of users actually prefer over the more frenetic original.
+local ANIMATION_SPEED = 20
 local DASH_LENGTH = 6
 local GAP_LENGTH = 6
 local PATTERN_LENGTH = DASH_LENGTH + GAP_LENGTH
 
--- Redraw throttle. The full marching-ants pattern cycle is
--- PATTERN_LENGTH / ANIMATION_SPEED = 0.3s, so at 30 Hz we get 10 sample
--- frames per full cycle — visually indistinguishable from 60 Hz but
--- halves the per-frame cost of the redraw. `elapsed` still accumulates
--- every WoW tick so the offset stays smooth when we do sample.
+-- Redraw throttle. At 30 Hz with ANIMATION_SPEED 20 the per-sample
+-- delta is 0.67 px, matching the original 60 Hz × 40 smoothness exactly.
+-- `elapsed` still accumulates every WoW tick so the offset stays
+-- smooth when we do sample.
 local UPDATE_INTERVAL = 1 / 30
 
 -- Global animator for marching ants effect
