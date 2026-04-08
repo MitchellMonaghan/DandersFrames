@@ -1290,7 +1290,111 @@ end
 -- but do NOT touch the legacy fields (buffOrder, buffData, etc.) that
 -- the current hot path depends on. Commit 3 and 4 migrate consumers
 -- off the legacy fields.
+--
+-- COMMIT 2 UPDATE: ScanUnitFull and ApplyAuraDelta now ALSO populate
+-- the legacy cache.buffOrder / cache.buffData / cache.debuffOrder /
+-- cache.debuffData arrays in sorted order via RebuildLegacySortedArrays,
+-- so they are drop-in replacements for the old ScanUnitDirect.
+-- UpdateAuraIconsDirect (the icon renderer at ~line 2528) continues to
+-- read cache.buffData unchanged. Legacy and new fields both stay fresh.
 -- ============================================================
+
+-- Sort comparators for Direct mode — moved here (from below) so
+-- RebuildLegacySortedArrays can reference them. The pcall wrappers
+-- are deliberately left in place per audit finding #8 — some aura
+-- data fields may be secret values on Midnight and would silently
+-- fail sort comparisons without the guard.
+local function SortByTimeRemaining(a, b)
+    local ok, result = pcall(function()
+        local aExp = a.expirationTime or 0
+        local bExp = b.expirationTime or 0
+        if aExp == 0 and bExp == 0 then return false end
+        if aExp == 0 then return false end
+        if bExp == 0 then return true end
+        return aExp < bExp
+    end)
+    if ok then return result end
+    return false
+end
+
+local function SortByName(a, b)
+    local ok, result = pcall(function()
+        return (a.name or "") < (b.name or "")
+    end)
+    if ok then return result end
+    return false
+end
+
+-- Module-level scratch tables for RebuildLegacySortedArrays — reused
+-- across every rebuild to avoid per-call allocation. wipe()'d at the
+-- start of each rebuild.
+local sortScratchBuffs  = {}
+local sortScratchDebuffs = {}
+
+-- Rebuild cache.buffData / cache.buffOrder / cache.debuffData /
+-- cache.debuffOrder from cache.buffsByID + cache.debuffsByID + the
+-- classification sets. Sorted according to the user's sort preference
+-- (TIME, NAME, or DEFAULT = insertion order from buffsByID).
+--
+-- This is the single place where the legacy sorted arrays get
+-- populated. Called from both ScanUnitFull (after a full rebuild)
+-- and ApplyAuraDelta (after an incremental update).
+--
+-- Typical N is small (5-20 auras per unit), so the sort cost is
+-- negligible. The module-level scratch tables avoid allocation.
+local function RebuildLegacySortedArrays(cache, unit, db)
+    if not db then return end
+
+    -- ----- BUFFS -----
+    wipe(sortScratchBuffs)
+    for id, auraData in pairs(cache.buffsByID) do
+        -- Only include auras that passed the user's buff filter
+        -- (cache.buffs is the set of classified instance IDs)
+        if cache.buffs[id] then
+            sortScratchBuffs[#sortScratchBuffs + 1] = auraData
+        end
+    end
+
+    local buffSort = db.directBuffSortOrder or "DEFAULT"
+    if buffSort == "TIME" and #sortScratchBuffs > 1 then
+        table.sort(sortScratchBuffs, SortByTimeRemaining)
+    elseif buffSort == "NAME" and #sortScratchBuffs > 1 then
+        table.sort(sortScratchBuffs, SortByName)
+    end
+
+    wipe(cache.buffOrder)
+    wipe(cache.buffData)
+    for i = 1, #sortScratchBuffs do
+        local auraData = sortScratchBuffs[i]
+        cache.buffOrder[i] = auraData.auraInstanceID
+        cache.buffData[i] = auraData
+    end
+    cache.buffOrderDirty = false
+
+    -- ----- DEBUFFS -----
+    wipe(sortScratchDebuffs)
+    for id, auraData in pairs(cache.debuffsByID) do
+        if cache.debuffs[id] then
+            sortScratchDebuffs[#sortScratchDebuffs + 1] = auraData
+        end
+    end
+
+    local debuffSort = db.directDebuffSortOrder or "DEFAULT"
+    if debuffSort == "TIME" and #sortScratchDebuffs > 1 then
+        table.sort(sortScratchDebuffs, SortByTimeRemaining)
+    elseif debuffSort == "NAME" and #sortScratchDebuffs > 1 then
+        table.sort(sortScratchDebuffs, SortByName)
+    end
+
+    wipe(cache.debuffOrder)
+    wipe(cache.debuffData)
+    for i = 1, #sortScratchDebuffs do
+        local auraData = sortScratchDebuffs[i]
+        cache.debuffOrder[i] = auraData.auraInstanceID
+        cache.debuffData[i] = auraData
+    end
+    cache.debuffOrderDirty = false
+end
 
 -- Resolve a unit's filter arrays (per-mode-cached).
 -- Returns: buffFilters, debuffFilters, defensiveFilters, dispelFilter
@@ -1422,8 +1526,11 @@ local function ScanUnitFull(unit)
         end
     end
 
-    cache.buffOrderDirty = true
-    cache.debuffOrderDirty = true
+    -- Rebuild legacy sorted arrays so consumers that read cache.buffData /
+    -- cache.buffOrder still work (the icon renderer at UpdateAuraIconsDirect
+    -- is the primary reader). Uses module-level scratch tables — no allocation.
+    RebuildLegacySortedArrays(cache, unit, db)
+
     cache.hasFullScan = true
 end
 
@@ -1513,6 +1620,13 @@ local function ApplyAuraDelta(unit, updateInfo)
         end
     end
 
+    -- Rebuild legacy sorted arrays if any delta touched them.
+    -- Typical N is 5-20 per unit so the sort cost is negligible, and
+    -- the rebuild only runs when at least one aura actually changed.
+    if cache.buffOrderDirty or cache.debuffOrderDirty then
+        RebuildLegacySortedArrays(cache, unit, db)
+    end
+
     return true
 end
 
@@ -1552,28 +1666,6 @@ function DF:PopulateDefensiveCache(unit)
     end
 end
 
--- Sort comparators for Direct mode
-local function SortByTimeRemaining(a, b)
-    local ok, result = pcall(function()
-        local aExp = a.expirationTime or 0
-        local bExp = b.expirationTime or 0
-        if aExp == 0 and bExp == 0 then return false end
-        if aExp == 0 then return false end
-        if bExp == 0 then return true end
-        return aExp < bExp
-    end)
-    if ok then return result end
-    return false
-end
-
-local function SortByName(a, b)
-    local ok, result = pcall(function()
-        return (a.name or "") < (b.name or "")
-    end)
-    if ok then return result end
-    return false
-end
-
 -- Rebuild cached filter tables from current settings (per mode)
 function DF:RebuildDirectFilterStrings()
     local partyDb = DF:GetDB("party")
@@ -1589,135 +1681,50 @@ function DF:RebuildDirectFilterStrings()
     -- Defensive and dispel are mode-independent, clear to rebuild on next use
     cachedDefensiveFilters = nil
     cachedDispelFilter = nil
+
+    -- Fix A: classification sets are built against the OLD filters and
+    -- are now stale. Mark every cache entry as needing a fresh full
+    -- scan so the next UNIT_AURA event re-classifies everything from
+    -- scratch. We use hasFullScan = false rather than wiping the cache
+    -- so off-event readers (options page preview, etc.) still see data
+    -- until the next event lands.
+    for _, entry in pairs(DF.AuraCache) do
+        entry.hasFullScan = false
+    end
 end
 
--- Scan a single unit with Direct API and populate DF.BlizzardAuraCache
+-- Scan a single unit with Direct API and populate DF.AuraCache.
+--
+-- COMMIT 2: ScanUnitDirect is now a thin delegation to ScanUnitFull.
+-- The legacy body (which did its own GetUnitAuras scans + sorted +
+-- classified + called PopulateDefensiveCache) has been replaced by
+-- the new cache-based pipeline. ScanUnitFull is a strict superset —
+-- it populates both the new (buffsByID, debuffsByID, hasFullScan)
+-- and legacy (buffData, buffOrder via RebuildLegacySortedArrays)
+-- cache fields in one pass.
+--
+-- This delegation keeps DirectScanAllUnits + DirectModeRosterUpdate
+-- working unchanged — they call ScanUnitDirect in a roster loop and
+-- now get ScanUnitFull behavior for free. Also means the initial
+-- bulk scan sets hasFullScan = true, so the first UNIT_AURA event
+-- per unit after login can take the cheap delta path instead of
+-- falling back to a full rescan.
 local function ScanUnitDirect(unit)
-    if not unit or not UnitExists(unit) then return end
-    -- Same compound-token guard as PopulateDefensiveCache below.
-    if not IsRosterUnit(unit) then return end
-
-    -- Get settings for this unit's frame type
+    -- Mode guard — ScanUnitFull doesn't check auraSourceMode itself
+    -- because it's a lower-level primitive. Keep the check here so
+    -- DirectScanAllUnits doesn't run ScanUnitFull when the user is
+    -- still in Blizzard mode.
+    if not unit then return end
     local frame = DF.unitFrameMap and DF.unitFrameMap[unit]
-    local db, isRaid
+    local db
     if frame then
-        isRaid = frame.isRaidFrame
-        db = isRaid and DF:GetRaidDB() or DF:GetDB()
+        db = frame.isRaidFrame and DF:GetRaidDB() or DF:GetDB()
     else
         db = DF:GetDB()
-        isRaid = false
     end
-
     if not db or db.auraSourceMode ~= "DIRECT" then return end
 
-    -- Initialize cache for this unit (helper creates the full shape)
-    local cache = EnsureAuraCacheEntry(unit)
-    wipe(cache.buffs)
-    wipe(cache.debuffs)
-    wipe(cache.buffOrder)
-    wipe(cache.debuffOrder)
-    wipe(cache.buffData)
-    wipe(cache.debuffData)
-    wipe(cache.playerDispellable)
-    wipe(cache.allDispellable)
-    wipe(cache.defensives)
-
-    if not GetUnitAuras then return end
-
-    -- Resolve cached filter tables for this frame's mode
-    -- Each is nil (show all) or a table of individual filter strings for OR logic
-    local buffFilters = isRaid
-        and (cachedRaidBuffFilters or BuildDirectBuffFilters(db))
-        or (cachedPartyBuffFilters or BuildDirectBuffFilters(db))
-
-    -- === HELPFUL AURAS ===
-    -- Defensives are NOT classified here — they're populated by
-    -- DF:PopulateDefensiveCache at the bottom of this function (right
-    -- before the caller fires TriggerAuraUpdateForUnit). Same defensive
-    -- classification works for both source modes.
-    local helpfulAuras = GetUnitAuras(unit, "HELPFUL", 40)
-    if helpfulAuras then
-        -- Apply sort if requested (for buff display order)
-        local buffSort = db.directBuffSortOrder or "DEFAULT"
-        if buffSort == "TIME" and #helpfulAuras > 1 then
-            table.sort(helpfulAuras, SortByTimeRemaining)
-        elseif buffSort == "NAME" and #helpfulAuras > 1 then
-            table.sort(helpfulAuras, SortByName)
-        end
-
-        -- Post-classify each aura against enabled filters (OR logic).
-        -- buffFilters = nil means "show all buffs" (no post-classification).
-        for _, auraData in ipairs(helpfulAuras) do
-            local id = auraData.auraInstanceID
-            if id then
-                if not buffFilters or AuraPassesAnyFilter(unit, id, buffFilters) then
-                    cache.buffs[id] = true
-                    cache.buffOrder[#cache.buffOrder + 1] = id
-                    cache.buffData[#cache.buffData + 1] = auraData
-                end
-            end
-        end
-    end
-
-    -- Resolve cached debuff filter tables
-    local debuffFilters = isRaid
-        and (cachedRaidDebuffFilters or BuildDirectDebuffFilters(db))
-        or (cachedPartyDebuffFilters or BuildDirectDebuffFilters(db))
-    local dispelFilter = BuildDirectDispelFilter()
-
-    -- === HARMFUL AURAS (debuffs + dispels in a single pass) ===
-    local harmfulAuras = GetUnitAuras(unit, "HARMFUL", 40)
-    if harmfulAuras then
-        local debuffSort = db.directDebuffSortOrder or "DEFAULT"
-        if debuffSort == "TIME" and #harmfulAuras > 1 then
-            table.sort(harmfulAuras, SortByTimeRemaining)
-        elseif debuffSort == "NAME" and #harmfulAuras > 1 then
-            table.sort(harmfulAuras, SortByName)
-        end
-
-        -- Post-classify each aura against enabled filters (OR logic).
-        -- debuffFilters = nil means "show all debuffs" (no post-classification).
-        for _, auraData in ipairs(harmfulAuras) do
-            local id = auraData.auraInstanceID
-            if id then
-                -- All-dispellable classification (independent of debuff filters).
-                -- Used by the dispel overlay's "All Dispellable" mode so it fires
-                -- even when the debuff is filtered out of icon display.
-                local isAllDispellable = auraData.dispelName ~= nil
-                if isAllDispellable then
-                    cache.allDispellable[id] = true
-                end
-                -- Debuff classification — OR across the filter-string filters
-                -- and the post-classified "All Dispellable" toggle. The Raid
-                -- Player Dispellable filter goes through debuffFilters like
-                -- the others; All Dispellable is checked here because there
-                -- is no Blizzard filter constant for "any dispellable".
-                local passesFilters = not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters)
-                local passesAllDispellable = db.directDebuffFilterAllDispellable and isAllDispellable
-                if passesFilters or passesAllDispellable then
-                    cache.debuffs[id] = true
-                    cache.debuffOrder[#cache.debuffOrder + 1] = id
-                    cache.debuffData[#cache.debuffData + 1] = auraData
-                end
-                -- Player-dispellable bookkeeping for the dispel overlay.
-                -- This is independent of which user checkboxes are on — the
-                -- overlay reads cache.playerDispellable directly and must
-                -- fire even when dispellable debuffs aren't in the icon list.
-                if dispelFilter and (not IsAuraFilteredOut or not IsAuraFilteredOut(unit, id, dispelFilter)) then
-                    cache.playerDispellable[id] = true
-                end
-            end
-        end
-    end
-
-    -- Defensive classification: populate cache.defensives via the secret-safe
-    -- Direct API path. This MUST happen before TriggerAuraUpdateForUnit fires
-    -- (which is the caller's next step) because the buff bar reads
-    -- cache.defensives for defensive deduplication. See the matching call in
-    -- CaptureAurasFromBlizzardFrame for the full explanation.
-    if DF.PopulateDefensiveCache then
-        DF:PopulateDefensiveCache(unit)
-    end
+    ScanUnitFull(unit)
 end
 
 -- ============================================================
@@ -1736,7 +1743,28 @@ function directModeSubscriber:OnUnitAura(event, unit, updateInfo)
     -- Only process units we care about (party/raid members with DF frames)
     if not DF.unitFrameMap or not DF.unitFrameMap[unit] then return end
 
-    ScanUnitDirect(unit)
+    -- Fix A hot path: decide between a full scan and an incremental
+    -- delta based on updateInfo. Full scans happen only on first-access,
+    -- isFullUpdate, or if a delta fails (hasFullScan == false).
+    -- Every other UNIT_AURA event flows through the cheap delta path.
+    --
+    -- See _Reference/fix-a-plan.md for the full architecture.
+    local cache = DF.AuraCache[unit]
+    local needsFull = not updateInfo
+                      or updateInfo.isFullUpdate
+                      or not cache
+                      or not cache.hasFullScan
+
+    if needsFull then
+        ScanUnitFull(unit)
+    else
+        -- Try the incremental path. If it returns false (cache in
+        -- a state where delta isn't safe), fall back to full scan.
+        if not ApplyAuraDelta(unit, updateInfo) then
+            ScanUnitFull(unit)
+        end
+    end
+
     TriggerAuraUpdateForUnit(unit)
 end
 
