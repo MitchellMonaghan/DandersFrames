@@ -14,6 +14,7 @@ local addonName, DF = ...
 -- ============================================================
 
 local debugprofilestop = debugprofilestop
+local collectgarbage = collectgarbage
 local format = string.format
 local sort = table.sort
 local floor = math.floor
@@ -23,6 +24,11 @@ local pairs = pairs
 local ipairs = ipairs
 local tostring = tostring
 local CreateFrame = CreateFrame
+
+-- Shared tick counter, incremented once per OnUpdate frame.
+-- Wrapped functions read this via upvalue to detect "new tick" without
+-- needing access to any timer state.
+local tickRef = { 0 }
 
 -- ============================================================
 -- STATE
@@ -34,8 +40,9 @@ local Profiler = {
     stopTime = 0,           -- debugprofilestop() ms when stopped (for accurate elapsed)
     combatAuto = false,     -- auto start/stop on combat enter/leave
     splitByFrame = false,   -- show per-frame-type breakdown
-    data = {},              -- [funcName|type] = { calls, total, max }
-    originals = {},         -- [funcName] = original function ref
+    data = {},              -- [funcName|type] = { calls, total, max, mem }
+    tickStats = {},         -- [funcName] = { lastTick, calls, maxPerTick }
+    originals = {},         -- [funcPath] = { table, key, original }
     sortColumn = "total",
     sortDesc = true,
 }
@@ -51,6 +58,15 @@ local UpdateUI  -- assigned later when UI functions are defined
 -- Combat auto-profile event frame (created once, persists)
 local combatFrame = CreateFrame("Frame")
 combatFrame:Hide()
+
+-- Per-tick driver: increments tickRef[1] every OnUpdate frame so wrapped
+-- functions can detect "new tick" and aggregate per-tick call counts.
+-- Hidden when profiler is stopped (no OnUpdate runs).
+local tickFrame = CreateFrame("Frame")
+tickFrame:Hide()
+tickFrame:SetScript("OnUpdate", function()
+    tickRef[1] = tickRef[1] + 1
+end)
 
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
@@ -88,57 +104,175 @@ end
 
 -- ============================================================
 -- PROFILED FUNCTIONS
--- Only DF:Method() style. Non-existent entries are skipped.
+-- Each entry is a path string. Plain "Name" resolves to DF[Name].
+-- Dotted "Mod.Sub.Name" resolves to DF.Mod.Sub.Name. Missing entries
+-- are silently skipped, so it's safe to list optional features here.
 -- ============================================================
 
 local PROFILED_FUNCTIONS = {
-    -- Core per-unit updates (called from event handlers)
+    -- ----------------------------------------------------------
+    -- Core per-unit updates (event hot path)
+    -- ----------------------------------------------------------
     "UpdateUnitFrame",
-    "UpdateHealthFast",        -- Lean UNIT_HEALTH hot path (subset of UpdateUnitFrame)
+    "UpdateHealthFast",        -- Lean UNIT_HEALTH hot path
     "UpdateHealth",
     "UpdatePower",
     "UpdateName",
     "UpdateFrame",
+    "UpdateResourceBar",
 
+    -- ----------------------------------------------------------
     -- Aura pipeline
+    -- ----------------------------------------------------------
     "UpdateAuras",                  -- Entry point (alias for Enhanced)
+    "UpdateAuras_Enhanced",
+    "UpdateAuraIcons",              -- Legacy path (kept for comparison)
+    "UpdateAuraIcons_Enhanced",
+    "UpdateAuraIconsDirect",        -- Merged collect+display (Tier 3)
     "CollectBuffs",
     "CollectDebuffs",
-    "UpdateAuraIcons_Enhanced",
-    "UpdateAuraIconsDirect",        -- New merged collect+display (Tier 3)
     "RepositionCenterGrowthIcons",
+    "DirectModeRosterUpdate",
+    "RebuildDirectFilterStrings",
 
+    -- ----------------------------------------------------------
     -- Dispel
+    -- ----------------------------------------------------------
     "UpdateDispelOverlay",
     "UpdateDispelGradientHealth",
     "UpdateAllDispelOverlays",
 
-    -- Absorb / Prediction
+    -- ----------------------------------------------------------
+    -- Absorb / Heal Prediction
+    -- ----------------------------------------------------------
     "UpdateAbsorb",
     "UpdateHealAbsorb",
     "UpdateHealPrediction",
 
+    -- ----------------------------------------------------------
     -- Range
+    -- ----------------------------------------------------------
     "UpdateRange",
     "UpdatePetRange",
+    "RefreshRangeSpell",
 
-    -- Visual
+    -- ----------------------------------------------------------
+    -- Visual / Highlights / Health Fade
+    -- ----------------------------------------------------------
     "UpdateHighlights",
     "UpdateAnimatedBorder",
     "ApplyDeadFade",
+    "ApplyHealthColors",
+    "ApplyBarOrientation",
+    "ApplyHealthFadeAlpha",
+    "UpdateHealthFade",
+    "UpdatePetHealthFade",
 
-    -- Icons
-    "UpdateMissingBuffIcon",
-    "UpdateExternalDefIcon",
+    -- ----------------------------------------------------------
+    -- Status icons (legacy + enhanced + per-unit)
+    -- ----------------------------------------------------------
+    "UpdateRoleIcon",
+    "UpdateLeaderIcon",
     "UpdateRaidTargetIcon",
     "UpdateReadyCheckIcon",
+    "UpdateCenterStatusIcon",
+    "UpdateRoleIconEnhanced",
+    "UpdateLeaderIconEnhanced",
+    "UpdateRaidTargetIconEnhanced",
+    "UpdateReadyCheckIconEnhanced",
+    "UpdateSummonIcon",
+    "UpdateResurrectionIcon",
+    "UpdatePhasedIcon",
+    "UpdateAFKIcon",
+    "UpdateVehicleIcon",
+    "UpdateRaidRoleIcon",
+    "UpdateAllStatusIcons",         -- per-frame sweep of all icons
+    "UpdateRestedIndicator",
 
-    -- Layout / Style
+    -- ----------------------------------------------------------
+    -- Defensive / external def icons + missing-buff
+    -- ----------------------------------------------------------
+    "UpdateMissingBuffIcon",
+    "UpdateExternalDefIcon",
+    "UpdateDefensiveBar",
+
+    -- ----------------------------------------------------------
+    -- My-Buff Indicators
+    -- ----------------------------------------------------------
+    "UpdateMyBuffIndicator",
+    "UpdateMyBuffGradientHealth",
+
+    -- ----------------------------------------------------------
+    -- Aura Designer (per-frame)
+    -- ----------------------------------------------------------
+    "UpdateADTintHealth",
+
+    -- ----------------------------------------------------------
+    -- Targeted Spells
+    -- ----------------------------------------------------------
+    "UpdateTargetedSpellAnimatedBorder",
+    "UpdateTargetedSpellLayout",
+
+    -- ----------------------------------------------------------
+    -- Pets
+    -- ----------------------------------------------------------
+    "UpdatePetFrame",
+    "UpdatePetHealth",
+    "UpdatePetName",
+    "ApplyPetFrameStyle",
+
+    -- ----------------------------------------------------------
+    -- Layout / Style (called per-frame on layout changes)
+    -- ----------------------------------------------------------
     "ApplyFrameLayout",
     "ApplyFrameStyle",
     "ApplyAuraLayout",
+    "FullFrameRefresh",
 
+    -- ----------------------------------------------------------
+    -- Bulk sweeps (called on roster / settings events)
+    -- ----------------------------------------------------------
+    "UpdateAllFrames",
+    "UpdateAllPetFrames",
+    "UpdateAllRaidPetFrames",
+    "UpdateAllPetFramePositions",
+    "UpdateAllAuras",
+    "UpdateAllMissingBuffIcons",
+    "UpdateAllFramesStatusIcons",
+    "UpdateAllRoleIcons",
+    "UpdateAllMyBuffIndicators",
+    "UpdateAllDefensiveBars",
+    "UpdateAllExternalDefIcons",
+    "UpdateAllElementAppearances",
+    "UpdateAllFrameAppearances",
+    "RefreshLiveFrames",
+    "RefreshAllVisibleFrames",
+    "RefreshRaidGroupFrames",
+    "RefreshPartyFrames",
+    "RefreshAllHeaderChildFrames",
+    "RefreshRaidFlatFrames",
+    "UpdateLiveRaidFrames",
+
+    -- ----------------------------------------------------------
+    -- Roster handling (called on GROUP_ROSTER_UPDATE)
+    -- ----------------------------------------------------------
+    "ProcessRosterUpdate",
+    "ProcessRoleUpdate",
+    "RebuildUnitFrameMap",
+    "UpdateHeaderFrameCount",
+    "UpdateRaidGroupOrderAttributes",
+    "ApplyRaidGroupSorting",
+    "ApplyPartyGroupSorting",
+
+    -- ----------------------------------------------------------
+    -- Power event registration (changes when role/spec/group changes)
+    -- ----------------------------------------------------------
+    "UpdatePowerEventRegistration",
+    "UpdateAllPowerEventRegistration",
+
+    -- ----------------------------------------------------------
     -- Blizzard integration
+    -- ----------------------------------------------------------
     "CaptureAurasFromBlizzardFrame",
     "UpdateBlizzardFrameVisibility",
 }
@@ -169,6 +303,27 @@ local function FormatUs(ms)
     else return format("%.2f", us) end
 end
 
+-- Bytes per call: small numbers as raw bytes, larger as KB.
+-- "0" -> "·" so the row reads cleanly when there's no allocation.
+local function FormatBytes(b)
+    if b <= 0 then return "·" end
+    if b >= 1024 * 10 then
+        return format("%.0fk", b / 1024)
+    elseif b >= 1024 then
+        return format("%.1fk", b / 1024)
+    elseif b >= 100 then
+        return format("%.0f", b)
+    else
+        return format("%.0f", b)
+    end
+end
+
+local function FormatPeak(n)
+    if n <= 0 then return "·" end
+    if n >= 1000 then return format("%.1fk", n / 1000) end
+    return tostring(n)
+end
+
 local function FormatElapsed(seconds)
     if seconds >= 60 then
         return format("%dm %ds", floor(seconds / 60), floor(seconds % 60))
@@ -181,6 +336,24 @@ end
 -- CORE PROFILING
 -- ============================================================
 
+-- Resolve a dotted path like "Mod.Sub.Name" against the DF table.
+-- Returns: container_table, leaf_key, current_value (or nil if anything is missing).
+local function ResolveFunctionPath(path)
+    local container = DF
+    local lastDot = 1
+    while true do
+        local dot = path:find(".", lastDot, true)
+        if not dot then
+            local key = path:sub(lastDot)
+            return container, key, container[key]
+        end
+        local segment = path:sub(lastDot, dot - 1)
+        container = container[segment]
+        if type(container) ~= "table" then return nil end
+        lastDot = dot + 1
+    end
+end
+
 function Profiler:Start()
     if self.active then
         print("|cff00ff00DF Profiler:|r Already recording.")
@@ -191,36 +364,63 @@ function Profiler:Start()
     self.startTime = debugprofilestop()
     self.stopTime = 0
     wipe(self.data)
+    wipe(self.tickStats)
     wipe(self.originals)
+    tickRef[1] = 0
 
     local wrapped = 0
     local typeCheck = type  -- cache as upvalue
 
-    for _, name in ipairs(PROFILED_FUNCTIONS) do
-        local original = DF[name]
-        if original and type(original) == "function" then
-            self.originals[name] = original
+    for _, path in ipairs(PROFILED_FUNCTIONS) do
+        local container, key, original = ResolveFunctionPath(path)
+        if container and type(original) == "function" then
+            -- Save originals so Stop() can fully restore.
+            self.originals[path] = { container = container, key = key, original = original }
 
-            -- Pre-allocate a bucket for each frame type (upvalues = zero hash lookup per call)
-            -- P=Party, R=Raid, HP=Highlight Party, HR=Highlight Raid, ?=Other/no frame arg
-            local dP  = { calls = 0, total = 0, max = 0 }
-            local dR  = { calls = 0, total = 0, max = 0 }
-            local dHP = { calls = 0, total = 0, max = 0 }
-            local dHR = { calls = 0, total = 0, max = 0 }
-            local dU  = { calls = 0, total = 0, max = 0 }
+            -- Per-frame-type buckets. Each entry tracks: calls, total ms,
+            -- max single-call ms, and total memory delta (KB).
+            local dP  = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dR  = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dHP = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dHR = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dU  = { calls = 0, total = 0, max = 0, mem = 0 }
 
-            self.data[name .. "|P"]  = dP
-            self.data[name .. "|R"]  = dR
-            self.data[name .. "|HP"] = dHP
-            self.data[name .. "|HR"] = dHR
-            self.data[name .. "|?"]  = dU
+            self.data[path .. "|P"]  = dP
+            self.data[path .. "|R"]  = dR
+            self.data[path .. "|HP"] = dHP
+            self.data[path .. "|HR"] = dHR
+            self.data[path .. "|?"]  = dU
+
+            -- Per-function tick stats: how many times has this function been
+            -- called within the current frame tick? Tracks the worst tick.
+            local ts = { lastTick = -1, calls = 0, maxPerTick = 0 }
+            self.tickStats[path] = ts
 
             local orig = original
+            local tref = tickRef  -- upvalue cache
 
-            DF[name] = function(selfArg, a1, ...)
-                local t = debugprofilestop()
+            container[key] = function(selfArg, a1, ...)
+                -- Tick spike accounting (cheap: 1 table read + 2 compares)
+                local cur = tref[1]
+                if ts.lastTick ~= cur then
+                    ts.lastTick = cur
+                    ts.calls = 0
+                end
+                ts.calls = ts.calls + 1
+                if ts.calls > ts.maxPerTick then
+                    ts.maxPerTick = ts.calls
+                end
+
+                -- Time + memory delta around the call.
+                -- collectgarbage("count") returns kilobytes; deltas are exact
+                -- between calls, but a GC cycle running mid-call shows as
+                -- negative — we clamp to 0 to avoid skew.
+                local m0 = collectgarbage("count")
+                local t0 = debugprofilestop()
                 local r1, r2, r3, r4, r5 = orig(selfArg, a1, ...)
-                local elapsed = debugprofilestop() - t
+                local elapsed = debugprofilestop() - t0
+                local mDelta = collectgarbage("count") - m0
+                if mDelta < 0 then mDelta = 0 end
 
                 -- Classify: 2-3 field lookups on the first argument
                 local bucket
@@ -235,6 +435,7 @@ function Profiler:Start()
                 end
                 bucket.calls = bucket.calls + 1
                 bucket.total = bucket.total + elapsed
+                bucket.mem = bucket.mem + mDelta
                 if elapsed > bucket.max then bucket.max = elapsed end
 
                 return r1, r2, r3, r4, r5
@@ -244,6 +445,9 @@ function Profiler:Start()
         end
     end
 
+    -- Start the per-tick OnUpdate that drives spike detection.
+    tickFrame:Show()
+
     print(format("|cff00ff00DF Profiler:|r Recording. %d functions instrumented.", wrapped))
 end
 
@@ -252,10 +456,13 @@ function Profiler:Stop()
     self.stopTime = debugprofilestop()
     self.active = false
 
-    -- Restore all original functions immediately
-    for name, original in pairs(self.originals) do
-        DF[name] = original
+    -- Restore originals on their actual container tables (supports dotted paths)
+    for _, entry in pairs(self.originals) do
+        entry.container[entry.key] = entry.original
     end
+
+    -- Stop the per-tick OnUpdate so profiler has zero idle cost when stopped.
+    tickFrame:Hide()
 
     print(format("|cff00ff00DF Profiler:|r Stopped after %s.", FormatElapsed(self:GetElapsedSeconds())))
 end
@@ -265,6 +472,12 @@ function Profiler:Reset()
         d.calls = 0
         d.total = 0
         d.max = 0
+        d.mem = 0
+    end
+    for _, ts in pairs(self.tickStats) do
+        ts.lastTick = -1
+        ts.calls = 0
+        ts.maxPerTick = 0
     end
     if self.active then
         self.startTime = debugprofilestop()
@@ -305,6 +518,7 @@ local TYPE_LABELS = {
 function Profiler:GetSortedResults()
     local results = {}
     local grandTotal = 0
+    local tickStats = self.tickStats
 
     if self.splitByFrame then
         -- Split mode: one row per function+type combination (only those with calls)
@@ -318,12 +532,18 @@ function Profiler:GetSortedResults()
                     suffix = ""
                 end
                 local displayName = baseName .. (TYPE_LABELS[suffix] or suffix)
+                local ts = tickStats[baseName]
                 results[#results + 1] = {
                     name = displayName,
                     calls = d.calls,
                     total = d.total,
                     avg = d.total / d.calls,
                     max = d.max,
+                    -- Memory: bytes per call (KB delta * 1024 / calls)
+                    mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                    -- Peak/tick is per-function, not per-bucket; show the same
+                    -- value on every split row for that function.
+                    peak = ts and ts.maxPerTick or 0,
                 }
             end
         end
@@ -335,12 +555,13 @@ function Profiler:GetSortedResults()
             if d.calls > 0 then
                 local baseName = key:match("^(.+)|") or key
                 if not aggregated[baseName] then
-                    aggregated[baseName] = { calls = 0, total = 0, max = 0 }
+                    aggregated[baseName] = { calls = 0, total = 0, max = 0, mem = 0 }
                     aggOrder[#aggOrder + 1] = baseName
                 end
                 local agg = aggregated[baseName]
                 agg.calls = agg.calls + d.calls
                 agg.total = agg.total + d.total
+                agg.mem = agg.mem + d.mem
                 if d.max > agg.max then agg.max = d.max end
             end
         end
@@ -348,12 +569,15 @@ function Profiler:GetSortedResults()
         for _, baseName in ipairs(aggOrder) do
             local agg = aggregated[baseName]
             grandTotal = grandTotal + agg.total
+            local ts = tickStats[baseName]
             results[#results + 1] = {
                 name = baseName,
                 calls = agg.calls,
                 total = agg.total,
                 avg = agg.total / agg.calls,
                 max = agg.max,
+                mem = agg.calls > 0 and (agg.mem * 1024 / agg.calls) or 0,
+                peak = ts and ts.maxPerTick or 0,
             }
         end
     end
@@ -421,12 +645,14 @@ function Profiler:PrintResults()
         elseif r.pct >= 10 then color = "|cffffff88"
         else color = "|cff88ff88" end
 
-        print(format("  %s%2d. %-36s|r  %s calls  %sms  %sus avg  %sus max  %s%5.1f%%|r",
+        print(format("  %s%2d. %-36s|r  %s calls  %sms  %sus avg  %sus max  pk %s  %sB  %s%5.1f%%|r",
             color, i, r.name,
             CommaNumber(r.calls),
             FormatMs(r.total),
             FormatUs(r.avg),
             FormatUs(r.max),
+            FormatPeak(r.peak),
+            FormatBytes(r.mem),
             color, r.pct
         ))
     end
@@ -441,7 +667,7 @@ end
 
 local ROW_HEIGHT = 18
 local MAX_ROWS = 30
-local FRAME_WIDTH = 600
+local FRAME_WIDTH = 720
 local CONTENT_LEFT = 10
 local CONTENT_RIGHT = -10
 local HEADER_Y = -66
@@ -449,12 +675,14 @@ local DATA_START_Y = -86
 
 -- Column layout
 local COLUMNS = {
-    { key = "name",  label = "Function",  width = 220, align = "LEFT" },
-    { key = "calls", label = "Calls",     width = 56,  align = "RIGHT" },
-    { key = "total", label = "Total ms", width = 62,  align = "RIGHT" },
-    { key = "avg",   label = "Avg us",    width = 56,  align = "RIGHT" },
-    { key = "max",   label = "Max us",    width = 56,  align = "RIGHT" },
-    { key = "pct",   label = "%",         width = 48,  align = "RIGHT" },
+    { key = "name",  label = "Function",  width = 210, align = "LEFT" },
+    { key = "calls", label = "Calls",     width = 54,  align = "RIGHT" },
+    { key = "total", label = "Total ms",  width = 60,  align = "RIGHT" },
+    { key = "avg",   label = "Avg us",    width = 52,  align = "RIGHT" },
+    { key = "max",   label = "Max us",    width = 52,  align = "RIGHT" },
+    { key = "peak",  label = "Peak/tk",   width = 52,  align = "RIGHT" },
+    { key = "mem",   label = "Bytes",     width = 56,  align = "RIGHT" },
+    { key = "pct",   label = "%",         width = 46,  align = "RIGHT" },
 }
 
 local CONTENT_WIDTH = 0
@@ -580,6 +808,25 @@ UpdateUI = function()
 
             row.cols.max:SetText(FormatUs(r.max))
             row.cols.max:SetTextColor(0.7, 0.7, 0.7)
+
+            row.cols.peak:SetText(FormatPeak(r.peak))
+            -- Tint Peak/tick yellow when it's high (>=20 calls in one frame)
+            -- — that's the cascade signal we're hunting.
+            if r.peak >= 20 then
+                row.cols.peak:SetTextColor(1, 0.85, 0.4)
+            else
+                row.cols.peak:SetTextColor(0.7, 0.7, 0.7)
+            end
+
+            row.cols.mem:SetText(FormatBytes(r.mem))
+            -- Tint Mem yellow when bytes/call >= 256, red when >= 1024
+            if r.mem >= 1024 then
+                row.cols.mem:SetTextColor(1, 0.5, 0.5)
+            elseif r.mem >= 256 then
+                row.cols.mem:SetTextColor(1, 0.85, 0.4)
+            else
+                row.cols.mem:SetTextColor(0.7, 0.7, 0.7)
+            end
 
             row.cols.pct:SetText(format("%.1f%%", r.pct))
             row.cols.pct:SetTextColor(cr, cg, cb)
@@ -843,7 +1090,7 @@ function Profiler:CreateUI()
     local infoLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     infoLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
     infoLabel:SetTextColor(0.4, 0.4, 0.4)
-    infoLabel:SetText("Times inclusive (include sub-calls)  |  1ms = 1000us")
+    infoLabel:SetText("Inclusive times  |  Peak/tk = max calls in one frame  |  Bytes = avg alloc per call")
 
     -- Live refresh via OnUpdate
     f.elapsed = 0
