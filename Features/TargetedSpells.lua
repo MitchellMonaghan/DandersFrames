@@ -2717,9 +2717,21 @@ function DF:CreatePersonalTargetedSpellsMover()
     label:SetTextColor(1, 1, 1, 1)
     mover.label = label
 
+    -- Left-click switches the shared position panel to our mode.
+    mover:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("personal")
+        end
+    end)
+
     mover:SetScript("OnDragStart", function(self)
+        -- Switch the position panel to personal mode so nudge
+        -- buttons affect us, not the party container.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("personal")
+        end
         self:StartMoving()
-        
+
         local db = DF:GetDB()
         self:SetScript("OnUpdate", function()
             -- Update icons to follow mover during drag
@@ -4352,7 +4364,19 @@ local function TargetedList_CreateMover()
     label:SetTextColor(1, 1, 1, 1)
     mover.label = label
 
+    -- Left-click switches the shared position panel to our mode.
+    mover:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("targetedList")
+        end
+    end)
+
     mover:SetScript("OnDragStart", function(self)
+        -- Also switch mode on drag start so the panel reflects our
+        -- position live as the user nudges.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("targetedList")
+        end
         self:StartMoving()
         local db = DF:GetDB()
         self:SetScript("OnUpdate", function()
@@ -4409,6 +4433,7 @@ local function TargetedList_CreateMover()
     end)
 
     targetedListMover = mover
+    DF.targetedListMoverFrame = mover  -- exposed for position panel apply()
     return mover
 end
 

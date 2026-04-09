@@ -710,8 +710,20 @@ function DF:CreateRaidMoverFrame()
     -- Shared drag state between OnDragStart/OnUpdate/OnDragStop
     local raidDragOffsetX, raidDragOffsetY = 0, 0
 
+    -- Left-click switches the shared position panel to raid mode.
+    mover:HookScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("raid")
+        end
+    end)
+
     mover:SetScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
+        -- Switch the position panel to raid mode so nudge buttons
+        -- affect the raid container.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("raid")
+        end
         -- Use saved db position as truth — avoids all GetCenter/GetLeft
         -- ambiguity on scaled frames
         local db = DF:GetRaidDB()
