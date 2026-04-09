@@ -1781,28 +1781,11 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListProcessCastStart then
             DF._TargetedListProcessCastStart(unit, event, ...)
         end
-    elseif event == "NAME_PLATE_UNIT_ADDED" then
-        -- Newly-seen nameplate may already be casting — probe and
-        -- schedule a pickup just like a normal start event.
-        if DF._TargetedListProcessCastStart then
-            DF._TargetedListProcessCastStart(unit, event, ...)
-        end
-    elseif event == "UNIT_TARGET" then
-        -- Enemy swapped target mid-cast. If they're casting and the
-        -- new target is a party member we want the bar; if not we
-        -- want the old bar gone. Cheapest correct thing is to probe
-        -- via the same pickup path — the delayed handler will either
-        -- refresh or bail based on the current target.
-        if DF._TargetedListProcessCastStart then
-            DF._TargetedListProcessCastStart(unit, event, ...)
-        end
-        -- Also drop any existing tracking for this unit, so if the
-        -- new target is no longer a party member the bar goes away
-        -- immediately rather than lingering until CHANNEL/CAST_STOP.
-        -- The delayed re-pickup above will recreate it if needed.
-        if DF._TargetedListOnCastStop then
-            DF._TargetedListOnCastStop(unit, event, ...)
-        end
+    -- NAME_PLATE_UNIT_ADDED and UNIT_TARGET are intentionally NOT
+    -- routed to TargetedList — they don't carry spellId, and the
+    -- secret-taint workaround (gotcha #0) makes the API-only re-pickup
+    -- path fragile. Existing personal/group handlers above still see
+    -- them. See TargetedList_ProcessCastStart for the rationale.
     elseif event == "UNIT_SPELLCAST_STOP"
            or event == "UNIT_SPELLCAST_FAILED"
            or event == "UNIT_SPELLCAST_FAILED_QUIET"
@@ -3791,63 +3774,71 @@ local function TargetedList_IsRelevantCaster(casterUnit)
     return true
 end
 
--- Unified reader for both cast and channel data. Returns a small
--- table with the fields we need, or nil if the unit is not casting.
--- The positional offsets here come straight from Blizzard's current
--- retail API — note that castID is at position 7 for casts but
--- notInterruptible is at position 7 for channels, so the offsets
--- differ and must be kept in sync.
-local function TargetedList_ReadCastData(casterUnit, isChannel)
-    if isChannel then
-        local name, _, texture, startMS, endMS, _, notInterruptible, spellId =
-            TL_UnitChannelInfo(casterUnit)
-        if not name then return nil end
-        return {
-            name = name,
-            texture = texture,
-            startTime = (startMS or 0) / 1000,
-            duration = ((endMS or 0) - (startMS or 0)) / 1000,
-            spellId = spellId,
-            uninterruptible = notInterruptible, -- secret-tainted (gotcha #8)
-            apiCastId = nil,                     -- channels don't return one
-            isChannel = true,
-        }
-    else
-        local name, _, texture, startMS, endMS, _, apiCastId, notInterruptible, spellId =
-            TL_UnitCastingInfo(casterUnit)
-        if not name then return nil end
-        return {
-            name = name,
-            texture = texture,
-            startTime = (startMS or 0) / 1000,
-            duration = ((endMS or 0) - (startMS or 0)) / 1000,
-            spellId = spellId,
-            uninterruptible = notInterruptible, -- secret-tainted (gotcha #8)
-            apiCastId = apiCastId,
-            isChannel = false,
-        }
-    end
-end
+-- File-scope cached duration APIs (added for the secret-taint fix)
+local TL_UnitCastingDuration_API = UnitCastingDuration
+local TL_UnitChannelDuration_API = UnitChannelDuration
+local TL_C_Spell_GetSpellName = C_Spell and C_Spell.GetSpellName
+local TL_C_Spell_GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
+local TL_C_Spell_IsSpellImportant = C_Spell and C_Spell.IsSpellImportant
+
+-- IMPORTANT — secret-taint workaround (gotcha #0).
+--
+-- On nameplate units in instance combat, UnitCastingInfo and
+-- UnitChannelInfo return SECRET-TAINTED values for the time fields
+-- (startMS, endMS). Lua refuses arithmetic on secret values, so any
+-- code that does (endMS - startMS) / 1000 raises:
+--   "attempt to perform arithmetic on a secret number value"
+--
+-- The mitigation here mirrors TS3's approach (Driver.lua lines
+-- 391-407):
+--   * Don't extract time fields from Unit{Casting,Channel}Info — only
+--     pull spellId (and castID for casts) via positional discard.
+--   * Get spellId from the EVENT payload when possible — it's clean.
+--   * Use UnitCastingDuration / UnitChannelDuration for duration.
+--     The return value may itself be secret-tainted; treat it as
+--     opaque and only feed it to secret-safe sinks at render time.
+--   * GetTime() at pickup as a clean local approximation of start.
+--   * C_Spell.GetSpellName / GetSpellTexture for clean metadata.
 
 -- Delayed pickup: called 0.2s after START via C_Timer. Re-validates
--- the cast is still active (may have been cancelled in the window),
--- reads data, matches castId (gotcha #2), and records state.
-local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId)
+-- the cast is still active, matches castId (gotcha #2), records state.
+-- All field reads avoid arithmetic on secret-tainted values (gotcha #0).
+local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId, eventSpellId)
     if not TargetedList_IsActive() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
-    local data = TargetedList_ReadCastData(casterUnit, isChannel)
-    if not data then return end          -- cast ended during the delay window
-    if data.duration <= 0 then return end
+    -- Pull only the fields we can safely use. The leading positional
+    -- discards drop name/text/texture/startMS/endMS/isTradeSkill which
+    -- are all secret-tainted on nameplates. We keep castID (casts only),
+    -- notInterruptible, and spellId. Their secret-tainting is documented
+    -- per-field below.
+    local apiCastId, notInterruptible, apiSpellId
+    if isChannel then
+        -- UnitChannelInfo: name,text,texture,startMS,endMS,isTradeSkill,notInterruptible,spellID,...
+        local _, _, _, _, _, _, ni, sid = TL_UnitChannelInfo(casterUnit)
+        notInterruptible = ni        -- secret-tainted; only fed to SetVertexColorFromBoolean
+        apiSpellId = sid             -- may be secret; we prefer eventSpellId
+    else
+        -- UnitCastingInfo: name,text,texture,startMS,endMS,isTradeSkill,castID,notInterruptible,spellID
+        local _, _, _, _, _, _, cid, ni, sid = TL_UnitCastingInfo(casterUnit)
+        apiCastId = cid              -- secret-tainted; only used for equality compare
+        notInterruptible = ni
+        apiSpellId = sid
+    end
 
-    -- If we had a scheduled castId and the API now reports a different
-    -- one, a new cast started on this unit during the delay window.
-    -- The scheduled pickup is stale; bail. (gotcha #2)
-    if scheduledCastId and data.apiCastId and data.apiCastId ~= scheduledCastId then
+    -- Pick the cleanest spellId we have. Event payload values are
+    -- always clean — that's our preferred source. The API spellId is
+    -- a fallback for re-pickup paths that don't carry an event.
+    local spellId = eventSpellId or apiSpellId
+    if spellId == nil then return end
+
+    -- Cast-ID match (gotcha #2). Equality compare on (possibly secret)
+    -- strings/numbers is permitted; arithmetic isn't.
+    if scheduledCastId and apiCastId and apiCastId ~= scheduledCastId then
         return
     end
 
-    -- Filter: is this cast targeting a party member?
+    -- Filter: targeting party member?
     local isTargetingGroup, targetUnit = TargetedList_IsCastTargetingGroupMember(casterUnit)
     if not isTargetingGroup then return end
 
@@ -3859,71 +3850,85 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId
 
     -- Important-spells filter
     if party and party.targetedListImportantOnly
-       and C_Spell and C_Spell.IsSpellImportant
-       and not C_Spell.IsSpellImportant(data.spellId) then
+       and TL_C_Spell_IsSpellImportant
+       and not TL_C_Spell_IsSpellImportant(spellId) then
         return
     end
 
+    -- Clean metadata via C_Spell.* — these accept clean spellId and
+    -- return clean values, safe for string.format / SetText / etc.
+    local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spellId)
+    local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spellId)
+
+    -- Target name/class come from confirmed-clean APIs.
     local targetName = TL_UnitSpellTargetName(casterUnit)
     local targetClass = TL_UnitSpellTargetClass(casterUnit)
 
+    -- Duration via the dedicated API. Treat as opaque — never apply
+    -- arithmetic, comparison, or string.format to it. The render
+    -- pipeline (commit #5) will pipe it into secret-safe sinks.
+    local duration
+    if isChannel then
+        duration = TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit)
+    else
+        duration = TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit)
+    end
+
     activeTargetedListCasts[casterUnit] = {
-        castId          = data.apiCastId,   -- may be nil for channels
-        spellId         = data.spellId,
-        spellName       = data.name,
-        spellTexture    = data.texture,
-        isChannel       = data.isChannel,
-        startTime       = data.startTime,
-        duration        = data.duration,
-        endTime         = data.startTime + data.duration,
+        castId          = apiCastId,
+        spellId         = spellId,
+        spellName       = spellName,
+        spellTexture    = spellTexture,
+        isChannel       = isChannel,
+        startTime       = TL_GetTime(),       -- clean local approximation
+        duration        = duration,           -- opaque; may be secret-tainted
         targetUnit      = targetUnit,
         targetName      = targetName,
         targetClass     = targetClass,
-        uninterruptible = data.uninterruptible, -- secret-tainted; only ever fed to SetVertexColorFromBoolean
+        uninterruptible = notInterruptible,   -- secret-tainted; SetVertexColorFromBoolean only
         casterUnit      = casterUnit,
     }
 
     -- Debug visibility until commit #5 attaches real bars.
+    -- Only formatting clean values: spellName, targetName, channel flag.
+    -- Duration is intentionally omitted — it may be secret-tainted and
+    -- string.format would fail on it.
     if DF.Debug then
-        DF:Debug("TARGETEDLIST", "+cast %s: %s -> %s (%s, %.1fs)",
-            casterUnit, tostring(data.name), tostring(targetName),
-            tostring(targetClass), data.duration)
+        DF:Debug("TARGETEDLIST", "+cast %s: %s -> %s%s",
+            casterUnit, tostring(spellName), tostring(targetName),
+            isChannel and " [channel]" or "")
     end
 end
 
--- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START,
--- and also from NAME_PLATE_UNIT_ADDED / UNIT_TARGET re-pickup paths.
--- Schedules the 0.2s delayed pickup — cast data isn't available yet.
+-- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START.
+-- Schedules the 0.2s delayed pickup — cast data isn't available yet
+-- when the START event fires (gotcha #1).
+--
+-- Note: NAME_PLATE_UNIT_ADDED and UNIT_TARGET re-pickup paths are
+-- intentionally NOT routed here. They don't carry spellId in their
+-- event payloads, so we'd have to read it from the API — but the
+-- secret-taint workaround (gotcha #0) makes that path fragile. The
+-- visible cost is missing a bar when a nameplate enters range while
+-- the mob is mid-cast (gap bounded by the cast remaining duration).
 local function TargetedList_ProcessCastStart(casterUnit, event, ...)
     if not TargetedList_IsActive() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
     if not TL_C_Timer_After then return end
 
-    -- Determine isChannel from the event. For NAMEPLATE_UNIT_ADDED /
-    -- UNIT_TARGET we don't know yet; probe both APIs.
     local isChannel
     if event == "UNIT_SPELLCAST_CHANNEL_START" then
         isChannel = true
-    elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_EMPOWER_START" then
+    else  -- UNIT_SPELLCAST_START / UNIT_SPELLCAST_EMPOWER_START
         isChannel = false
-    else
-        -- Probe-based: prefer cast info, fall back to channel
-        if TL_UnitCastingInfo(casterUnit) then
-            isChannel = false
-        elseif TL_UnitChannelInfo(casterUnit) then
-            isChannel = true
-        else
-            return  -- not actually casting
-        end
     end
 
-    -- castGuid is the first vararg after `unit` (consumed by OnEvent).
-    -- For empower Blizzard's payload is the same shape (unit, castGuid,
-    -- spellId) on current retail; no extra offset needed. (gotcha #6)
-    local castGuid = select(1, ...)
+    -- Event payload (after `unit` consumed by OnEvent): (castGuid, spellId).
+    -- These are clean values from the event dispatch. For empower the
+    -- shape matches regular start on current retail. (gotcha #6)
+    local castGuid, eventSpellId = ...
 
     TL_C_Timer_After(TARGETEDLIST_PICKUP_DELAY, function()
-        TargetedList_DelayedPickup(casterUnit, isChannel, castGuid)
+        TargetedList_DelayedPickup(casterUnit, isChannel, castGuid, eventSpellId)
     end)
 end
 
@@ -3938,9 +3943,11 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
 
     -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
     -- emit SUCCEEDED once per tick while still channeling. Ignore.
-    if event == "UNIT_SPELLCAST_SUCCEEDED"
-       and TL_UnitChannelInfo(casterUnit) ~= nil then
-        return
+    -- We pull only the spellId via positional discard to avoid
+    -- truth-testing the (possibly secret) first return value.
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local _, _, _, _, _, _, _, channelSpellId = TL_UnitChannelInfo(casterUnit)
+        if channelSpellId ~= nil then return end
     end
 
     -- Gotcha #2: match castId for casts (channels don't have one).
