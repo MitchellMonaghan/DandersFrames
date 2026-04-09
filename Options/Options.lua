@@ -5451,6 +5451,226 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end
     end
 
+    -- ============================================================
+    -- Indicators > Targeted List (ALPHA / BETA ONLY)
+    -- ============================================================
+    -- Stacked cast-bar display showing enemy casts targeting party
+    -- members. Replaces the group-frame Targeted Spells icons that
+    -- Blizzard's 2026-04-07 UnitIsUnit hotfix permanently broke.
+    --
+    -- The entire page registration is gated by DF.RELEASE_CHANNEL —
+    -- on stable builds no sub-tab is created, no navigation entry
+    -- exists, and users never see this feature. The db defaults and
+    -- all lifecycle code are also gated at their own check sites.
+    if DF.RELEASE_CHANNEL ~= "release" then
+        local pageTargetedList = CreateSubTab("indicators", "indicators_targetedlist", L["Targeted List"])
+        BuildPage(pageTargetedList, function(self, db, Add, AddSpace, AddSyncPoint)
+            -- Copy button at top
+            Add(CreateCopyButton(self.child, {"targetedList"}, L["Targeted List"], "indicators_targetedlist"), 25, 2)
+
+            AddSpace(6, "both")
+
+            -- Alpha warning banner
+            local banner = GUI:CreateLabel(self.child,
+                "|cffffd100" .. L["Targeted List — Alpha feature, behavior may change"] .. "|r", 520)
+            Add(banner, 22, "both")
+
+            AddSpace(6, "both")
+
+            local currentSection = nil
+
+            local function AddToSection(widget, height, col)
+                Add(widget, height, col)
+                if currentSection then currentSection:RegisterChild(widget) end
+                return widget
+            end
+
+            local growthOptions = { UP = L["Up"], DOWN = L["Down"] }
+            local outlineOptions = { NONE = L["None"], OUTLINE = L["Outline"], THICKOUTLINE = L["Thick Outline"], SHADOW = L["Shadow"] }
+            local iconPosOptions = { LEFT = L["Left"], RIGHT = L["Right"] }
+            local stylePresetOptions = {
+                DEFAULT = L["Default"],
+                COMPACT = L["Compact"],
+                DETAILED = L["Detailed"],
+                MINIMAL = L["Minimal"],
+            }
+            local sortOptions = {
+                NEWEST = L["Newest First"],
+                SHORTEST = L["Shortest Remaining"],
+                INTERRUPTIBLE_FIRST = L["Interruptible First"],
+                TARGET_ORDER = L["Target Order"],
+            }
+
+            local function HideTLOptions(d) return not d.targetedListEnabled end
+            local function HideIconOptions(d) return not d.targetedListEnabled or not d.targetedListShowIcon end
+            local function HideBorderOptions(d) return not d.targetedListEnabled or not d.targetedListShowBorder end
+            local function HideTargetNameOptions(d) return not d.targetedListEnabled or not d.targetedListShowTargetName end
+
+            local function TargetedListUpdate()
+                if DF.UpdateTargetedListLayout then DF:UpdateTargetedListLayout() end
+            end
+
+            -- ===== SETTINGS GROUP (Column 1) =====
+            local settingsGroup = GUI:CreateSettingsGroup(self.child, 280)
+            settingsGroup:AddWidget(GUI:CreateHeader(self.child, L["Settings"]), 40)
+            settingsGroup:AddWidget(GUI:CreateLabel(self.child,
+                L["Shows an icon when an enemy is casting a spell targeting a party/raid member."], 250), 35)
+            settingsGroup:AddWidget(GUI:CreateLabel(self.child,
+                "|cff888888" .. L["To reposition: Unlock frames (/df unlock) and drag the mover."] .. "|r", 250), 30)
+            settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable"], db, "targetedListEnabled", function()
+                self:RefreshStates()
+                if DF.ToggleTargetedList then DF:ToggleTargetedList(db.targetedListEnabled) end
+            end), 30)
+            local tlImportantOnly = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Important Spells Only"], db, "targetedListImportantOnly", TargetedListUpdate), 30)
+            tlImportantOnly.disableOn = HideTLOptions
+            local tlHideOwn = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Own Casts"], db, "targetedListHideOwnCasts", TargetedListUpdate), 30)
+            tlHideOwn.disableOn = HideTLOptions
+            local tlMaxBars = settingsGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Bars"], 1, 20, 1, db, "targetedListMaxBars", TargetedListUpdate, nil, true), 55)
+            tlMaxBars.disableOn = HideTLOptions
+            Add(settingsGroup, nil, 1)
+
+            -- ===== CONTENT TYPES GROUP (Column 2) =====
+            local contentGroup = GUI:CreateSettingsGroup(self.child, 280)
+            contentGroup:AddWidget(GUI:CreateHeader(self.child, L["Content Types"]), 40)
+            contentGroup:AddWidget(GUI:CreateLabel(self.child, L["Show in content types:"], 250), 25)
+            local tlOpenWorld = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Open World"], db, "targetedListInOpenWorld", TargetedListUpdate), 25)
+            tlOpenWorld.disableOn = HideTLOptions
+            local tlDungeons = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Dungeons"], db, "targetedListInDungeons", TargetedListUpdate), 25)
+            tlDungeons.disableOn = HideTLOptions
+            local tlArena = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Arena"], db, "targetedListInArena", TargetedListUpdate), 25)
+            tlArena.disableOn = HideTLOptions
+            local tlRaids = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Raids"], db, "targetedListInRaids", TargetedListUpdate), 25)
+            tlRaids.disableOn = HideTLOptions
+            local tlBGs = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Battlegrounds"], db, "targetedListInBattlegrounds", TargetedListUpdate), 25)
+            tlBGs.disableOn = HideTLOptions
+            contentGroup.hideOn = HideTLOptions
+            Add(contentGroup, nil, 2)
+
+            AddSpace(10, "both")
+
+            -- ===== LAYOUT SECTION =====
+            local layoutSection = Add(GUI:CreateCollapsibleSection(self.child, L["Layout"], true), 36, "both")
+            currentSection = layoutSection
+
+            local layoutGroup = GUI:CreateSettingsGroup(self.child, 260)
+            layoutGroup:AddWidget(GUI:CreateHeader(self.child, L["Size & Spacing"]), 40)
+            local tlW = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Width"], 120, 600, 1, db, "targetedListWidth", TargetedListUpdate, nil, true), 55)
+            tlW.disableOn = HideTLOptions
+            local tlH = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Height"], 14, 48, 1, db, "targetedListHeight", TargetedListUpdate, nil, true), 55)
+            tlH.disableOn = HideTLOptions
+            local tlSpace = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Spacing"], 0, 10, 1, db, "targetedListSpacing", TargetedListUpdate, nil, true), 55)
+            tlSpace.disableOn = HideTLOptions
+            local tlGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Growth Direction"], growthOptions, db, "targetedListGrowth", TargetedListUpdate), 55)
+            tlGrowth.disableOn = HideTLOptions
+            local tlSort = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Sort Order"], sortOptions, db, "targetedListSortOrder", TargetedListUpdate), 55)
+            tlSort.disableOn = HideTLOptions
+            AddToSection(layoutGroup, nil, 1)
+
+            local presetGroup = GUI:CreateSettingsGroup(self.child, 260)
+            presetGroup:AddWidget(GUI:CreateHeader(self.child, L["Bar Style"]), 40)
+            local tlPreset = presetGroup:AddWidget(GUI:CreateDropdown(self.child, L["Bar Style"], stylePresetOptions, db, "targetedListStylePreset", TargetedListUpdate), 55)
+            tlPreset.disableOn = HideTLOptions
+            local tlTexture = presetGroup:AddWidget(GUI:CreateTextureDropdown(self.child, L["Texture"], db, "targetedListTexture", TargetedListUpdate), 55)
+            tlTexture.disableOn = HideTLOptions
+            local tlBgAlpha = presetGroup:AddWidget(GUI:CreateSlider(self.child, L["Background Alpha"], 0, 1, 0.05, db, "targetedListBackgroundAlpha", TargetedListUpdate, nil, true), 55)
+            tlBgAlpha.disableOn = HideTLOptions
+            local tlShowBorder = presetGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Border"], db, "targetedListShowBorder", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlShowBorder.disableOn = HideTLOptions
+            local tlBorderColor = presetGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Border Color"], db, "targetedListBorderColor", true, TargetedListUpdate), 35)
+            tlBorderColor.disableOn = HideBorderOptions
+            AddToSection(presetGroup, nil, 2)
+
+            currentSection = nil
+            AddSpace(10, "both")
+
+            -- ===== APPEARANCE SECTION =====
+            local appearanceSection = Add(GUI:CreateCollapsibleSection(self.child, L["Appearance"], true), 36, "both")
+            currentSection = appearanceSection
+
+            local colorGroup = GUI:CreateSettingsGroup(self.child, 260)
+            colorGroup:AddWidget(GUI:CreateHeader(self.child, L["Bar Color"]), 40)
+            local tlInterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Interruptible Color"], db, "targetedListInterruptibleColor", true, TargetedListUpdate), 35)
+            tlInterColor.disableOn = HideTLOptions
+            local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate), 35)
+            tlUninterColor.disableOn = HideTLOptions
+            AddToSection(colorGroup, nil, 1)
+
+            local iconGroup = GUI:CreateSettingsGroup(self.child, 260)
+            iconGroup:AddWidget(GUI:CreateHeader(self.child, L["Icon"]), 40)
+            local tlShowIcon = iconGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Icon"], db, "targetedListShowIcon", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlShowIcon.disableOn = HideTLOptions
+            local tlIconPos = iconGroup:AddWidget(GUI:CreateDropdown(self.child, L["Icon Position"], iconPosOptions, db, "targetedListIconPosition", TargetedListUpdate), 55)
+            tlIconPos.disableOn = HideIconOptions
+            local tlZoom = iconGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Zoom Icon"], db, "targetedListZoomIcon", TargetedListUpdate), 30)
+            tlZoom.disableOn = HideIconOptions
+            AddToSection(iconGroup, nil, 2)
+
+            currentSection = nil
+            AddSpace(10, "both")
+
+            -- ===== TEXT SECTION =====
+            local textSection = Add(GUI:CreateCollapsibleSection(self.child, L["Text"], true), 36, "both")
+            currentSection = textSection
+
+            local textToggleGroup = GUI:CreateSettingsGroup(self.child, 260)
+            textToggleGroup:AddWidget(GUI:CreateHeader(self.child, L["Show"]), 40)
+            local tlShowSpellName = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Spell Name"], db, "targetedListShowSpellName", TargetedListUpdate), 30)
+            tlShowSpellName.disableOn = HideTLOptions
+            local tlShowTargetName = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Target Name"], db, "targetedListShowTargetName", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlShowTargetName.disableOn = HideTLOptions
+            local tlShowDuration = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Duration"], db, "targetedListShowDuration", TargetedListUpdate), 30)
+            tlShowDuration.disableOn = HideTLOptions
+            local tlClassColor = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Target Name Class Color"], db, "targetedListTargetNameClassColor", TargetedListUpdate), 30)
+            tlClassColor.disableOn = HideTargetNameOptions
+            local tlArrow = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Arrow Prefix"], db, "targetedListShowArrowPrefix", TargetedListUpdate), 30)
+            tlArrow.disableOn = HideTargetNameOptions
+            AddToSection(textToggleGroup, nil, 1)
+
+            local fontGroup = GUI:CreateSettingsGroup(self.child, 260)
+            fontGroup:AddWidget(GUI:CreateHeader(self.child, L["Font"]), 40)
+            local tlFont = fontGroup:AddWidget(GUI:CreateFontDropdown(self.child, L["Font"], db, "targetedListFont", TargetedListUpdate), 55)
+            tlFont.disableOn = HideTLOptions
+            local tlFontSize = fontGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 8, 24, 1, db, "targetedListFontSize", TargetedListUpdate, nil, true), 55)
+            tlFontSize.disableOn = HideTLOptions
+            local tlFontOutline = fontGroup:AddWidget(GUI:CreateDropdown(self.child, L["Font Outline"], outlineOptions, db, "targetedListFontOutline", TargetedListUpdate), 55)
+            tlFontOutline.disableOn = HideTLOptions
+            AddToSection(fontGroup, nil, 2)
+
+            currentSection = nil
+            AddSpace(10, "both")
+
+            -- ===== BEHAVIOR SECTION =====
+            local behaviorSection = Add(GUI:CreateCollapsibleSection(self.child, L["Behavior"], true), 36, "both")
+            currentSection = behaviorSection
+
+            local timingGroup = GUI:CreateSettingsGroup(self.child, 260)
+            timingGroup:AddWidget(GUI:CreateHeader(self.child, L["Timing"]), 40)
+            local tlFadeOut = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Fade Out Duration"], 0, 1, 0.05, db, "targetedListFadeOutDuration", TargetedListUpdate, nil, true), 55)
+            tlFadeOut.disableOn = HideTLOptions
+            local tlFlashDur = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Interrupted Flash Duration"], 0, 2, 0.1, db, "targetedListInterruptedFlashDuration", TargetedListUpdate, nil, true), 55)
+            tlFlashDur.disableOn = HideTLOptions
+            AddToSection(timingGroup, nil, 1)
+
+            currentSection = nil
+
+            -- See Also links
+            AddSpace(20, "both")
+            Add(GUI:CreateSeeAlso(self.child, {
+                {pageId = "indicators_targetedspells", label = L["Targeted Spells"]},
+                {pageId = "indicators_personal_targeted", label = L["Personal Targeted"]},
+            }), 30, "both")
+        end)
+    end
+
     -- Indicators > Personal Targeted Spells (center of screen display for player)
     local pagePersonalTargeted = CreateSubTab("indicators", "indicators_personal_targeted", L["Personal Targeted"])
     BuildPage(pagePersonalTargeted, function(self, db, Add, AddSpace, AddSyncPoint)
