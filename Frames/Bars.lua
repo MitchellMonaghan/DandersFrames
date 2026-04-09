@@ -270,35 +270,171 @@ end
 -- ============================================================
 -- ABSORB BAR LOGIC
 -- ============================================================
+--
+-- UpdateAbsorb performance pattern (2026-04-09):
+--
+-- UpdateAbsorb fires on UNIT_ABSORB_AMOUNT_CHANGED (plus cascading
+-- calls from UpdateHealthFast, UpdateUnitFrame, FullFrameRefresh, and
+-- several other sites). In raid combat it hits 90-100 calls per game
+-- frame during Peak/tk bursts.
+--
+-- Pre-refactor the function did a full layout rebuild on every call:
+-- 20+ frame API calls for anchors/strata/level/orientation, texture/
+-- color/blend mode re-apply, overshield glow repositioning (another
+-- 12+ API calls), etc. Almost all of this is layout state that only
+-- changes when the user adjusts settings or the parent frame resizes.
+-- The only things that genuinely change per-event are:
+--
+--   * maxHealth (UnitHealthMax) — occasionally (level up, stat procs)
+--   * absorbs (UnitGetTotalAbsorbs) — every event (that's why we fire)
+--   * For ATTACHED modes: `isClamped` from the absorb calculator —
+--     this is secret-safe and changes per-event independently of
+--     absorbs (the absorb amount vs current-missing-health ratio)
+--
+-- Fix: AbsorbLayoutStateChanged compares ~25 layout settings + parent
+-- frame dimensions against values cached on frame.dfAbsorbState. If
+-- nothing changed, we take a minimal fast path that only does the
+-- value-related work. If anything changed, we run the full rebuild
+-- (same code as before this refactor) and cache the new state at the
+-- end.
+--
+-- This is the same pattern as the Dispel overlay refactor (commit
+-- cd6746e), applied to UpdateAbsorb.
+-- ============================================================
+
+local DEFAULT_ABSORB_COLOR = {r = 0, g = 0.835, b = 1, a = 0.7}
+local DEFAULT_ABSORB_BG_COLOR = {r = 0, g = 0, b = 0, a = 0.5}
+
+-- Compare current absorb-bar layout settings against the cached state
+-- on the frame. Returns true if anything that affects layout has
+-- changed since the last full rebuild — which means we need to run
+-- the full rebuild path. Returns false when everything matches, which
+-- means we can take the minimal fast path.
+local function AbsorbLayoutStateChanged(frame, db)
+    local s = frame.dfAbsorbState
+    if not s then return true end
+
+    -- Mode + appearance (all modes)
+    if s.mode            ~= (db.absorbBarMode or "OVERLAY")               then return true end
+    if s.strata          ~= (db.absorbBarStrata or "MEDIUM")              then return true end
+    if s.texture         ~= (db.absorbBarTexture or "Interface\\Buttons\\WHITE8x8") then return true end
+    if s.blendMode       ~= (db.absorbBarBlendMode or "BLEND")            then return true end
+    if s.pixelPerfect    ~= db.pixelPerfect                               then return true end
+    if s.oorEnabled      ~= db.oorEnabled                                 then return true end
+    if s.oorAlpha        ~= (db.oorAbsorbBarAlpha or 0.5)                 then return true end
+    local col = db.absorbBarColor or DEFAULT_ABSORB_COLOR
+    if s.colR ~= col.r or s.colG ~= col.g or s.colB ~= col.b or s.colA ~= (col.a or 0.7) then return true end
+
+    -- Border settings (affect inset calculations for attached/overlay modes)
+    if s.showFrameBorder ~= (db.showFrameBorder ~= false)                 then return true end
+    if s.borderSize      ~= (db.borderSize or 1)                          then return true end
+
+    -- Floating-mode specific
+    if s.orientation     ~= (db.absorbBarOrientation or "HORIZONTAL")     then return true end
+    if s.width           ~= (db.absorbBarWidth or 50)                     then return true end
+    if s.height          ~= (db.absorbBarHeight or 6)                     then return true end
+    if s.anchor          ~= (db.absorbBarAnchor or "CENTER")              then return true end
+    if s.offsetX         ~= (db.absorbBarX or 0)                          then return true end
+    if s.offsetY         ~= (db.absorbBarY or 0)                          then return true end
+    if s.reverse         ~= db.absorbBarReverse                           then return true end
+    if s.frameLevel      ~= (db.absorbBarFrameLevel or 10)                then return true end
+    local bgC = db.absorbBarBackgroundColor or DEFAULT_ABSORB_BG_COLOR
+    if s.bgR ~= bgC.r or s.bgG ~= bgC.g or s.bgB ~= bgC.b or s.bgA ~= bgC.a then return true end
+
+    -- Attached/overlay-mode specific
+    if s.healthOrient    ~= (db.healthOrientation or "HORIZONTAL")        then return true end
+    if s.overlayReverse  ~= db.absorbBarOverlayReverse                    then return true end
+    if s.clampMode       ~= (db.absorbBarAttachedClampMode or 1)          then return true end
+
+    -- Parent dimensions (detects frame resize — relevant for attached/overlay modes)
+    if frame.healthBar then
+        if s.parentW ~= frame.healthBar:GetWidth()  then return true end
+        if s.parentH ~= frame.healthBar:GetHeight() then return true end
+    end
+
+    -- Overshield settings (ATTACHED mode)
+    if s.showOvershield    ~= db.absorbBarShowOvershield                  then return true end
+    if s.overshieldStyle   ~= (db.absorbBarOvershieldStyle or "SPARK")    then return true end
+    if s.overshieldAlpha   ~= (db.absorbBarOvershieldAlpha or 0.8)        then return true end
+    if s.overshieldReverse ~= db.absorbBarOvershieldReverse               then return true end
+    local osc = db.absorbBarOvershieldColor or db.absorbBarColor or DEFAULT_ABSORB_COLOR
+    if s.overshieldR ~= osc.r or s.overshieldG ~= osc.g or s.overshieldB ~= osc.b then return true end
+
+    return false
+end
+
+-- Cache the current layout settings on frame.dfAbsorbState. Called at
+-- the end of a full rebuild so subsequent calls can short-circuit via
+-- AbsorbLayoutStateChanged.
+local function CacheAbsorbLayoutState(frame, db)
+    local s = frame.dfAbsorbState
+    if not s then
+        s = {}
+        frame.dfAbsorbState = s
+    end
+    s.mode            = db.absorbBarMode or "OVERLAY"
+    s.strata          = db.absorbBarStrata or "MEDIUM"
+    s.texture         = db.absorbBarTexture or "Interface\\Buttons\\WHITE8x8"
+    s.blendMode       = db.absorbBarBlendMode or "BLEND"
+    s.pixelPerfect    = db.pixelPerfect
+    s.oorEnabled      = db.oorEnabled
+    s.oorAlpha        = db.oorAbsorbBarAlpha or 0.5
+    local col = db.absorbBarColor or DEFAULT_ABSORB_COLOR
+    s.colR, s.colG, s.colB, s.colA = col.r, col.g, col.b, col.a or 0.7
+    s.showFrameBorder = db.showFrameBorder ~= false
+    s.borderSize      = db.borderSize or 1
+    s.orientation     = db.absorbBarOrientation or "HORIZONTAL"
+    s.width           = db.absorbBarWidth or 50
+    s.height          = db.absorbBarHeight or 6
+    s.anchor          = db.absorbBarAnchor or "CENTER"
+    s.offsetX         = db.absorbBarX or 0
+    s.offsetY         = db.absorbBarY or 0
+    s.reverse         = db.absorbBarReverse
+    s.frameLevel      = db.absorbBarFrameLevel or 10
+    local bgC = db.absorbBarBackgroundColor or DEFAULT_ABSORB_BG_COLOR
+    s.bgR, s.bgG, s.bgB, s.bgA = bgC.r, bgC.g, bgC.b, bgC.a
+    s.healthOrient    = db.healthOrientation or "HORIZONTAL"
+    s.overlayReverse  = db.absorbBarOverlayReverse
+    s.clampMode       = db.absorbBarAttachedClampMode or 1
+    if frame.healthBar then
+        s.parentW = frame.healthBar:GetWidth()
+        s.parentH = frame.healthBar:GetHeight()
+    end
+    s.showOvershield    = db.absorbBarShowOvershield
+    s.overshieldStyle   = db.absorbBarOvershieldStyle or "SPARK"
+    s.overshieldAlpha   = db.absorbBarOvershieldAlpha or 0.8
+    s.overshieldReverse = db.absorbBarOvershieldReverse
+    local osc = db.absorbBarOvershieldColor or db.absorbBarColor or DEFAULT_ABSORB_COLOR
+    s.overshieldR, s.overshieldG, s.overshieldB = osc.r, osc.g, osc.b
+end
+
+-- Invalidate the absorb layout cache for a frame. Call this from any
+-- code path that changes state the cache can't detect (e.g., the frame
+-- itself being replaced or recreated).
+function DF:InvalidateAbsorbLayout(frame)
+    if frame then frame.dfAbsorbState = nil end
+end
 
 function DF:UpdateAbsorb(frame, testIndex)
     if not frame then return end
     if not frame.healthBar then return end
-    
+
     -- PERF TEST: Skip if disabled (but allow test mode to still work)
     if DF.PerfTest and not DF.PerfTest.enableAbsorbs and not DF.testMode and not DF.raidTestMode then
         if frame.absorbBar then frame.absorbBar:Hide() end
         if frame.absorbOvershieldGlow then frame.absorbOvershieldGlow:Hide() end
         if frame.absorbOverflowBar then frame.absorbOverflowBar:Hide() end
+        frame.dfAbsorbState = nil  -- invalidate so re-enabling does a full rebuild
         return
     end
-    
+
     local unit = frame.unit
     local db = DF:GetFrameDB(frame)
     local mode = db.absorbBarMode or "OVERLAY"
-    
-    -- ALWAYS hide overshield glow and overflow bar when switching modes
-    -- This must happen before any early returns to prevent stuck visuals
-    if frame.absorbOvershieldGlow then
-        frame.absorbOvershieldGlow:Hide()
-    end
-    if frame.absorbOverflowBar then
-        frame.absorbOverflowBar:Hide()
-    end
-    
+
     -- Get values - either from test data or real unit
     local maxHealth, absorbs
-    
+
     if DF.testMode and testIndex ~= nil then
         local testData = DF:GetTestUnitData(testIndex)
         if testData then
@@ -322,26 +458,115 @@ function DF:UpdateAbsorb(frame, testIndex)
         if not unit or (unit ~= "player" and not unit:match("^party%d$") and not unit:match("^raid%d+$")) then
             return
         end
-        
+
         -- Ensure unit exists before querying
         if not UnitExists(unit) then
             return
         end
-        
+
         -- Get values - StatusBar API handles secret values internally via SetMinMaxValues
         maxHealth = UnitHealthMax(unit)
         absorbs = UnitGetTotalAbsorbs(unit)
     end
-    
-    -- Blizzard frame references - always hide these since we use custom bars
-    local glow = frame.overAbsorbGlow
-    local absorbFrame = frame.totalAbsorb
-    local overlay = frame.totalAbsorbOverlay
-    
-    -- Hide Blizzard's default absorb visuals
-    if absorbFrame then absorbFrame:Hide() end
-    if overlay then overlay:Hide() end
-    if glow then glow:Hide() end
+
+    -- ========================================================
+    -- FAST PATH: layout state unchanged since last rebuild
+    -- ========================================================
+    -- The common case in combat: settings/mode/dimensions are stable,
+    -- only the absorb value (and possibly isClamped for ATTACHED modes)
+    -- has changed. Skip ~90% of the function body.
+    local customBar = frame.dfAbsorbBar
+    if customBar and customBar:IsShown() and not AbsorbLayoutStateChanged(frame, db) then
+        if mode == "ATTACHED" or mode == "ATTACHED_OVERFLOW" then
+            -- Need the calculator for clamped state (secret, can't cache).
+            -- The calculator object itself is already cached on the frame.
+            local attachedAbsorbs = absorbs
+            local isClamped = false
+            if frame.absorbCalculator and unit and CreateUnitHealPredictionCalculator then
+                UnitGetDetailedHealPrediction(unit, nil, frame.absorbCalculator)
+                if frame.absorbCalculator.GetDamageAbsorbs then
+                    local r1, r2 = frame.absorbCalculator:GetDamageAbsorbs()
+                    if r1 then
+                        attachedAbsorbs = r1
+                        isClamped = r2
+                    end
+                end
+            end
+
+            customBar:SetMinMaxValues(0, maxHealth)
+            DF.SetBarValue(customBar, attachedAbsorbs, frame)
+
+            if mode == "ATTACHED_OVERFLOW" and frame.absorbOverflowBar then
+                -- Overflow bar gets the unclamped absorb amount
+                frame.absorbOverflowBar:SetMinMaxValues(0, maxHealth)
+                DF.SetBarValue(frame.absorbOverflowBar, absorbs, frame)
+
+                -- Compute the OOR-adjusted "visible" alpha
+                local visAlpha = 1
+                if db.oorEnabled then
+                    local inRange = frame.dfInRange
+                    if not (issecretvalue and issecretvalue(inRange)) and inRange == false then
+                        visAlpha = db.oorAbsorbBarAlpha or 0.5
+                    end
+                end
+
+                -- Secret-safe visibility toggle via visibility helpers.
+                -- When clamped: show overflow, hide attached.
+                -- When not clamped: show attached, hide overflow.
+                if customBar.visibilityHelper then
+                    customBar.visibilityHelper:SetAlphaFromBoolean(isClamped, 0, visAlpha)
+                    customBar:SetAlpha(customBar.visibilityHelper:GetAlpha())
+                end
+                if frame.absorbOverflowBar.visibilityHelper then
+                    frame.absorbOverflowBar.visibilityHelper:SetAlphaFromBoolean(isClamped, visAlpha, 0)
+                    frame.absorbOverflowBar:SetAlpha(frame.absorbOverflowBar.visibilityHelper:GetAlpha())
+                end
+            elseif mode == "ATTACHED" and frame.absorbOvershieldGlow and db.absorbBarShowOvershield then
+                -- ATTACHED mode: overshield glow visibility toggles with isClamped
+                frame.absorbOvershieldGlow:SetAlphaFromBoolean(isClamped, db.absorbBarOvershieldAlpha or 0.8, 0)
+            end
+        else
+            -- OVERLAY / FLOATING mode: simplest fast path — just value + OOR
+            customBar:SetMinMaxValues(0, maxHealth)
+            DF.SetBarValue(customBar, absorbs, frame)
+        end
+
+        -- OOR alpha refresh on the main bar. Range state can change
+        -- independently of settings (Range.lua updates frame.dfInRange
+        -- from the range ticker), so we always re-apply even on the
+        -- fast path.
+        if db.oorEnabled and customBar.SetAlphaFromBoolean then
+            local inRange = frame.dfInRange
+            if not (issecretvalue and issecretvalue(inRange)) and inRange == nil then inRange = true end
+            -- ATTACHED_OVERFLOW's visibility helpers already encode OOR into
+            -- their alpha calculation above, so don't double-apply there.
+            if mode ~= "ATTACHED_OVERFLOW" then
+                customBar:SetAlphaFromBoolean(inRange, 1, db.oorAbsorbBarAlpha or 0.5)
+            end
+        end
+
+        return
+    end
+
+    -- ========================================================
+    -- FULL REBUILD PATH (something changed, reapply all layout)
+    -- ========================================================
+
+    -- ALWAYS hide overshield glow and overflow bar when switching modes
+    -- This must happen before any early returns to prevent stuck visuals
+    if frame.absorbOvershieldGlow then
+        frame.absorbOvershieldGlow:Hide()
+    end
+    if frame.absorbOverflowBar then
+        frame.absorbOverflowBar:Hide()
+    end
+
+    -- NOTE (2026-04-09): the old code used to hide frame.totalAbsorb,
+    -- frame.overAbsorbGlow, and frame.totalAbsorbOverlay here. Those
+    -- fields are Blizzard CompactUnitFrame elements and DF frames are
+    -- built from SecureUnitButtonTemplate, not CompactUnitFrame — so
+    -- those fields are ALWAYS nil on our frames. The old Hide() calls
+    -- were literally no-ops guarded by always-nil checks. Removed.
     
     -- Create custom absorb bar if needed
     if not frame.dfAbsorbBar then
@@ -986,10 +1211,16 @@ function DF:UpdateAbsorb(frame, testIndex)
             customBar.border:Hide()
         end
         customBar:SetScript("OnUpdate", nil)
-        
+
         -- Set bar value
         DF.SetBarValue(customBar, absorbs, frame)
     end
+
+    -- Cache the current layout settings so subsequent calls can
+    -- short-circuit via AbsorbLayoutStateChanged. Done at the end of
+    -- the full rebuild so the cache reflects the state the bar was
+    -- just configured for.
+    CacheAbsorbLayoutState(frame, db)
 end
 
 -- ============================================================
