@@ -3986,7 +3986,7 @@ local TL_C_ClassColor = C_ClassColor
 
 -- Lazy-created render state. All nil until the feature is first
 -- enabled. On stable releases these stay nil forever (gate blocks).
-local targetedListBarPool = nil
+-- (The bar pool itself is declared later, next to its helpers.)
 local activeBars = {}  -- ordered list of currently-displayed bars
 
 -- Active test mode — when true, the container is populated from
@@ -4109,16 +4109,35 @@ local function TargetedList_ResetBar(pool, bar)
     bar:SetAttribute("unit", nil)
 end
 
+-- Manual pool — CreateFramePool requires an XML template, which we
+-- don't have (bars are built programmatically). Simple array of
+-- available bars + array of currently-used bars. Acquire pops from
+-- available (or builds a new one); Release wipes and pushes back.
+local targetedListBarPoolAvailable = {}
+
+local function TargetedList_AcquireBar()
+    local parent = TargetedList_EnsureContainer()
+    local bar = table.remove(targetedListBarPoolAvailable)
+    if bar then
+        return bar
+    end
+    return TargetedList_BuildBar(parent)
+end
+
+local function TargetedList_ReleaseBar(bar)
+    TargetedList_ResetBar(nil, bar)
+    table.insert(targetedListBarPoolAvailable, bar)
+end
+
+-- Legacy shim so existing call sites using targetedListBarPool still
+-- function. The pool object exposes Acquire() and Release(bar).
+local targetedListBarPool = {
+    Acquire = function(self) return TargetedList_AcquireBar() end,
+    Release = function(self, bar) return TargetedList_ReleaseBar(bar) end,
+}
+
 local function TargetedList_EnsureBarPool()
-    if targetedListBarPool then return targetedListBarPool end
     TargetedList_EnsureContainer()
-    targetedListBarPool = CreateFramePool(
-        "Button",
-        targetedListContainer,
-        nil,
-        TargetedList_ResetBar,
-        function(pool) return TargetedList_BuildBar(pool.parent) end
-    )
     return targetedListBarPool
 end
 
@@ -4361,13 +4380,22 @@ local function TargetedList_CreateMover()
 
     mover:SetScript("OnDragStart", function(self)
         self:StartMoving()
+        local db = DF:GetDB()
         self:SetScript("OnUpdate", function()
             local sw, sh = GetScreenWidth(), GetScreenHeight()
             local cx, cy = self:GetCenter()
-            if targetedListContainer then
-                targetedListContainer:ClearAllPoints()
-                targetedListContainer:SetPoint("CENTER", UIParent, "CENTER",
-                    cx - sw / 2, cy - sh / 2)
+            if cx and cy then
+                local x, y = cx - sw / 2, cy - sh / 2
+                -- Live-follow: keep container glued to mover while dragging
+                if targetedListContainer then
+                    targetedListContainer:ClearAllPoints()
+                    targetedListContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+                end
+                -- Snap preview (matches personal mover behavior)
+                if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown()
+                   and DF.UpdateSnapPreview then
+                    DF:UpdateSnapPreview(self)
+                end
             end
         end)
     end)
@@ -4375,9 +4403,20 @@ local function TargetedList_CreateMover()
     mover:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         self:SetScript("OnUpdate", nil)
+        if DF.HideSnapPreview then DF:HideSnapPreview() end
+
         local sw, sh = GetScreenWidth(), GetScreenHeight()
         local cx, cy = self:GetCenter()
+        if not cx or not cy then return end
         local x, y = cx - sw / 2, cy - sh / 2
+
+        -- Snap to grid if enabled, mirroring the personal mover.
+        local db = DF:GetDB()
+        if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown()
+           and DF.SnapToGrid then
+            x, y = DF:SnapToGrid(x, y)
+        end
+
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "CENTER", x, y)
         if DF.db and DF.db.party then
@@ -4387,9 +4426,11 @@ local function TargetedList_CreateMover()
         DF:UpdateTargetedListLayout()
     end)
 
+    -- Right-click anywhere on the mover locks everything (same as
+    -- the personal targeted spells mover and the main mover frame).
     mover:SetScript("OnMouseDown", function(self, button)
-        if button == "RightButton" and DF.HideTargetedListMover then
-            DF:HideTargetedListMover()
+        if button == "RightButton" and DF.LockFrames then
+            DF:LockFrames()
         end
     end)
 

@@ -2120,6 +2120,12 @@ function DF:UnlockFrames()
     if db.personalTargetedSpellEnabled and DF.ShowPersonalTargetedSpellsMover then
         DF:ShowPersonalTargetedSpellsMover()
     end
+
+    -- Show Targeted List mover if enabled (alpha/beta only — the
+    -- function is gated internally on DF.RELEASE_CHANNEL)
+    if db.targetedListEnabled and DF.ShowTargetedListMover then
+        DF:ShowTargetedListMover()
+    end
     
     -- Always refresh grid state from db when unlocking
     if DF.gridFrame then
@@ -2178,6 +2184,11 @@ function DF:LockFrames()
     -- Hide personal targeted spells mover
     if DF.HidePersonalTargetedSpellsMover then
         DF:HidePersonalTargetedSpellsMover()
+    end
+
+    -- Hide Targeted List mover
+    if DF.HideTargetedListMover then
+        DF:HideTargetedListMover()
     end
     
     -- Stop any OnUpdate for snap preview
