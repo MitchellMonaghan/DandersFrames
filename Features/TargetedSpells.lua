@@ -3659,9 +3659,36 @@ local function TargetedList_IsGateOpen()
     return true
 end
 
+-- Map the current content type (from the shared GetContentType
+-- helper above in this file) to the corresponding db toggle key.
+local TARGETEDLIST_CONTENT_TYPE_KEY = {
+    openworld   = "targetedListInOpenWorld",
+    dungeon     = "targetedListInDungeons",
+    raid        = "targetedListInRaids",
+    arena       = "targetedListInArena",
+    battleground = "targetedListInBattlegrounds",
+}
+
+-- Returns true if the user has enabled the feature for the current
+-- content type. Gates the lifecycle so we don't pick up casts in
+-- zones the user doesn't care about (e.g. disabling in open world).
+local function TargetedList_ContentTypeAllowed(party)
+    if not party then return false end
+    local contentType = GetContentType()
+    local key = TARGETEDLIST_CONTENT_TYPE_KEY[contentType]
+    if not key then return true end  -- unknown → allow
+    return party[key] ~= false
+end
+
 -- Secondary check: is the feature currently enabled by the user AND
 -- are we in a party (not raid, not solo)? Used by the cast lifecycle
 -- to decide whether to process incoming cast events.
+--
+-- NOTE: the content-type filter is deliberately NOT checked here.
+-- It's checked separately at pickup time only (TargetedList_ShouldPickup)
+-- so that stop events still clear tracked state even if the user
+-- toggles content-type checkboxes mid-cast. Otherwise stale bars
+-- would get stuck on screen until the next reload.
 local function TargetedList_IsActive()
     if not TargetedList_IsGateOpen() then return false end
     if not DF.db then return false end
@@ -3670,6 +3697,16 @@ local function TargetedList_IsActive()
     if not TL_IsInGroup() then return false end
     if TL_IsInRaid() then return false end
     return true
+end
+
+-- Pickup-time gate: IsActive + content-type filter. Only applied
+-- when deciding whether to START tracking a new cast. Cast-stop and
+-- interruptibility-change handlers use IsActive alone so they can
+-- clean up existing state regardless of content-type settings.
+local function TargetedList_ShouldPickup()
+    if not TargetedList_IsActive() then return false end
+    local party = DF.db.party
+    return TargetedList_ContentTypeAllowed(party)
 end
 
 -- Exposed for NeedsCastEvents below, so the shared event frame stays
@@ -3773,7 +3810,7 @@ local TL_C_Spell_IsSpellImportant = C_Spell and C_Spell.IsSpellImportant
 -- equality compare on a secret-tainted castID errors. We accept rare
 -- flicker on rapid same-spell restart in exchange for not crashing.
 local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
-    if not TargetedList_IsActive() then return end
+    if not TargetedList_ShouldPickup() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
     -- Targeting filter via UnitInParty(nameplateXtarget). See
@@ -3853,7 +3890,7 @@ end
 -- visible cost is missing a bar when a nameplate enters range while
 -- the mob is mid-cast (gap bounded by the cast remaining duration).
 local function TargetedList_ProcessCastStart(casterUnit, event, ...)
-    if not TargetedList_IsActive() then return end
+    if not TargetedList_ShouldPickup() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
     if not TL_C_Timer_After then return end
 
