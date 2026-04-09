@@ -4021,20 +4021,28 @@ local function TargetedList_EnsureContainer()
     return c
 end
 
--- Build a single bar frame from scratch. Called by the framepool's
--- creation callback. Structure:
---   Frame (the button, clickable for click-to-target)
+-- Build a single bar frame from scratch. Called by the pool's
+-- acquire path on a cold fetch.
+--
+-- IMPORTANT: bars are plain Frames, NOT Buttons with
+-- SecureActionButtonTemplate. A previous version used the secure
+-- template so click-to-target could set a "unit" attribute, but the
+-- container then became "parent of a secure child" and :Hide() on
+-- it was protected during combat — triggering ADDON_ACTION_BLOCKED
+-- every time the last active cast stopped mid-pull. Click-to-target
+-- is deferred until we have a combat-safe mechanism for it.
+--
+-- Structure:
+--   Frame
 --     Background texture
 --     Border
 --     Icon texture (left-aligned by default)
 --     StatusBar (progress fill)
 --       Spell name FontString
 --       Target name FontString
---       Duration FontString
 local function TargetedList_BuildBar(parent)
-    local bar = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
+    local bar = CreateFrame("Frame", nil, parent)
     bar:Hide()
-    bar:RegisterForClicks("AnyUp")
     bar:SetFrameStrata("MEDIUM")
 
     -- Background (solid color behind everything)
@@ -4086,14 +4094,10 @@ local function TargetedList_BuildBar(parent)
     targetName:SetWordWrap(false)
     bar.targetName = targetName
 
-    -- Click-to-target: attributes set per-render once we know which
-    -- unit this bar represents. Cleared in combat for safety.
-    bar:SetAttribute("type", "target")
-
     return bar
 end
 
--- Release callback for the framepool.
+-- Release callback for the pool.
 local function TargetedList_ResetBar(pool, bar)
     bar:Hide()
     bar:ClearAllPoints()
@@ -4105,7 +4109,6 @@ local function TargetedList_ResetBar(pool, bar)
     bar.spellName:SetText("")
     bar.targetName:SetText("")
     bar.icon:SetTexture(nil)
-    bar:SetAttribute("unit", nil)
 end
 
 -- Manual pool — CreateFramePool requires an XML template, which we
@@ -4224,16 +4227,13 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             interruptibleColor.b, interruptibleColor.a)
     end
 
-    -- Click-to-target: set the unit attribute out of combat only.
-    -- Targeting a nameplate unit is allowed.
-    if party and party.targetedListClickToTarget
-       and not InCombatLockdown() then
-        bar:SetAttribute("unit", casterUnit)
-        bar:EnableMouse(true)
-    else
-        bar:SetAttribute("unit", nil)
-        bar:EnableMouse(false)
-    end
+    -- NOTE: click-to-target is intentionally NOT implemented in v1.
+    -- The previous attempt used SecureActionButtonTemplate, which
+    -- worked but made the container :Hide() protected in combat,
+    -- breaking the render-after-cast-stop flow. Re-adding click-to-
+    -- target requires a combat-safe approach (probably an
+    -- out-of-combat-only attribute write on a dedicated secure
+    -- overlay that's shown/hidden independently of the bar stack).
 end
 
 -- ------------------------------------------------------------
@@ -4545,10 +4545,6 @@ local function TargetedList_ApplyTestBarContent(bar, index)
         or {r=0.5, g=0.5, b=0.5, a=1}
     local c = spec.uninterruptible and uninterruptibleColor or interruptibleColor
     bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a)
-
-    -- No click-to-target in test mode — there's no real unit.
-    bar:SetAttribute("unit", nil)
-    bar:EnableMouse(false)
 end
 
 function DF:ShowTestTargetedList()
