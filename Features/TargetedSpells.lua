@@ -4556,6 +4556,89 @@ local function TargetedList_ReleaseAllActiveBars()
 end
 
 -- ------------------------------------------------------------
+-- Bar style presets
+-- ------------------------------------------------------------
+-- Each preset is a bundle of individual settings. Picking a preset
+-- from the dropdown writes the entire bundle to db and triggers a
+-- layout refresh. Individual settings remain user-editable after
+-- the bundle is applied — the preset is a one-shot "start from this
+-- configuration" action, not a continuous override.
+
+local TARGETEDLIST_STYLE_PRESETS = {
+    DEFAULT = {
+        targetedListWidth = 240,
+        targetedListHeight = 22,
+        targetedListSpacing = 2,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.6,
+        targetedListFontSize = 12,
+    },
+    COMPACT = {
+        targetedListWidth = 200,
+        targetedListHeight = 16,
+        targetedListSpacing = 1,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.6,
+        targetedListFontSize = 10,
+    },
+    DETAILED = {
+        targetedListWidth = 280,
+        targetedListHeight = 30,
+        targetedListSpacing = 3,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.7,
+        targetedListFontSize = 14,
+    },
+    MINIMAL = {
+        targetedListWidth = 180,
+        targetedListHeight = 14,
+        targetedListSpacing = 1,
+        targetedListShowIcon = false,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = false,
+        targetedListShowBorder = false,
+        targetedListBackgroundAlpha = 0.4,
+        targetedListFontSize = 10,
+    },
+}
+
+function DF:ApplyTargetedListPreset(presetName)
+    if not TargetedList_IsGateOpen() then return end
+    local preset = TARGETEDLIST_STYLE_PRESETS[presetName]
+    if not preset then return end
+    local party = DF.db and DF.db.party
+    if not party then return end
+
+    for k, v in pairs(preset) do
+        party[k] = v
+    end
+    party.targetedListStylePreset = presetName
+
+    DF:UpdateTargetedListLayout()
+end
+
+-- ------------------------------------------------------------
 -- Fade-out / interrupted-flash ticker
 -- ------------------------------------------------------------
 -- When a cast stops, its record is marked with fadingStartedAt +

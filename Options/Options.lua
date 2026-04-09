@@ -5570,7 +5570,23 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local presetGroup = GUI:CreateSettingsGroup(self.child, 260)
             presetGroup:AddWidget(GUI:CreateHeader(self.child, L["Bar Style"]), 40)
-            local tlPreset = presetGroup:AddWidget(GUI:CreateDropdown(self.child, L["Bar Style"], stylePresetOptions, db, "targetedListStylePreset", TargetedListUpdate), 55)
+            -- Picking a preset writes a bundle of settings to db
+            -- (bar dimensions, show/hide toggles, font size, etc.)
+            -- via DF:ApplyTargetedListPreset. After the bundle is
+            -- applied the individual settings remain editable —
+            -- the preset is a one-shot "start from this configuration"
+            -- action, not a continuous override.
+            local tlPreset = presetGroup:AddWidget(GUI:CreateDropdown(self.child, L["Bar Style"], stylePresetOptions, db, "targetedListStylePreset", function()
+                if DF.ApplyTargetedListPreset then
+                    DF:ApplyTargetedListPreset(db.targetedListStylePreset)
+                end
+                -- Also refresh GUI widgets so users see the preset's
+                -- values reflected in the other sliders/checkboxes.
+                if GUI and GUI.RefreshCurrentPage then
+                    GUI:RefreshCurrentPage()
+                end
+                TargetedListUpdate()
+            end), 55)
             tlPreset.disableOn = HideTLOptions
             local tlTexture = presetGroup:AddWidget(GUI:CreateTextureDropdown(self.child, L["Texture"], db, "targetedListTexture", TargetedListUpdate), 55)
             tlTexture.disableOn = HideTLOptions
