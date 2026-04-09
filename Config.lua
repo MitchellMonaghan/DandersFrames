@@ -1748,7 +1748,7 @@ DF.PartyDefaults = {
     -- User-facing name ("Targeted List") is intentionally decoupled from the
     -- internal `targetedList*` db prefix so the feature can be renamed later
     -- by editing locale strings only. Party-mode only by design.
-    targetedListAnchor = "BOTTOM",
+    -- Position uses an absolute mover (targetedListX/Y), not an anchor point.
     targetedListBackgroundAlpha = 0.6,
     targetedListBorderColor = {r = 0, g = 0, b = 0, a = 1},
     targetedListClickToTarget = true,
