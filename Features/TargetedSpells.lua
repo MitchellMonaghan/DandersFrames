@@ -3781,26 +3781,27 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     -- TargetedList_CastTargetIsPartyMember for why this works.
     if not TargetedList_CastTargetIsPartyMember(casterUnit) then return end
 
-    -- spellId from the event payload is clean. We prefer it over
-    -- anything we'd read from UnitCastingInfo (which would be secret).
+    -- IMPORTANT — gotcha #0 update: spellId from the event payload is
+    -- ALSO secret-tainted on nameplates. We can pass it through
+    -- secret-safe sinks (SetText after C_Spell.GetSpellName, SetTexture
+    -- after C_Spell.GetSpellTexture, SetShownFromBoolean after
+    -- C_Spell.IsSpellImportant) but we cannot truth-test, compare,
+    -- string.format, or otherwise inspect it in Lua.
+    --
+    -- Practical consequences:
+    --   * Important-spells filter is DROPPED here. The render pipeline
+    --     in commit #5 will implement it via SetShownFromBoolean using
+    --     the secret-tainted IsSpellImportant return.
+    --   * Spell name / texture are NOT read here. The render pipeline
+    --     will fetch them at render time and feed them straight into
+    --     SetText / SetTexture sinks.
+    --   * The debug log can only print clean values (casterUnit, the
+    --     channel flag, the event name). No spell name.
     local spellId = eventSpellId
     if spellId == nil then return end
 
-    -- Important-spells filter (clean — works on a clean spellId).
-    local party = DF.db and DF.db.party
-    if party and party.targetedListImportantOnly
-       and TL_C_Spell_IsSpellImportant
-       and not TL_C_Spell_IsSpellImportant(spellId) then
-        return
-    end
-
-    -- Clean metadata via C_Spell.* — accepts clean spellId, returns
-    -- clean values, safe for string.format / SetText / etc.
-    local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spellId)
-    local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spellId)
-
     -- Pull notInterruptible only — everything else from these APIs is
-    -- secret. notInterruptible itself is secret too, but only ever
+    -- secret. notInterruptible itself is also secret, but only ever
     -- fed to SetVertexColorFromBoolean (a secret-safe sink) at render.
     local notInterruptible
     if isChannel then
@@ -3821,24 +3822,23 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     end
 
     activeTargetedListCasts[casterUnit] = {
-        spellId         = spellId,           -- clean (from event)
-        spellName       = spellName,         -- clean
-        spellTexture    = spellTexture,      -- clean
+        spellId         = spellId,           -- secret; only feed to C_Spell.* + sinks
         isChannel       = isChannel,         -- clean
         startTime       = TL_GetTime(),      -- clean local approximation
         duration        = duration,          -- opaque TimerDuration object
         uninterruptible = notInterruptible,  -- secret; SetVertexColorFromBoolean only
         casterUnit      = casterUnit,        -- clean (we generated it)
-        -- targetName / targetClass / targetUnit intentionally NOT stored.
-        -- Fetched at render time via UnitSpellTargetName / UnitSpellTargetClass
-        -- and piped directly into secret-safe sinks (SetText, SetTextColor
-        -- via C_ClassColor.GetClassColor).
+        -- spellName / spellTexture / targetName / targetClass / targetUnit
+        -- intentionally NOT stored. All fetched at render time via the
+        -- secret-tainted APIs and piped directly into secret-safe sinks
+        -- (SetText, SetTexture, SetTextColor via C_ClassColor).
     }
 
-    -- Debug log: clean strings only.
+    -- Debug log: only clean values. spellId / spellName / texture are
+    -- all secret-tainted and can't be formatted.
     if DF.Debug then
-        DF:Debug("TARGETEDLIST", "+cast %s: %s%s",
-            casterUnit, tostring(spellName),
+        DF:Debug("TARGETEDLIST", "+cast %s%s",
+            casterUnit,
             isChannel and " [channel]" or "")
     end
 end
@@ -3898,44 +3898,29 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     -- errors. Without the match, rapid same-spell restarts may briefly
     -- show stale state. Acceptable for v1.
 
-    -- Gotcha #4: mob death mid-cast fires INTERRUPTED with nil
-    -- interrupter; also some INTERRUPTED paths don't propagate one.
-    -- Treat both as normal stops (no interrupter flash).
+    -- We just record whether this was an interrupt for the render
+    -- pipeline (commit #5) to play the interrupted-flash animation.
+    -- The interrupter source name (gotcha #7) is intentionally NOT
+    -- looked up here: the interrupter GUID arrives in the event
+    -- payload as a secret-tainted string on nameplates, which means
+    -- truth-testing it (`not interrupterGuid`) is not allowed and
+    -- UnitNameFromGUID(secretGuid) returns a secret string that
+    -- can't be formatted in Lua. The render pipeline will display the
+    -- interrupter name (if at all) by piping the result of
+    -- UnitNameFromGUID directly into a FontString:SetText sink at
+    -- render time, never inspecting it in Lua.
     local wasInterrupted = (event == "UNIT_SPELLCAST_INTERRUPTED")
-    local interrupterGuid, interrupterName, interrupterClass
-    if wasInterrupted then
-        -- In our offset-by-1 varargs (unit already consumed), the
-        -- interrupter GUID is at position 3: (castGuid, spellId, interruptedBy).
-        interrupterGuid = select(3, ...)
-        if not interrupterGuid or not TL_UnitExists(casterUnit) then
-            wasInterrupted = false
-        end
-    end
-
-    -- Gotcha #7: interrupter identification from GUID.
-    if wasInterrupted and interrupterGuid then
-        if TL_UnitNameFromGUID then
-            interrupterName = TL_UnitNameFromGUID(interrupterGuid)
-        end
-        if TL_UnitClassFromGUID then
-            local _, class = TL_UnitClassFromGUID(interrupterGuid)
-            interrupterClass = class
-        end
-    end
 
     activeTargetedListCasts[casterUnit] = nil
 
     if DF.Debug then
-        if wasInterrupted and interrupterName then
-            DF:Debug("TARGETEDLIST", "-cast %s: interrupted by %s (%s)",
-                casterUnit, tostring(interrupterName), tostring(interrupterClass))
-        else
-            DF:Debug("TARGETEDLIST", "-cast %s: %s", casterUnit, event)
-        end
+        DF:Debug("TARGETEDLIST", "-cast %s: %s%s",
+            casterUnit, event,
+            wasInterrupted and " [interrupted]" or "")
     end
 
     -- Commit #5 will trigger the fade-out / interrupted-flash render
-    -- here using interrupterName / interrupterClass.
+    -- here. wasInterrupted is the only flag the renderer needs.
 end
 
 -- Gotcha #9: mob interruptibility toggles mid-cast. The clean boolean
