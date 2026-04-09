@@ -4045,13 +4045,15 @@ local function TargetedList_BuildBar(parent)
     bar:Hide()
     bar:SetFrameStrata("MEDIUM")
 
-    -- Background (solid color behind everything)
+    -- Background (solid color behind everything). Color + alpha
+    -- applied by TargetedList_ApplyBarAppearance on every render.
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(bar)
     bg:SetColorTexture(0, 0, 0, 0.6)
     bar.bg = bg
 
-    -- Border (four thin textures)
+    -- Border (backdrop-template frame). Visibility + color applied
+    -- by TargetedList_ApplyBarAppearance.
     local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
     border:SetAllPoints(bar)
     border:SetBackdrop({
@@ -4061,27 +4063,21 @@ local function TargetedList_BuildBar(parent)
     border:SetBackdropBorderColor(0, 0, 0, 1)
     bar.border = border
 
-    -- Icon
+    -- Icon — anchored dynamically by ApplyBarAppearance so its
+    -- position (LEFT/RIGHT) and zoom state can change at runtime.
     local icon = bar:CreateTexture(nil, "ARTWORK")
-    icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
-    icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 1, 1)
-    -- Width is set to match height in UpdateBarLayout
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- zoom in, crop border
     bar.icon = icon
 
-    -- Progress StatusBar (sits over the background, covers the area
-    -- right of the icon)
+    -- Progress StatusBar. Anchors are set by ApplyBarAppearance to
+    -- leave room for the icon depending on its position.
     local progress = CreateFrame("StatusBar", nil, bar)
-    progress:SetPoint("TOPLEFT", icon, "TOPRIGHT", 1, 0)
-    progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
     progress:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     progress:SetMinMaxValues(0, 1)
     progress:SetValue(0)
     bar.progress = progress
 
-    -- Text overlays on the progress bar. Anchor / offset are applied
-    -- by TargetedList_ApplyTextLayout on every render so settings
-    -- changes take effect immediately without rebuilding the bar.
+    -- Text overlays on the progress bar. Anchor / offset / font are
+    -- applied by ApplyBarAppearance and ApplyTextLayout per render.
     local spellName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     spellName:SetJustifyV("MIDDLE")
     spellName:SetWordWrap(false)
@@ -4130,6 +4126,100 @@ local function TargetedList_ApplyTextLayout(bar, db)
         "targetedListTargetNameAnchor", "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT")
     applyTextElement(bar.duration,
         "targetedListDurationAnchor", "targetedListDurationX", "targetedListDurationY", "RIGHT")
+end
+
+-- Apply static appearance settings to a bar. "Static" here means the
+-- configuration doesn't depend on the active cast — it's settings
+-- that come straight from db: icon position/zoom/show, border color
+-- and visibility, background alpha, statusbar texture, font, show/
+-- hide toggles for all text elements.
+--
+-- Called per bar during render (both real and test paths), and again
+-- from UpdateTargetedListLayout when settings change. The function
+-- runs at drag-tick rate during slider interaction so keep it cheap.
+local function TargetedList_ApplyBarAppearance(bar, db)
+    if not bar or not db then return end
+    local barH = db.targetedListHeight or 22
+    local showIcon = db.targetedListShowIcon ~= false
+    local iconPos = db.targetedListIconPosition or "LEFT"
+
+    -- ----- Icon: show/hide, position, zoom -----
+    bar.icon:ClearAllPoints()
+    if showIcon then
+        bar.icon:Show()
+        bar.icon:SetHeight(barH - 2)
+        bar.icon:SetWidth(barH - 2)
+        if iconPos == "RIGHT" then
+            bar.icon:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -1, -1)
+            bar.icon:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+        else
+            bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+            bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 1, 1)
+        end
+        if db.targetedListZoomIcon ~= false then
+            bar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        else
+            bar.icon:SetTexCoord(0, 1, 0, 1)
+        end
+    else
+        bar.icon:Hide()
+    end
+
+    -- ----- Progress StatusBar: anchors leave room for the icon -----
+    bar.progress:ClearAllPoints()
+    if showIcon and iconPos == "RIGHT" then
+        bar.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar.icon, "BOTTOMLEFT", -1, 0)
+    elseif showIcon then
+        bar.progress:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 1, 0)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+    else
+        bar.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+    end
+
+    -- ----- StatusBar texture via LibSharedMedia (DF:GetTexture wraps LSM) -----
+    local texturePath = "Interface\\Buttons\\WHITE8x8"
+    if DF.GetTexture then
+        local resolved = DF:GetTexture(db.targetedListTexture or "Blizzard")
+        if type(resolved) == "string" and resolved ~= "" then
+            texturePath = resolved
+        end
+    end
+    bar.progress:SetStatusBarTexture(texturePath)
+
+    -- ----- Background alpha -----
+    local bgAlpha = db.targetedListBackgroundAlpha or 0.6
+    bar.bg:SetColorTexture(0, 0, 0, bgAlpha)
+
+    -- ----- Border show/hide + color -----
+    local showBorder = db.targetedListShowBorder ~= false
+    if showBorder then
+        bar.border:Show()
+        local bc = db.targetedListBorderColor or {r=0, g=0, b=0, a=1}
+        bar.border:SetBackdropBorderColor(bc.r or 0, bc.g or 0, bc.b or 0, bc.a or 1)
+    else
+        bar.border:Hide()
+    end
+
+    -- ----- Font (all three text elements share one font setting) -----
+    local fontPath = "Fonts\\FRIZQT__.TTF"
+    if DF.GetFontPath then
+        local resolved = DF:GetFontPath(db.targetedListFont or "Friz Quadrata TT")
+        if type(resolved) == "string" then fontPath = resolved end
+    end
+    local fontSize = db.targetedListFontSize or 12
+    local outline = db.targetedListFontOutline
+    if outline == "NONE" then outline = "" end
+
+    bar.spellName:SetFont(fontPath, fontSize, outline)
+    bar.targetName:SetFont(fontPath, fontSize, outline)
+    bar.duration:SetFont(fontPath, fontSize, outline)
+
+    -- ----- Per-element show/hide toggles -----
+    bar.spellName:SetShown(db.targetedListShowSpellName ~= false)
+    bar.targetName:SetShown(db.targetedListShowTargetName ~= false)
+    bar.duration:SetShown(db.targetedListShowDuration ~= false)
 end
 
 -- Release callback for the pool.
@@ -4291,8 +4381,6 @@ local function TargetedList_LayoutBars()
     -- Position each active bar in order.
     for i, bar in ipairs(activeBars) do
         bar:SetSize(barW, barH)
-        -- Icon width = bar height (square)
-        bar.icon:SetWidth(barH - 2)
         bar:ClearAllPoints()
         if growth == "UP" then
             -- Index 1 at bottom, growing up
@@ -4303,7 +4391,10 @@ local function TargetedList_LayoutBars()
             bar:SetPoint("TOP", targetedListContainer, "TOP",
                 0, -(i - 1) * (barH + spacing))
         end
-        -- Apply text anchor/offset settings per-bar
+        -- Apply static appearance (icon, border, bg, texture, font,
+        -- show/hide toggles) before text layout — text anchor points
+        -- depend on the progress bar having its own anchors applied.
+        TargetedList_ApplyBarAppearance(bar, db)
         TargetedList_ApplyTextLayout(bar, db)
         bar:Show()
     end
