@@ -3949,6 +3949,11 @@ function DF:HideTestFrames(silent)
     if DF.HideTestPersonalTargetedSpells then
         DF:HideTestPersonalTargetedSpells()
     end
+
+    -- Hide Targeted List demo bars
+    if DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
+    end
     
     -- Restore live frame visibility
     -- Clear state drivers so UpdateHeaderVisibility manages normally
@@ -4179,6 +4184,11 @@ function DF:HideRaidTestFrames()
     -- Hide personal targeted spell test icons
     if DF.HideTestPersonalTargetedSpells then
         DF:HideTestPersonalTargetedSpells()
+    end
+
+    -- Hide Targeted List demo bars
+    if DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
     end
 
     -- Hide group labels (they will be re-shown by UpdateRaidLayout if needed)
@@ -4777,7 +4787,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = false
         db.testShowMissingBuff = false
         db.testShowExternalDef = false
-        db.testShowTargetedSpell = false
+        db.testShowTargetedList = false
         db.testShowBossDebuffs = false
         db.testShowIcons = true
     elseif preset == "COMBAT" then
@@ -4788,7 +4798,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = false
         db.testShowExternalDef = false
-        db.testShowTargetedSpell = false
+        db.testShowTargetedList = false
         db.testShowBossDebuffs = true
         db.testShowIcons = true
     elseif preset == "HEALER" then
@@ -4799,7 +4809,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = true
         db.testShowExternalDef = true
-        db.testShowTargetedSpell = true
+        db.testShowTargetedList = true
         db.testShowBossDebuffs = true
         db.testShowIcons = true
     elseif preset == "FULL" then
@@ -4810,7 +4820,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = true
         db.testShowExternalDef = true
-        db.testShowTargetedSpell = true
+        db.testShowTargetedList = true
         db.testShowIcons = true
     end
     
@@ -5819,11 +5829,24 @@ function DF:UpdateTestTargetedSpell(frame, testData)
     end
 end
 
+-- Targeted List demo bars in test mode. This is a single global
+-- container (not per-frame), so the update function just toggles the
+-- show/hide helpers on the feature module. Safe to call with the
+-- feature gate off — both helpers are no-ops on stable builds.
+function DF:UpdateAllTestTargetedList()
+    local db = DF:GetDB()
+    if db and db.testShowTargetedList and DF.ShowTestTargetedList then
+        DF:ShowTestTargetedList()
+    elseif DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
+    end
+end
+
 function DF:UpdateAllTestTargetedSpell()
     local function UpdateFrame(frame, testData)
         if not frame then return end
         local db = DF:GetFrameDB(frame)
-        
+
         if db.testShowTargetedSpell then
             DF:UpdateTestTargetedSpell(frame, testData)
         else
@@ -5868,8 +5891,13 @@ function DF:UpdateAllTestTargetedSpell()
         elseif DF.HideTestPersonalTargetedSpells then
             DF:HideTestPersonalTargetedSpells()
         end
+
+        -- Update Targeted List demo bars in test mode
+        if DF.UpdateAllTestTargetedList then
+            DF:UpdateAllTestTargetedList()
+        end
     end
-    
+
     -- Update raid test frames
     if DF.raidTestMode then
         local raidDb = DF:GetRaidDB()
@@ -6701,9 +6729,12 @@ function DF:CreateTestPanel()
     panel.showExternalDefCheck = secIndicators:AddCheckbox("Defensive Icon", "testShowExternalDef", function()
         if DF.testMode or DF.raidTestMode then DF:UpdateAllTestDefensiveBar() end
     end, "auras_defensiveicon")
-    panel.showTargetedSpellCheck = secIndicators:AddCheckbox("Targeted Spell", "testShowTargetedSpell", function()
-        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedSpell() end
-    end, "indicators_targetedspells")
+    -- "Targeted Spell" was the old group-frame icon display that
+    -- Blizzard's 2026-04-07 hotfix killed. The checkbox slot is now
+    -- repurposed for the Targeted List (alpha/beta-only feature).
+    panel.showTargetedListCheck = secIndicators:AddCheckbox("Targeted List", "testShowTargetedList", function()
+        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedList() end
+    end, "indicators_targetedlist")
     panel.showStatusIconsCheck = secIndicators:AddCheckbox("Status / Ready", "testShowStatusIcons", function()
         if DF.testMode or DF.raidTestMode then DF:RefreshTestFrames() end
     end, "indicators_icons")
@@ -6855,7 +6886,7 @@ function DF:CreateTestPanel()
         self.showMissingBuffCheck:SetChecked(db.testShowMissingBuff)
         self.showADCheck:SetChecked(db.testShowAuraDesigner)
         self.showExternalDefCheck:SetChecked(db.testShowExternalDef)
-        self.showTargetedSpellCheck:SetChecked(db.testShowTargetedSpell)
+        self.showTargetedListCheck:SetChecked(db.testShowTargetedList)
         self.showStatusIconsCheck:SetChecked(db.testShowStatusIcons ~= false)
         self.showIconsCheck:SetChecked(db.testShowIcons ~= false)
         self.showSelectionCheck:SetChecked(db.testShowSelection)
