@@ -4088,10 +4088,16 @@ local function TargetedList_BuildBar(parent)
     targetName:SetWordWrap(false)
     bar.targetName = targetName
 
-    local duration = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    duration:SetJustifyV("MIDDLE")
-    duration:SetWordWrap(false)
-    bar.duration = duration
+    -- Duration countdown: a Cooldown frame that handles native
+    -- secret-safe countdown rendering via SetCooldownFromDurationObject.
+    -- The swirl / edge are hidden; we only use it for the countdown
+    -- number text. Positioned and sized by ApplyBarAppearance.
+    local durationCooldown = CreateFrame("Cooldown", nil, progress, "CooldownFrameTemplate")
+    durationCooldown:SetDrawEdge(false)
+    durationCooldown:SetDrawSwipe(false)
+    durationCooldown:SetDrawBling(false)
+    durationCooldown:SetHideCountdownNumbers(false)
+    bar.duration = durationCooldown
 
     return bar
 end
@@ -4124,8 +4130,22 @@ local function TargetedList_ApplyTextLayout(bar, db)
         "targetedListSpellNameAnchor", "targetedListSpellNameX", "targetedListSpellNameY", "LEFT")
     applyTextElement(bar.targetName,
         "targetedListTargetNameAnchor", "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT")
-    applyTextElement(bar.duration,
-        "targetedListDurationAnchor", "targetedListDurationX", "targetedListDurationY", "RIGHT")
+
+    -- Duration: the Cooldown frame renders its own countdown text at
+    -- its center. We position the frame itself (as a narrow box) at
+    -- the configured anchor, and the text appears centered inside.
+    if bar.duration then
+        local anchor = db.targetedListDurationAnchor or "RIGHT"
+        local point = TargetedList_ResolveTextAnchor(anchor)
+        local fontSize = db.targetedListFontSize or 12
+        -- Sized generously enough to fit "99:99" at typical font sizes.
+        local cdW = math.max(40, fontSize * 3)
+        local cdH = math.max(14, fontSize + 4)
+        bar.duration:ClearAllPoints()
+        bar.duration:SetSize(cdW, cdH)
+        bar.duration:SetPoint(point, bar.progress, point,
+            db.targetedListDurationX or 0, db.targetedListDurationY or 0)
+    end
 end
 
 -- Apply static appearance settings to a bar. "Static" here means the
@@ -4214,7 +4234,12 @@ local function TargetedList_ApplyBarAppearance(bar, db)
 
     bar.spellName:SetFont(fontPath, fontSize, outline)
     bar.targetName:SetFont(fontPath, fontSize, outline)
-    bar.duration:SetFont(fontPath, fontSize, outline)
+    -- NOTE: The duration Cooldown frame renders its countdown text
+    -- via Blizzard's native cooldown system, which uses a built-in
+    -- font object (NumberFontNormal-ish). Custom font paths can't
+    -- be applied — SetCountdownFont takes a font object name string,
+    -- not a (path, size, outline) triple. The user's font settings
+    -- apply to spell name and target name only.
 
     -- ----- Per-element show/hide toggles -----
     bar.spellName:SetShown(db.targetedListShowSpellName ~= false)
@@ -4233,7 +4258,9 @@ local function TargetedList_ResetBar(pool, bar)
     bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
     bar.spellName:SetText("")
     bar.targetName:SetText("")
-    if bar.duration then bar.duration:SetText("") end
+    if bar.duration and bar.duration.Clear then
+        bar.duration:Clear()
+    end
     bar.icon:SetTexture(nil)
 end
 
@@ -4317,8 +4344,8 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         bar.targetName:SetTextColor(1, 1, 1, 1)
     end
 
-    -- Duration (TimerDuration object, opaque, possibly secret) via
-    -- StatusBar:SetTimerDuration. Casts fill empty->full (ElapsedTime),
+    -- Progress fill: TimerDuration object fed into StatusBar's
+    -- secret-safe sink. Casts fill empty->full (ElapsedTime),
     -- channels drain full->empty (RemainingTime).
     if activeRec.duration and bar.progress.SetTimerDuration then
         local direction = activeRec.isChannel
@@ -4326,6 +4353,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             or Enum.StatusBarTimerDirection.ElapsedTime
         bar.progress:SetTimerDuration(activeRec.duration,
             Enum.StatusBarInterpolation.Immediate, direction)
+    end
+
+    -- Countdown text: hand the same duration object to the Cooldown
+    -- frame so it renders its native countdown. SetCooldownFromDurationObject
+    -- is secret-safe (accepts the opaque duration). Falls back to
+    -- SetCooldown for environments lacking the method.
+    if bar.duration and activeRec.duration then
+        if bar.duration.SetCooldownFromDurationObject then
+            bar.duration:SetCooldownFromDurationObject(activeRec.duration)
+        end
     end
 
     -- Interruptible color via SetVertexColorFromBoolean. The
@@ -4667,6 +4704,14 @@ local function TargetedList_ApplyTestBarContent(bar, index)
         or {r=0.5, g=0.5, b=0.5, a=1}
     local c = spec.uninterruptible and uninterruptibleColor or interruptibleColor
     bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a)
+
+    -- Fake cooldown for the duration display. Each bar gets a
+    -- different synthetic duration so the preview looks varied.
+    -- SetCooldown uses clean numbers (no secret values in test mode).
+    if bar.duration and bar.duration.SetCooldown then
+        local fakeDur = 2 + (index % 5) * 1.5  -- 2s, 3.5s, 5s, 6.5s, 8s, 2s, ...
+        bar.duration:SetCooldown(GetTime(), fakeDur)
+    end
 end
 
 function DF:ShowTestTargetedList()
