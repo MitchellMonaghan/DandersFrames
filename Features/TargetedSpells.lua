@@ -1809,10 +1809,6 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListReleaseAllBars then
             DF._TargetedListReleaseAllBars()
         end
-    elseif event == "GROUP_ROSTER_UPDATE" then
-        if DF._TargetedListRebuildRoster then
-            DF._TargetedListRebuildRoster()
-        end
     end
 end
 
@@ -1867,10 +1863,8 @@ local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
     -- Nameplate removal events are unreliable during zone transitions,
-    -- so the Targeted List also needs a cleanup sweep on loading screen
-    -- exit. GROUP_ROSTER_UPDATE drives the roster name cache rebuild.
+    -- so the Targeted List needs a cleanup sweep on loading screen exit.
     eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
-    eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:Show()
 end
 
@@ -3646,11 +3640,6 @@ local TL_C_Timer_After = C_Timer and C_Timer.After
 -- }
 local activeTargetedListCasts = {}
 
--- Name lookup cache, rebuilt on GROUP_ROSTER_UPDATE. Avoids iterating
--- party1-4 on every cast event. Only populated in party groups — raid
--- support is intentionally not implemented (see section header).
-local targetedListRosterNames = {}
-
 -- Frame pool for bars. Created lazily on first use so stable builds
 -- that never touch the feature don't pay the allocation cost.
 local targetedListBarPool = nil
@@ -3697,55 +3686,34 @@ function DF:TargetedListNeedsCastEvents()
 end
 
 -- ------------------------------------------------------------
--- Roster name cache
--- ------------------------------------------------------------
-
--- Rebuilds targetedListRosterNames from the current party membership.
--- Called on GROUP_ROSTER_UPDATE and on feature init. Cheap (<= 5
--- entries) so we just wipe-and-rebuild rather than diffing.
-local function TargetedList_RebuildRosterCache()
-    wipe(targetedListRosterNames)
-    if not TargetedList_IsGateOpen() then return end
-    -- Party only. In raid the cache is left empty — the active check
-    -- will early-out before any cast lookup happens.
-    if TL_IsInRaid() or not TL_IsInGroup() then return end
-
-    local playerName = TL_UnitName("player")
-    if playerName then targetedListRosterNames[playerName] = "player" end
-
-    for i = 1, 4 do
-        local unit = "party" .. i
-        if TL_UnitExists(unit) then
-            local name = TL_UnitName(unit)
-            if name then targetedListRosterNames[name] = unit end
-        end
-    end
-end
-
--- Expose for the shared roster-change path in TargetedSpells (so the
--- existing GROUP_ROSTER_UPDATE handler can call us without reaching
--- into file-local state).
-DF._TargetedListRebuildRoster = TargetedList_RebuildRosterCache
-
--- ------------------------------------------------------------
 -- Cast-targeting filter
 -- ------------------------------------------------------------
 
--- Returns (true, unit) if the caster's current spell is targeting a
--- party member, (false, nil) otherwise. Uses the name cache for O(1)
--- lookup. Both UnitSpellTargetName and UnitName(partyN) are expected
--- to be non-secret strings (needs in-encounter PTR confirmation per
--- _Reference/targeted-spells-findings.md "Pointers for resuming work").
+-- Returns true if the caster's current cast target is a party member.
 --
--- Alternative filter worth probing: UnitInParty("nameplateXtarget"),
--- which TS3 uses. If the compound-vs-party comparison still works
--- post-hotfix, the name-matching layer can be deleted entirely.
-local function TargetedList_IsCastTargetingGroupMember(casterUnit)
-    local targetName = TL_UnitSpellTargetName(casterUnit)
-    if not targetName then return false, nil end
-    local unit = targetedListRosterNames[targetName]
-    if unit then return true, unit end
-    return false, nil
+-- Why this shape: the "name-matching" approach the findings doc
+-- originally proposed is dead because UnitSpellTargetName returns a
+-- secret-tainted string on nameplates — it can't be used as a table
+-- key or compared to anything. Instead we use TS3's filter
+-- (Driver.lua:317): UnitInParty("nameplateXtarget"). This is a
+-- compound-vs-party-token comparison that the findings doc warned
+-- might be blocked by the 2026-04-07 hotfix. Empirically (and per
+-- TS3's working implementation) it is NOT blocked — it returns a
+-- usable boolean for this specific shape.
+--
+-- We don't return WHICH party member is targeted — we don't need to.
+-- The render pipeline (commit #5) will fetch the target name via
+-- UnitSpellTargetName and feed it directly into a FontString:SetText
+-- secret-safe sink, which doesn't require comparing or indexing.
+local function TargetedList_CastTargetIsPartyMember(casterUnit)
+    local target = casterUnit .. "target"
+    if not TL_UnitExists(target) then return false end
+    -- Reject mob-targeting-mob casts (we'd never care about those)
+    if TL_UnitCanAttack("player", target) then return false end
+    -- The actual filter: is the targeted unit a party member?
+    -- TS3 uses this exact compound-vs-party check post-hotfix.
+    if TL_IsInGroup() and not TL_UnitInParty(target) then return false end
+    return true
 end
 
 -- ------------------------------------------------------------
@@ -3800,73 +3768,51 @@ local TL_C_Spell_IsSpellImportant = C_Spell and C_Spell.IsSpellImportant
 --   * GetTime() at pickup as a clean local approximation of start.
 --   * C_Spell.GetSpellName / GetSpellTexture for clean metadata.
 
--- Delayed pickup: called 0.2s after START via C_Timer. Re-validates
--- the cast is still active, matches castId (gotcha #2), records state.
--- All field reads avoid arithmetic on secret-tainted values (gotcha #0).
-local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId, eventSpellId)
+-- Delayed pickup: called 0.2s after START via C_Timer. Verifies the
+-- cast is still active and targeting a party member, then records
+-- minimal state. Cast-ID matching has been REMOVED (gotcha #0):
+-- equality compare on a secret-tainted castID errors. We accept rare
+-- flicker on rapid same-spell restart in exchange for not crashing.
+local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     if not TargetedList_IsActive() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
-    -- Pull only the fields we can safely use. The leading positional
-    -- discards drop name/text/texture/startMS/endMS/isTradeSkill which
-    -- are all secret-tainted on nameplates. We keep castID (casts only),
-    -- notInterruptible, and spellId. Their secret-tainting is documented
-    -- per-field below.
-    local apiCastId, notInterruptible, apiSpellId
-    if isChannel then
-        -- UnitChannelInfo: name,text,texture,startMS,endMS,isTradeSkill,notInterruptible,spellID,...
-        local _, _, _, _, _, _, ni, sid = TL_UnitChannelInfo(casterUnit)
-        notInterruptible = ni        -- secret-tainted; only fed to SetVertexColorFromBoolean
-        apiSpellId = sid             -- may be secret; we prefer eventSpellId
-    else
-        -- UnitCastingInfo: name,text,texture,startMS,endMS,isTradeSkill,castID,notInterruptible,spellID
-        local _, _, _, _, _, _, cid, ni, sid = TL_UnitCastingInfo(casterUnit)
-        apiCastId = cid              -- secret-tainted; only used for equality compare
-        notInterruptible = ni
-        apiSpellId = sid
-    end
+    -- Targeting filter via UnitInParty(nameplateXtarget). See
+    -- TargetedList_CastTargetIsPartyMember for why this works.
+    if not TargetedList_CastTargetIsPartyMember(casterUnit) then return end
 
-    -- Pick the cleanest spellId we have. Event payload values are
-    -- always clean — that's our preferred source. The API spellId is
-    -- a fallback for re-pickup paths that don't carry an event.
-    local spellId = eventSpellId or apiSpellId
+    -- spellId from the event payload is clean. We prefer it over
+    -- anything we'd read from UnitCastingInfo (which would be secret).
+    local spellId = eventSpellId
     if spellId == nil then return end
 
-    -- Cast-ID match (gotcha #2). Equality compare on (possibly secret)
-    -- strings/numbers is permitted; arithmetic isn't.
-    if scheduledCastId and apiCastId and apiCastId ~= scheduledCastId then
-        return
-    end
-
-    -- Filter: targeting party member?
-    local isTargetingGroup, targetUnit = TargetedList_IsCastTargetingGroupMember(casterUnit)
-    if not isTargetingGroup then return end
-
-    -- Hide-own-casts filter
+    -- Important-spells filter (clean — works on a clean spellId).
     local party = DF.db and DF.db.party
-    if party and party.targetedListHideOwnCasts and targetUnit == "player" then
-        return
-    end
-
-    -- Important-spells filter
     if party and party.targetedListImportantOnly
        and TL_C_Spell_IsSpellImportant
        and not TL_C_Spell_IsSpellImportant(spellId) then
         return
     end
 
-    -- Clean metadata via C_Spell.* — these accept clean spellId and
-    -- return clean values, safe for string.format / SetText / etc.
+    -- Clean metadata via C_Spell.* — accepts clean spellId, returns
+    -- clean values, safe for string.format / SetText / etc.
     local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spellId)
     local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spellId)
 
-    -- Target name/class come from confirmed-clean APIs.
-    local targetName = TL_UnitSpellTargetName(casterUnit)
-    local targetClass = TL_UnitSpellTargetClass(casterUnit)
+    -- Pull notInterruptible only — everything else from these APIs is
+    -- secret. notInterruptible itself is secret too, but only ever
+    -- fed to SetVertexColorFromBoolean (a secret-safe sink) at render.
+    local notInterruptible
+    if isChannel then
+        -- UnitChannelInfo positional 7: notInterruptible
+        notInterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+    else
+        -- UnitCastingInfo positional 8: notInterruptible
+        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    end
 
-    -- Duration via the dedicated API. Treat as opaque — never apply
-    -- arithmetic, comparison, or string.format to it. The render
-    -- pipeline (commit #5) will pipe it into secret-safe sinks.
+    -- Duration: TimerDuration object (NOT a number), opaque, fed to
+    -- StatusBar:SetTimerDuration at render. Never arithmetic.
     local duration
     if isChannel then
         duration = TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit)
@@ -3875,27 +3821,24 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId
     end
 
     activeTargetedListCasts[casterUnit] = {
-        castId          = apiCastId,
-        spellId         = spellId,
-        spellName       = spellName,
-        spellTexture    = spellTexture,
-        isChannel       = isChannel,
-        startTime       = TL_GetTime(),       -- clean local approximation
-        duration        = duration,           -- opaque; may be secret-tainted
-        targetUnit      = targetUnit,
-        targetName      = targetName,
-        targetClass     = targetClass,
-        uninterruptible = notInterruptible,   -- secret-tainted; SetVertexColorFromBoolean only
-        casterUnit      = casterUnit,
+        spellId         = spellId,           -- clean (from event)
+        spellName       = spellName,         -- clean
+        spellTexture    = spellTexture,      -- clean
+        isChannel       = isChannel,         -- clean
+        startTime       = TL_GetTime(),      -- clean local approximation
+        duration        = duration,          -- opaque TimerDuration object
+        uninterruptible = notInterruptible,  -- secret; SetVertexColorFromBoolean only
+        casterUnit      = casterUnit,        -- clean (we generated it)
+        -- targetName / targetClass / targetUnit intentionally NOT stored.
+        -- Fetched at render time via UnitSpellTargetName / UnitSpellTargetClass
+        -- and piped directly into secret-safe sinks (SetText, SetTextColor
+        -- via C_ClassColor.GetClassColor).
     }
 
-    -- Debug visibility until commit #5 attaches real bars.
-    -- Only formatting clean values: spellName, targetName, channel flag.
-    -- Duration is intentionally omitted — it may be secret-tainted and
-    -- string.format would fail on it.
+    -- Debug log: clean strings only.
     if DF.Debug then
-        DF:Debug("TARGETEDLIST", "+cast %s: %s -> %s%s",
-            casterUnit, tostring(spellName), tostring(targetName),
+        DF:Debug("TARGETEDLIST", "+cast %s: %s%s",
+            casterUnit, tostring(spellName),
             isChannel and " [channel]" or "")
     end
 end
@@ -3923,12 +3866,12 @@ local function TargetedList_ProcessCastStart(casterUnit, event, ...)
     end
 
     -- Event payload (after `unit` consumed by OnEvent): (castGuid, spellId).
-    -- These are clean values from the event dispatch. For empower the
-    -- shape matches regular start on current retail. (gotcha #6)
-    local castGuid, eventSpellId = ...
+    -- We only need spellId — castGuid was used for cast-ID matching, which
+    -- we've removed because secret-string equality compare errors.
+    local _, eventSpellId = ...
 
     TL_C_Timer_After(TARGETEDLIST_PICKUP_DELAY, function()
-        TargetedList_DelayedPickup(casterUnit, isChannel, castGuid, eventSpellId)
+        TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     end)
 end
 
@@ -3950,12 +3893,10 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
         if channelSpellId ~= nil then return end
     end
 
-    -- Gotcha #2: match castId for casts (channels don't have one).
-    -- The event's castGuid is the first vararg after `unit`.
-    local eventCastId = select(1, ...)
-    if active.castId and eventCastId and active.castId ~= eventCastId then
-        return -- stale stop for a previous cast on this unit
-    end
+    -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
+    -- the findings doc. Equality compare on a secret-tainted castID
+    -- errors. Without the match, rapid same-spell restarts may briefly
+    -- show stale state. Acceptable for v1.
 
     -- Gotcha #4: mob death mid-cast fires INTERRUPTED with nil
     -- interrupter; also some INTERRUPTED paths don't propagate one.
@@ -4039,13 +3980,9 @@ DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
 -- settings toggle callback. Safe to call on stable (no-op via gate).
 function DF:InitTargetedList()
     if not TargetedList_IsGateOpen() then return end
-
-    -- Rebuild the roster cache once at init. Subsequent rebuilds are
-    -- triggered via GROUP_ROSTER_UPDATE in the shared event dispatcher.
-    TargetedList_RebuildRosterCache()
-
-    -- Container + bar pool are created lazily by the render pipeline
-    -- in commit #5. Nothing to do here yet.
+    -- Nothing to do at init — the targeting filter uses live API
+    -- queries (no cache to prime), and the bar pool/container are
+    -- created lazily by the render pipeline in commit #5.
 end
 
 -- Called from the settings-apply path (commit #6). Dispel-style
