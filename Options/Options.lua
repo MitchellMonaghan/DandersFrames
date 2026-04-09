@@ -5525,7 +5525,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlImportantOnly.disableOn = HideTLOptions
             local tlHideOwn = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Own Casts"], db, "targetedListHideOwnCasts", TargetedListUpdate), 30)
             tlHideOwn.disableOn = HideTLOptions
-            local tlMaxBars = settingsGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Bars"], 1, 20, 1, db, "targetedListMaxBars", TargetedListUpdate, nil, true), 55)
+            local tlMaxBars = settingsGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Bars"], 1, 20, 1, db, "targetedListMaxBars", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlMaxBars.disableOn = HideTLOptions
             Add(settingsGroup, nil, 1)
 
@@ -5554,11 +5554,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local layoutGroup = GUI:CreateSettingsGroup(self.child, 260)
             layoutGroup:AddWidget(GUI:CreateHeader(self.child, L["Size & Spacing"]), 40)
-            local tlW = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Width"], 120, 600, 1, db, "targetedListWidth", TargetedListUpdate, nil, true), 55)
+            local tlW = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Width"], 120, 600, 1, db, "targetedListWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlW.disableOn = HideTLOptions
-            local tlH = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Height"], 14, 48, 1, db, "targetedListHeight", TargetedListUpdate, nil, true), 55)
+            local tlH = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Bar Height"], 14, 48, 1, db, "targetedListHeight", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlH.disableOn = HideTLOptions
-            local tlSpace = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Spacing"], 0, 10, 1, db, "targetedListSpacing", TargetedListUpdate, nil, true), 55)
+            local tlSpace = layoutGroup:AddWidget(GUI:CreateSlider(self.child, L["Spacing"], 0, 10, 1, db, "targetedListSpacing", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSpace.disableOn = HideTLOptions
             local tlGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Growth Direction"], growthOptions, db, "targetedListGrowth", TargetedListUpdate), 55)
             tlGrowth.disableOn = HideTLOptions
@@ -5572,7 +5572,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlPreset.disableOn = HideTLOptions
             local tlTexture = presetGroup:AddWidget(GUI:CreateTextureDropdown(self.child, L["Texture"], db, "targetedListTexture", TargetedListUpdate), 55)
             tlTexture.disableOn = HideTLOptions
-            local tlBgAlpha = presetGroup:AddWidget(GUI:CreateSlider(self.child, L["Background Alpha"], 0, 1, 0.05, db, "targetedListBackgroundAlpha", TargetedListUpdate, nil, true), 55)
+            local tlBgAlpha = presetGroup:AddWidget(GUI:CreateSlider(self.child, L["Background Alpha"], 0, 1, 0.05, db, "targetedListBackgroundAlpha", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlBgAlpha.disableOn = HideTLOptions
             local tlShowBorder = presetGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Border"], db, "targetedListShowBorder", function()
                 self:RefreshStates()
@@ -5639,7 +5639,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             fontGroup:AddWidget(GUI:CreateHeader(self.child, L["Font"]), 40)
             local tlFont = fontGroup:AddWidget(GUI:CreateFontDropdown(self.child, L["Font"], db, "targetedListFont", TargetedListUpdate), 55)
             tlFont.disableOn = HideTLOptions
-            local tlFontSize = fontGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 8, 24, 1, db, "targetedListFontSize", TargetedListUpdate, nil, true), 55)
+            local tlFontSize = fontGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 8, 24, 1, db, "targetedListFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlFontSize.disableOn = HideTLOptions
             local tlFontOutline = fontGroup:AddWidget(GUI:CreateDropdown(self.child, L["Font Outline"], outlineOptions, db, "targetedListFontOutline", TargetedListUpdate), 55)
             tlFontOutline.disableOn = HideTLOptions
@@ -5662,9 +5662,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             spellNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Spell Name"]), 40)
             local tlSNAnchor = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListSpellNameAnchor", TargetedListUpdate), 55)
             tlSNAnchor.disableOn = HideTLOptions
-            local tlSNX = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListSpellNameX", TargetedListUpdate, nil, true), 55)
+            local tlSNX = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListSpellNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNX.disableOn = HideTLOptions
-            local tlSNY = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListSpellNameY", TargetedListUpdate, nil, true), 55)
+            local tlSNY = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListSpellNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNY.disableOn = HideTLOptions
             AddToSection(spellNamePosGroup, nil, 1)
 
@@ -5672,9 +5672,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             targetNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Target Name"]), 40)
             local tlTNAnchor = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListTargetNameAnchor", TargetedListUpdate), 55)
             tlTNAnchor.disableOn = HideTargetNameOptions
-            local tlTNX = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListTargetNameX", TargetedListUpdate, nil, true), 55)
+            local tlTNX = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListTargetNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNX.disableOn = HideTargetNameOptions
-            local tlTNY = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListTargetNameY", TargetedListUpdate, nil, true), 55)
+            local tlTNY = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListTargetNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNY.disableOn = HideTargetNameOptions
             AddToSection(targetNamePosGroup, nil, 2)
 
@@ -5683,9 +5683,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             durationPosGroup:AddWidget(GUI:CreateHeader(self.child, L["Duration"]), 40)
             local tlDurAnchor = durationPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListDurationAnchor", TargetedListUpdate), 55)
             tlDurAnchor.disableOn = HideDurationPosOptions
-            local tlDurX = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListDurationX", TargetedListUpdate, nil, true), 55)
+            local tlDurX = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListDurationX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlDurX.disableOn = HideDurationPosOptions
-            local tlDurY = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListDurationY", TargetedListUpdate, nil, true), 55)
+            local tlDurY = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListDurationY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlDurY.disableOn = HideDurationPosOptions
             AddToSection(durationPosGroup, nil, 1)
 
@@ -5698,9 +5698,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local timingGroup = GUI:CreateSettingsGroup(self.child, 260)
             timingGroup:AddWidget(GUI:CreateHeader(self.child, L["Timing"]), 40)
-            local tlFadeOut = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Fade Out Duration"], 0, 1, 0.05, db, "targetedListFadeOutDuration", TargetedListUpdate, nil, true), 55)
+            local tlFadeOut = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Fade Out Duration"], 0, 1, 0.05, db, "targetedListFadeOutDuration", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlFadeOut.disableOn = HideTLOptions
-            local tlFlashDur = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Interrupted Flash Duration"], 0, 2, 0.1, db, "targetedListInterruptedFlashDuration", TargetedListUpdate, nil, true), 55)
+            local tlFlashDur = timingGroup:AddWidget(GUI:CreateSlider(self.child, L["Interrupted Flash Duration"], 0, 2, 0.1, db, "targetedListInterruptedFlashDuration", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlFlashDur.disableOn = HideTLOptions
             AddToSection(timingGroup, nil, 1)
 
