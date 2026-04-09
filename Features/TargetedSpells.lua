@@ -1781,6 +1781,28 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListProcessCastStart then
             DF._TargetedListProcessCastStart(unit, event, ...)
         end
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        -- Newly-seen nameplate may already be casting — probe and
+        -- schedule a pickup just like a normal start event.
+        if DF._TargetedListProcessCastStart then
+            DF._TargetedListProcessCastStart(unit, event, ...)
+        end
+    elseif event == "UNIT_TARGET" then
+        -- Enemy swapped target mid-cast. If they're casting and the
+        -- new target is a party member we want the bar; if not we
+        -- want the old bar gone. Cheapest correct thing is to probe
+        -- via the same pickup path — the delayed handler will either
+        -- refresh or bail based on the current target.
+        if DF._TargetedListProcessCastStart then
+            DF._TargetedListProcessCastStart(unit, event, ...)
+        end
+        -- Also drop any existing tracking for this unit, so if the
+        -- new target is no longer a party member the bar goes away
+        -- immediately rather than lingering until CHANNEL/CAST_STOP.
+        -- The delayed re-pickup above will recreate it if needed.
+        if DF._TargetedListOnCastStop then
+            DF._TargetedListOnCastStop(unit, event, ...)
+        end
     elseif event == "UNIT_SPELLCAST_STOP"
            or event == "UNIT_SPELLCAST_FAILED"
            or event == "UNIT_SPELLCAST_FAILED_QUIET"
@@ -3744,47 +3766,256 @@ local function TargetedList_IsCastTargetingGroupMember(casterUnit)
 end
 
 -- ------------------------------------------------------------
--- Cast lifecycle stubs
+-- Cast lifecycle
 -- ------------------------------------------------------------
--- These are wired to the shared OnEvent dispatcher below so the
--- scaffold compiles and runs without behavior. Full implementations
--- land in commit #4 with the 0.2s delayed pickup and all 13 gotchas.
+-- Implements the 13 correctness gotchas captured in
+-- _Reference/targeted-spells-findings.md §"Implementation gotchas".
+-- Each gotcha is tagged inline as (gotcha #N).
 
--- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START.
--- varargs: (castGuid, spellId [, ...]) for regular casts.
--- For empower, spellId is at select(2, ...) in our handler (unit is
--- already consumed by the OnEvent signature) — commit #4 handles the
--- offset.
+-- Delay before we read cast data after UNIT_SPELLCAST_START. At the
+-- instant the event fires, UnitSpellTargetName / UnitCastingDuration /
+-- UnitChannelDuration all return nil — the engine populates them a
+-- few frames later. TS3 uses 0.2s; match that. (gotcha #1)
+local TARGETEDLIST_PICKUP_DELAY = 0.2
+
+-- Is this unit a nameplate we're willing to look at? Filters out
+-- friendly nameplates, party-member nameplates (wargames/mercenary),
+-- and anything that isn't a valid enemy unit token.
+local function TargetedList_IsRelevantCaster(casterUnit)
+    if type(casterUnit) ~= "string" then return false end
+    if string.sub(casterUnit, 1, 9) ~= "nameplate" then return false end
+    if not TL_UnitExists(casterUnit) then return false end
+    if not TL_UnitCanAttack("player", casterUnit) then return false end
+    -- Exclude own party members that have nameplates (rare but real)
+    if TL_UnitInParty(casterUnit) then return false end
+    return true
+end
+
+-- Unified reader for both cast and channel data. Returns a small
+-- table with the fields we need, or nil if the unit is not casting.
+-- The positional offsets here come straight from Blizzard's current
+-- retail API — note that castID is at position 7 for casts but
+-- notInterruptible is at position 7 for channels, so the offsets
+-- differ and must be kept in sync.
+local function TargetedList_ReadCastData(casterUnit, isChannel)
+    if isChannel then
+        local name, _, texture, startMS, endMS, _, notInterruptible, spellId =
+            TL_UnitChannelInfo(casterUnit)
+        if not name then return nil end
+        return {
+            name = name,
+            texture = texture,
+            startTime = (startMS or 0) / 1000,
+            duration = ((endMS or 0) - (startMS or 0)) / 1000,
+            spellId = spellId,
+            uninterruptible = notInterruptible, -- secret-tainted (gotcha #8)
+            apiCastId = nil,                     -- channels don't return one
+            isChannel = true,
+        }
+    else
+        local name, _, texture, startMS, endMS, _, apiCastId, notInterruptible, spellId =
+            TL_UnitCastingInfo(casterUnit)
+        if not name then return nil end
+        return {
+            name = name,
+            texture = texture,
+            startTime = (startMS or 0) / 1000,
+            duration = ((endMS or 0) - (startMS or 0)) / 1000,
+            spellId = spellId,
+            uninterruptible = notInterruptible, -- secret-tainted (gotcha #8)
+            apiCastId = apiCastId,
+            isChannel = false,
+        }
+    end
+end
+
+-- Delayed pickup: called 0.2s after START via C_Timer. Re-validates
+-- the cast is still active (may have been cancelled in the window),
+-- reads data, matches castId (gotcha #2), and records state.
+local function TargetedList_DelayedPickup(casterUnit, isChannel, scheduledCastId)
+    if not TargetedList_IsActive() then return end
+    if not TargetedList_IsRelevantCaster(casterUnit) then return end
+
+    local data = TargetedList_ReadCastData(casterUnit, isChannel)
+    if not data then return end          -- cast ended during the delay window
+    if data.duration <= 0 then return end
+
+    -- If we had a scheduled castId and the API now reports a different
+    -- one, a new cast started on this unit during the delay window.
+    -- The scheduled pickup is stale; bail. (gotcha #2)
+    if scheduledCastId and data.apiCastId and data.apiCastId ~= scheduledCastId then
+        return
+    end
+
+    -- Filter: is this cast targeting a party member?
+    local isTargetingGroup, targetUnit = TargetedList_IsCastTargetingGroupMember(casterUnit)
+    if not isTargetingGroup then return end
+
+    -- Hide-own-casts filter
+    local party = DF.db and DF.db.party
+    if party and party.targetedListHideOwnCasts and targetUnit == "player" then
+        return
+    end
+
+    -- Important-spells filter
+    if party and party.targetedListImportantOnly
+       and C_Spell and C_Spell.IsSpellImportant
+       and not C_Spell.IsSpellImportant(data.spellId) then
+        return
+    end
+
+    local targetName = TL_UnitSpellTargetName(casterUnit)
+    local targetClass = TL_UnitSpellTargetClass(casterUnit)
+
+    activeTargetedListCasts[casterUnit] = {
+        castId          = data.apiCastId,   -- may be nil for channels
+        spellId         = data.spellId,
+        spellName       = data.name,
+        spellTexture    = data.texture,
+        isChannel       = data.isChannel,
+        startTime       = data.startTime,
+        duration        = data.duration,
+        endTime         = data.startTime + data.duration,
+        targetUnit      = targetUnit,
+        targetName      = targetName,
+        targetClass     = targetClass,
+        uninterruptible = data.uninterruptible, -- secret-tainted; only ever fed to SetVertexColorFromBoolean
+        casterUnit      = casterUnit,
+    }
+
+    -- Debug visibility until commit #5 attaches real bars.
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "+cast %s: %s -> %s (%s, %.1fs)",
+            casterUnit, tostring(data.name), tostring(targetName),
+            tostring(targetClass), data.duration)
+    end
+end
+
+-- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START,
+-- and also from NAME_PLATE_UNIT_ADDED / UNIT_TARGET re-pickup paths.
+-- Schedules the 0.2s delayed pickup — cast data isn't available yet.
 local function TargetedList_ProcessCastStart(casterUnit, event, ...)
     if not TargetedList_IsActive() then return end
-    -- TODO(commit #4): schedule 0.2s delayed pickup via C_Timer.After,
-    -- then read UnitSpellTargetName / Unit[Casting|Channel]Duration,
-    -- match against roster cache, acquire bar, render.
+    if not TargetedList_IsRelevantCaster(casterUnit) then return end
+    if not TL_C_Timer_After then return end
+
+    -- Determine isChannel from the event. For NAMEPLATE_UNIT_ADDED /
+    -- UNIT_TARGET we don't know yet; probe both APIs.
+    local isChannel
+    if event == "UNIT_SPELLCAST_CHANNEL_START" then
+        isChannel = true
+    elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_EMPOWER_START" then
+        isChannel = false
+    else
+        -- Probe-based: prefer cast info, fall back to channel
+        if TL_UnitCastingInfo(casterUnit) then
+            isChannel = false
+        elseif TL_UnitChannelInfo(casterUnit) then
+            isChannel = true
+        else
+            return  -- not actually casting
+        end
+    end
+
+    -- castGuid is the first vararg after `unit` (consumed by OnEvent).
+    -- For empower Blizzard's payload is the same shape (unit, castGuid,
+    -- spellId) on current retail; no extra offset needed. (gotcha #6)
+    local castGuid = select(1, ...)
+
+    TL_C_Timer_After(TARGETEDLIST_PICKUP_DELAY, function()
+        TargetedList_DelayedPickup(casterUnit, isChannel, castGuid)
+    end)
 end
 
--- Called for every cast-stop-ish event (STOP / FAILED / FAILED_QUIET /
--- SUCCEEDED / INTERRUPTED / CHANNEL_STOP / EMPOWER_STOP / NAMEPLATE_REMOVED).
--- Varargs contain the original event payload after `unit`.
+-- Called for every "cast stopped" shaped event. Handles cast-ID
+-- matching, SUCCEEDED-during-channel suppression, mob-death guards,
+-- and interrupter lookup.
 local function TargetedList_OnCastStop(casterUnit, event, ...)
     if not TargetedList_IsActive() then return end
-    -- TODO(commit #4): match castId, release bar (gotcha #2), handle
-    -- SUCCEEDED-during-channel suppression (gotcha #3), handle
-    -- interrupted flash + UnitNameFromGUID interrupter lookup
-    -- (gotchas #4, #7).
+
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
+
+    -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
+    -- emit SUCCEEDED once per tick while still channeling. Ignore.
+    if event == "UNIT_SPELLCAST_SUCCEEDED"
+       and TL_UnitChannelInfo(casterUnit) ~= nil then
+        return
+    end
+
+    -- Gotcha #2: match castId for casts (channels don't have one).
+    -- The event's castGuid is the first vararg after `unit`.
+    local eventCastId = select(1, ...)
+    if active.castId and eventCastId and active.castId ~= eventCastId then
+        return -- stale stop for a previous cast on this unit
+    end
+
+    -- Gotcha #4: mob death mid-cast fires INTERRUPTED with nil
+    -- interrupter; also some INTERRUPTED paths don't propagate one.
+    -- Treat both as normal stops (no interrupter flash).
+    local wasInterrupted = (event == "UNIT_SPELLCAST_INTERRUPTED")
+    local interrupterGuid, interrupterName, interrupterClass
+    if wasInterrupted then
+        -- In our offset-by-1 varargs (unit already consumed), the
+        -- interrupter GUID is at position 3: (castGuid, spellId, interruptedBy).
+        interrupterGuid = select(3, ...)
+        if not interrupterGuid or not TL_UnitExists(casterUnit) then
+            wasInterrupted = false
+        end
+    end
+
+    -- Gotcha #7: interrupter identification from GUID.
+    if wasInterrupted and interrupterGuid then
+        if TL_UnitNameFromGUID then
+            interrupterName = TL_UnitNameFromGUID(interrupterGuid)
+        end
+        if TL_UnitClassFromGUID then
+            local _, class = TL_UnitClassFromGUID(interrupterGuid)
+            interrupterClass = class
+        end
+    end
+
+    activeTargetedListCasts[casterUnit] = nil
+
+    if DF.Debug then
+        if wasInterrupted and interrupterName then
+            DF:Debug("TARGETEDLIST", "-cast %s: interrupted by %s (%s)",
+                casterUnit, tostring(interrupterName), tostring(interrupterClass))
+        else
+            DF:Debug("TARGETEDLIST", "-cast %s: %s", casterUnit, event)
+        end
+    end
+
+    -- Commit #5 will trigger the fade-out / interrupted-flash render
+    -- here using interrupterName / interrupterClass.
 end
 
+-- Gotcha #9: mob interruptibility toggles mid-cast. The clean boolean
+-- from the event replaces the (possibly secret-tainted) value from
+-- UnitCastingInfo so future bar redraws can branch on it cleanly.
 local function TargetedList_OnInterruptibilityChange(casterUnit, isInterruptible)
     if not TargetedList_IsActive() then return end
-    -- TODO(commit #4): live update bar color for matching cast
-    -- (gotcha #9).
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
+    -- The stored field is "uninterruptible" (matches the WoW API name).
+    -- Clean booleans are always safe to feed into SetVertexColorFromBoolean.
+    active.uninterruptible = not isInterruptible
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "~cast %s: interruptible=%s",
+            casterUnit, tostring(isInterruptible))
+    end
+    -- Commit #5: apply to the bar via SetVertexColorFromBoolean.
 end
 
+-- Gotcha #11: nameplate removal events don't reliably fire on zone
+-- transitions. Also used on feature disable and on explicit cleanup.
 local function TargetedList_ReleaseAllBars()
     if not TargetedList_IsGateOpen() then return end
-    -- TODO(commit #4/#5): release every pooled bar, wipe
-    -- activeTargetedListCasts. Called on LOADING_SCREEN_DISABLED
-    -- (gotcha #11) and on feature disable.
     wipe(activeTargetedListCasts)
+    -- Commit #5: release every pooled bar back to the framepool.
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "release all bars")
+    end
 end
 
 -- Expose internal hooks for the shared OnEvent dispatcher above.
