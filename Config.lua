@@ -1785,6 +1785,18 @@ DF.PartyDefaults = {
     targetedListX = 0,
     targetedListY = -10,
     targetedListZoomIcon = true,
+    -- Per-text-element anchor + offset. Anchor is a point name
+    -- (LEFT / CENTER / RIGHT) applied within the bar's progress
+    -- region. X / Y are pixel offsets from that anchor.
+    targetedListSpellNameAnchor = "LEFT",
+    targetedListSpellNameX = 4,
+    targetedListSpellNameY = 0,
+    targetedListTargetNameAnchor = "RIGHT",
+    targetedListTargetNameX = -4,
+    targetedListTargetNameY = 0,
+    targetedListDurationAnchor = "RIGHT",
+    targetedListDurationX = -4,
+    targetedListDurationY = 0,
 
     -- Test Mode
     -- testShowTargetedList drives the Targeted List demo bars in party

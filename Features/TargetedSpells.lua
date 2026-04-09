@@ -4079,22 +4079,57 @@ local function TargetedList_BuildBar(parent)
     progress:SetValue(0)
     bar.progress = progress
 
-    -- Text overlays on the progress bar
+    -- Text overlays on the progress bar. Anchor / offset are applied
+    -- by TargetedList_ApplyTextLayout on every render so settings
+    -- changes take effect immediately without rebuilding the bar.
     local spellName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    spellName:SetPoint("LEFT", progress, "LEFT", 4, 0)
-    spellName:SetJustifyH("LEFT")
     spellName:SetJustifyV("MIDDLE")
     spellName:SetWordWrap(false)
     bar.spellName = spellName
 
     local targetName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    targetName:SetPoint("RIGHT", progress, "RIGHT", -4, 0)
-    targetName:SetJustifyH("RIGHT")
     targetName:SetJustifyV("MIDDLE")
     targetName:SetWordWrap(false)
     bar.targetName = targetName
 
+    local duration = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    duration:SetJustifyV("MIDDLE")
+    duration:SetWordWrap(false)
+    bar.duration = duration
+
     return bar
+end
+
+-- Helper: map db anchor name to (point, justifyH) for a text element
+-- inside the bar's progress region.
+local function TargetedList_ResolveTextAnchor(anchorName)
+    if anchorName == "CENTER" then return "CENTER", "CENTER" end
+    if anchorName == "RIGHT" then return "RIGHT", "RIGHT" end
+    return "LEFT", "LEFT"  -- default
+end
+
+-- Apply anchor/offset settings to a bar's text elements. Called per
+-- bar during render and again from UpdateTargetedListLayout when
+-- settings change.
+local function TargetedList_ApplyTextLayout(bar, db)
+    if not bar or not db then return end
+
+    local function applyTextElement(fs, anchorKey, xKey, yKey, defaultAnchor)
+        if not fs then return end
+        local anchor = db[anchorKey] or defaultAnchor
+        local point, justify = TargetedList_ResolveTextAnchor(anchor)
+        fs:ClearAllPoints()
+        fs:SetPoint(point, bar.progress, point,
+            db[xKey] or 0, db[yKey] or 0)
+        fs:SetJustifyH(justify)
+    end
+
+    applyTextElement(bar.spellName,
+        "targetedListSpellNameAnchor", "targetedListSpellNameX", "targetedListSpellNameY", "LEFT")
+    applyTextElement(bar.targetName,
+        "targetedListTargetNameAnchor", "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT")
+    applyTextElement(bar.duration,
+        "targetedListDurationAnchor", "targetedListDurationX", "targetedListDurationY", "RIGHT")
 end
 
 -- Release callback for the pool.
@@ -4108,6 +4143,7 @@ local function TargetedList_ResetBar(pool, bar)
     bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
     bar.spellName:SetText("")
     bar.targetName:SetText("")
+    if bar.duration then bar.duration:SetText("") end
     bar.icon:SetTexture(nil)
 end
 
@@ -4267,6 +4303,8 @@ local function TargetedList_LayoutBars()
             bar:SetPoint("TOP", targetedListContainer, "TOP",
                 0, -(i - 1) * (barH + spacing))
         end
+        -- Apply text anchor/offset settings per-bar
+        TargetedList_ApplyTextLayout(bar, db)
         bar:Show()
     end
 end

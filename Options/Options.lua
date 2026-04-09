@@ -5648,6 +5648,50 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             currentSection = nil
             AddSpace(10, "both")
 
+            -- ===== TEXT POSITION SECTION =====
+            -- Per-element anchor + X/Y offset. Each text element
+            -- (spell name, target name, duration) can be independently
+            -- anchored to LEFT / CENTER / RIGHT within the bar's
+            -- progress region with a pixel offset applied on top.
+            local textPosSection = Add(GUI:CreateCollapsibleSection(self.child, L["Text Position"], false), 36, "both")
+            currentSection = textPosSection
+
+            local textAnchorOptions = { LEFT = L["Left"], CENTER = L["Center"], RIGHT = L["Right"] }
+
+            local spellNamePosGroup = GUI:CreateSettingsGroup(self.child, 260)
+            spellNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Spell Name"]), 40)
+            local tlSNAnchor = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListSpellNameAnchor", TargetedListUpdate), 55)
+            tlSNAnchor.disableOn = HideTLOptions
+            local tlSNX = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListSpellNameX", TargetedListUpdate, nil, true), 55)
+            tlSNX.disableOn = HideTLOptions
+            local tlSNY = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListSpellNameY", TargetedListUpdate, nil, true), 55)
+            tlSNY.disableOn = HideTLOptions
+            AddToSection(spellNamePosGroup, nil, 1)
+
+            local targetNamePosGroup = GUI:CreateSettingsGroup(self.child, 260)
+            targetNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Target Name"]), 40)
+            local tlTNAnchor = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListTargetNameAnchor", TargetedListUpdate), 55)
+            tlTNAnchor.disableOn = HideTargetNameOptions
+            local tlTNX = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListTargetNameX", TargetedListUpdate, nil, true), 55)
+            tlTNX.disableOn = HideTargetNameOptions
+            local tlTNY = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListTargetNameY", TargetedListUpdate, nil, true), 55)
+            tlTNY.disableOn = HideTargetNameOptions
+            AddToSection(targetNamePosGroup, nil, 2)
+
+            local function HideDurationPosOptions(d) return not d.targetedListEnabled or not d.targetedListShowDuration end
+            local durationPosGroup = GUI:CreateSettingsGroup(self.child, 260)
+            durationPosGroup:AddWidget(GUI:CreateHeader(self.child, L["Duration"]), 40)
+            local tlDurAnchor = durationPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListDurationAnchor", TargetedListUpdate), 55)
+            tlDurAnchor.disableOn = HideDurationPosOptions
+            local tlDurX = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListDurationX", TargetedListUpdate, nil, true), 55)
+            tlDurX.disableOn = HideDurationPosOptions
+            local tlDurY = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListDurationY", TargetedListUpdate, nil, true), 55)
+            tlDurY.disableOn = HideDurationPosOptions
+            AddToSection(durationPosGroup, nil, 1)
+
+            currentSection = nil
+            AddSpace(10, "both")
+
             -- ===== BEHAVIOR SECTION =====
             local behaviorSection = Add(GUI:CreateCollapsibleSection(self.child, L["Behavior"], true), 36, "both")
             currentSection = behaviorSection
