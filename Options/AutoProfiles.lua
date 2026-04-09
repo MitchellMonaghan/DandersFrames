@@ -154,6 +154,7 @@ local OVERRIDE_TAB_MAP = {
     {"auraDesigner",        "auras_auradesigner",   L["Aura Designer"]},
     -- Indicators (specific before generic)
     {"personalTargeted",    "indicators_personal_targeted", L["Personal Targeted"]},
+    {"targetedList",        "indicators_targetedlist", L["Targeted List"]},
     {"targetedSpell",       "indicators_targetedspells", L["Targeted Spells"]},
     {"roleIcon",            "indicators_icons",     L["Icons"]},
     {"leaderIcon",          "indicators_icons",     L["Icons"]},
