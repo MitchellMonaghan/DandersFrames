@@ -3647,6 +3647,15 @@ local targetedListContainer = nil
 -- Frame pool + active bar array are declared further down in the
 -- render pipeline section, close to the functions that use them.
 
+-- Forward declaration: TargetedList_OnCastStop (below) calls
+-- TargetedList_StartFadeTicker to kick off the fade-out re-render
+-- ticker. The actual assignment happens in the render section far
+-- below, because the ticker needs to call TargetedList_Render which
+-- isn't defined until then. The file-local binding is hoisted here
+-- so OnCastStop's reference resolves to the eventual assignment
+-- rather than creating a stray global.
+local TargetedList_StartFadeTicker
+
 -- ------------------------------------------------------------
 -- Runtime gate
 -- ------------------------------------------------------------
@@ -3934,29 +3943,39 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     -- errors. Without the match, rapid same-spell restarts may briefly
     -- show stale state. Acceptable for v1.
 
-    -- We just record whether this was an interrupt for the render
-    -- pipeline (commit #5) to play the interrupted-flash animation.
-    -- The interrupter source name (gotcha #7) is intentionally NOT
-    -- looked up here: the interrupter GUID arrives in the event
-    -- payload as a secret-tainted string on nameplates, which means
-    -- truth-testing it (`not interrupterGuid`) is not allowed and
-    -- UnitNameFromGUID(secretGuid) returns a secret string that
-    -- can't be formatted in Lua. The render pipeline will display the
-    -- interrupter name (if at all) by piping the result of
-    -- UnitNameFromGUID directly into a FontString:SetText sink at
-    -- render time, never inspecting it in Lua.
     local wasInterrupted = (event == "UNIT_SPELLCAST_INTERRUPTED")
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
 
-    activeTargetedListCasts[casterUnit] = nil
+    -- Mark the record as fading instead of nil'ing it immediately.
+    -- The render pipeline keeps the bar alive with decreasing alpha
+    -- until the fade completes, then the fade ticker removes the
+    -- record and re-renders. A fade duration of 0 collapses to
+    -- instant release.
+    local party = DF.db and DF.db.party
+    local fadeDuration
+    if wasInterrupted then
+        fadeDuration = (party and party.targetedListInterruptedFlashDuration) or 1.0
+    else
+        fadeDuration = (party and party.targetedListFadeOutDuration) or 0.25
+    end
+
+    if fadeDuration and fadeDuration > 0 then
+        active.fadingStartedAt = TL_GetTime()
+        active.fadingDuration  = fadeDuration
+        active.wasInterrupted  = wasInterrupted
+        if TargetedList_StartFadeTicker then
+            TargetedList_StartFadeTicker()
+        end
+    else
+        activeTargetedListCasts[casterUnit] = nil
+    end
 
     if DF.Debug then
         DF:Debug("TARGETEDLIST", "-cast %s: %s%s",
             casterUnit, event,
             wasInterrupted and " [interrupted]" or "")
     end
-
-    -- Commit #5 will trigger the fade-out / interrupted-flash render
-    -- here. wasInterrupted is the only flag the renderer needs.
 end
 
 -- Gotcha #9: mob interruptibility toggles mid-cast. The clean boolean
@@ -4443,19 +4462,33 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         end
     end
 
-    -- Hide-own-casts filter at render time. UnitIsUnit(nameplateTarget,
-    -- "player") returns a secret-tainted boolean — SetAlphaFromBoolean
-    -- is the secret-safe sink that takes a secret bool and picks one
-    -- of two alpha values. When the filter is off we force alpha 1.
-    if party and party.targetedListHideOwnCasts
-       and bar.SetAlphaFromBoolean then
-        -- Returns true if the caster's current target is the player,
-        -- false otherwise (or nil / secret bool in combat — all
-        -- handled by the sink).
-        local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
-        bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
+    -- Fade-out / interrupted-flash visual state.
+    -- When a record has fadingStartedAt set, the cast has ended and
+    -- we're counting down the fade window. Compute a linear alpha
+    -- and tint the progress bar yellow if the stop was an interrupt.
+    if activeRec.fadingStartedAt then
+        local elapsed = TL_GetTime() - activeRec.fadingStartedAt
+        local dur = activeRec.fadingDuration or 0.25
+        local pct = 1 - math.min(1, math.max(0, elapsed / dur))
+        bar:SetAlpha(pct)
+        if activeRec.wasInterrupted then
+            -- Yellow flash tint overlaid on the progress bar for the
+            -- fade-out window. Full brightness at flash start, fades
+            -- with the bar alpha via the overall bar alpha we just set.
+            bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
+        end
     else
-        bar:SetAlpha(1)
+        -- Normal (non-fading) hide-own-casts filter. UnitIsUnit
+        -- (nameplateTarget, "player") returns a secret-tainted
+        -- boolean — SetAlphaFromBoolean is the secret-safe sink that
+        -- picks one of two alpha values.
+        if party and party.targetedListHideOwnCasts
+           and bar.SetAlphaFromBoolean then
+            local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
+            bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
+        else
+            bar:SetAlpha(1)
+        end
     end
 end
 
@@ -4522,6 +4555,45 @@ local function TargetedList_ReleaseAllActiveBars()
     end
 end
 
+-- ------------------------------------------------------------
+-- Fade-out / interrupted-flash ticker
+-- ------------------------------------------------------------
+-- When a cast stops, its record is marked with fadingStartedAt +
+-- fadingDuration instead of being removed immediately. The ticker
+-- below re-renders every ~50ms so the bar's alpha/tint can animate.
+-- When a fading record's timer expires, the render pass removes it
+-- from activeTargetedListCasts. The ticker self-cancels when no
+-- fading records remain.
+
+local targetedListFadeTicker = nil
+
+local function TargetedList_HasAnyFadingRecord()
+    for _, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt then return true end
+    end
+    return false
+end
+
+-- Assign to the forward-declared file-local (see State section
+-- above). This avoids creating a global and lets OnCastStop's
+-- reference resolve to this function via upvalue lookup.
+TargetedList_StartFadeTicker = function()
+    if targetedListFadeTicker then return end
+    if not C_Timer or not C_Timer.NewTicker then return end
+    targetedListFadeTicker = C_Timer.NewTicker(0.05, function()
+        if not TargetedList_HasAnyFadingRecord() then
+            if targetedListFadeTicker then
+                targetedListFadeTicker:Cancel()
+                targetedListFadeTicker = nil
+            end
+            return
+        end
+        if DF._TargetedListRender then
+            DF._TargetedListRender()
+        end
+    end)
+end
+
 -- Scratch array reused across renders to avoid per-render allocations.
 local targetedListSortBuf = {}
 
@@ -4548,7 +4620,18 @@ local function TargetedList_Render()
     local db = DF.db and DF.db.party
     local maxBars = (db and db.targetedListMaxBars) or 6
 
-    -- Gather active records into a sortable array.
+    -- First pass: expire any fading records whose fade window has
+    -- elapsed. These are cleaned up in-place so the render below
+    -- doesn't have to deal with them.
+    local now = TL_GetTime()
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt
+           and (now - rec.fadingStartedAt) >= (rec.fadingDuration or 0) then
+            activeTargetedListCasts[unit] = nil
+        end
+    end
+
+    -- Gather surviving records into a sortable array.
     wipe(targetedListSortBuf)
     for _, rec in pairs(activeTargetedListCasts) do
         targetedListSortBuf[#targetedListSortBuf + 1] = rec
