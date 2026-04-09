@@ -4227,13 +4227,6 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             interruptibleColor.b, interruptibleColor.a)
     end
 
-    -- NOTE: click-to-target is intentionally NOT implemented in v1.
-    -- The previous attempt used SecureActionButtonTemplate, which
-    -- worked but made the container :Hide() protected in combat,
-    -- breaking the render-after-cast-stop flow. Re-adding click-to-
-    -- target requires a combat-safe approach (probably an
-    -- out-of-combat-only attribute write on a dedicated secure
-    -- overlay that's shown/hidden independently of the bar stack).
 end
 
 -- ------------------------------------------------------------

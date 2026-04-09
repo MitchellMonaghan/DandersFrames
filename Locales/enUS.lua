@@ -67,7 +67,6 @@ L["Click macro to bind"] = true
 L["Click spell to bind"] = true
 L["Click to bind..."] = true
 L["Click to edit"] = true
-L["Click To Target"] = true
 L["Click-Casting"] = true
 L["Click-Casting Addon Conflict"] = true
 L["Combat Only"] = true

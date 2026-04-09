@@ -1751,7 +1751,6 @@ DF.PartyDefaults = {
     -- Position uses an absolute mover (targetedListX/Y), not an anchor point.
     targetedListBackgroundAlpha = 0.6,
     targetedListBorderColor = {r = 0, g = 0, b = 0, a = 1},
-    targetedListClickToTarget = true,
     targetedListEnabled = false,
     targetedListFadeOutDuration = 0.25,
     targetedListFont = "Friz Quadrata TT",
