@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-08T12:02:58Z"
+DF.BUILD_DATE = "2026-04-09T12:39:20Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -8,17 +8,39 @@ DF.CHANGELOG_TEXT = [===[
 
 ### New Features
 
-* (Profiler) Major rework of the function profiler. New Events tab shows per-WoW-event CPU cost (UNIT_AURA, UNIT_HEALTH, GROUP_ROSTER_UPDATE, etc.). New OnUpdate tab shows per-every-frame-handler cost. New Peak/tk column flags functions called abnormally many times in a single frame (event cascade storms). New Bytes column shows per-call memory allocation for tracking GC pressure. Right-click "Print to Chat" now emits a Top 5 summary across all three categories
-* (Profiler) Function coverage expanded from ~30 tracked methods to ~140, including status icons, my-buff indicators, health-fade, pets, aura designer, roster handling, range refresh, and the bulk Update/Refresh sweeps
+* (Profiler) Major rework of the function profiler with new tabs for per-event CPU cost and per-frame OnUpdate handlers
+* (Profiler) New columns for peak calls per frame and per-call memory allocation
+* (Profiler) Right-click "Print to Chat" now emits a Top 5 summary
+* (Profiler) Function coverage expanded from ~30 to ~140 tracked methods
 
 ### Performance
 
-* (Highlights) Marching-ants animated border now throttled to 30 FPS with smart dash repositioning and color/size caching — cuts CPU cost of animated borders to about a third of the previous cost with no visible difference
-* (Aura Designer) Expiring border color animation no longer tears down and rebuilds the entire border on every tick — uses a lightweight recolor path instead
+* **Major raid performance pass** — total addon CPU down about **62%** and memory churn down about **93%** in a 20-player boss fight. Expect smoother frames during heavy AoE, big pulls, and dispel-heavy fights, especially on older hardware
+* (Buff & Debuff Tracking) Rebuilt the core aura system so it does the work once instead of repeating the same scan 6–7 times per update. Around 99% of aura events now use the fast cached path in raid
+* (Dispel Highlights) The colored outline around dispellable debuffs is now near-free — its CPU cost dropped by about 95%
+* (Absorb Shields) Shield overlays update about twice as fast and no longer create throwaway data on every update
+* (Animated Highlights) Marching-ants borders redraw at 30 FPS instead of 60 with no visible difference, cutting their CPU cost to about a third
+* (Aura Designer) Custom indicators reuse a pool of entries instead of creating new ones every frame — noticeably lighter at raid scale
+* (Aura Designer) Expiring border color animation no longer tears down and rebuilds the entire border on every tick
+* (Frame Updates) Small efficiency win across every frame refresh from caching commonly used WoW APIs
 
 ### Bug Fixes
 
 * (Profiler) Fix taint errors from the profiler incorrectly wrapping Blizzard's secure compact raid frame handlers. The profiler now only instruments DandersFrames-owned frames
+
+### Technical Notes
+
+For the curious — measured in a 5m 38s raid boss fight (493,901 calls profiled):
+
+* **Total addon CPU:** ~114 ms/sec → ~43 ms/sec (**−62%**)
+* **Memory churn (top sources):** ~12 MB/sec → < 1 MB/sec (**−93%**)
+* **Aura cache hit rate:** 99.6% (36,204 of 36,360 events skip the full scan)
+* **Dispel overlay CPU share:** 16.4% → 0.8% (**−95%**)
+* **Absorb update per call:** ~111 µs / ~80 B → 38.4 µs / 0 B (**−65% CPU, zero allocation**)
+* **Aura tracking:** Now uses the `UNIT_AURA updateInfo` payload (oUF/ElvUI-style incremental updates) with a shared `DF.AuraCache` keyed by aura instance ID. Both Aura Designer and Dispel overlay read from the same cache instead of re-querying `C_UnitAuras`
+* **Aura Designer indicator entries** are pooled (max 64 reused), and instance keys are cached in a two-level lookup table
+* **Dispel overlay** caches its layout state and short-circuits `ApplyOverlayLayout` when nothing relevant changed — same pattern was then applied to absorb shields
+* **Update.lua** caches `UnitHealth`, `UnitPower`, `InCombatLockdown` and 9 other Unit\* APIs as file-scope locals to skip global lookups in the hot path
 
 ## [4.2.7] - 2026-04-07
 
