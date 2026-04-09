@@ -4378,8 +4378,19 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
 
     -- Target name via UnitSpellTargetName -> FontString:SetText.
     -- The string is secret-tainted on nameplates; SetText accepts it.
+    -- If the arrow prefix is enabled, pipe through SetFormattedText
+    -- which also handles secret values at the C side (no Lua-level
+    -- concatenation, which would error).
     local targetName = TL_UnitSpellTargetName(casterUnit)
-    bar.targetName:SetText(targetName or "")
+    if targetName then
+        if party and party.targetedListShowArrowPrefix then
+            bar.targetName:SetFormattedText("→ %s", targetName)
+        else
+            bar.targetName:SetText(targetName)
+        end
+    else
+        bar.targetName:SetText("")
+    end
 
     -- Class color via UnitSpellTargetClass -> C_ClassColor.GetClassColor.
     -- Both return values may be secret; the Blizzard helper handles it.
@@ -4941,7 +4952,11 @@ local function TargetedList_ApplyTestBarContent(bar, index)
 
     -- Target name + class color from TestData.units
     local targetName = TargetedList_GetTestTargetName(index)
-    bar.targetName:SetText(targetName)
+    if db.targetedListShowArrowPrefix then
+        bar.targetName:SetFormattedText("→ %s", targetName)
+    else
+        bar.targetName:SetText(targetName)
+    end
     if db.targetedListTargetNameClassColor then
         local targetClass = TargetedList_GetTestTargetClass(index)
         if targetClass and TL_C_ClassColor and TL_C_ClassColor.GetClassColor then
