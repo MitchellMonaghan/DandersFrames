@@ -2716,20 +2716,7 @@ function DF:CreatePersonalTargetedSpellsMover()
     label:SetText("Personal\nTargeted Spells")
     label:SetTextColor(1, 1, 1, 1)
     mover.label = label
-    
-    -- Add center snap lines (visual guides)
-    local centerLineH = mover:CreateTexture(nil, "OVERLAY")
-    centerLineH:SetColorTexture(1, 1, 1, 0.5)
-    centerLineH:SetSize(2000, 1)
-    centerLineH:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineH = centerLineH
-    
-    local centerLineV = mover:CreateTexture(nil, "OVERLAY")
-    centerLineV:SetColorTexture(1, 1, 1, 0.5)
-    centerLineV:SetSize(1, 2000)
-    centerLineV:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineV = centerLineV
-    
+
     mover:SetScript("OnDragStart", function(self)
         self:StartMoving()
         
@@ -4364,19 +4351,6 @@ local function TargetedList_CreateMover()
     label:SetText("Targeted List")
     label:SetTextColor(1, 1, 1, 1)
     mover.label = label
-
-    -- Center snap lines
-    local ch = mover:CreateTexture(nil, "OVERLAY")
-    ch:SetColorTexture(1, 1, 1, 0.5)
-    ch:SetSize(2000, 1)
-    ch:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineH = ch
-
-    local cv = mover:CreateTexture(nil, "OVERLAY")
-    cv:SetColorTexture(1, 1, 1, 0.5)
-    cv:SetSize(1, 2000)
-    cv:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineV = cv
 
     mover:SetScript("OnDragStart", function(self)
         self:StartMoving()
