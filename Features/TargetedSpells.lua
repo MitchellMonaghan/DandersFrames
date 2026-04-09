@@ -4427,6 +4427,36 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             interruptibleColor.b, interruptibleColor.a)
     end
 
+    -- Important-spells filter at render time. C_Spell.IsSpellImportant
+    -- returns a secret-tainted boolean when given a secret spellId,
+    -- so we pipe it through SetShownFromBoolean — the secret-safe
+    -- sink that accepts a secret bool and toggles shown state.
+    -- When the filter is off we just make sure the bar is shown.
+    if party and party.targetedListImportantOnly
+       and TL_C_Spell_IsSpellImportant
+       and bar.SetShownFromBoolean then
+        local isImportant = TL_C_Spell_IsSpellImportant(spellId)
+        bar:SetShownFromBoolean(isImportant, true, false)
+    else
+        if bar.SetShownFromBoolean then
+            bar:SetShownFromBoolean(true, true, false)
+        end
+    end
+
+    -- Hide-own-casts filter at render time. UnitIsUnit(nameplateTarget,
+    -- "player") returns a secret-tainted boolean — SetAlphaFromBoolean
+    -- is the secret-safe sink that takes a secret bool and picks one
+    -- of two alpha values. When the filter is off we force alpha 1.
+    if party and party.targetedListHideOwnCasts
+       and bar.SetAlphaFromBoolean then
+        -- Returns true if the caster's current target is the player,
+        -- false otherwise (or nil / secret bool in combat — all
+        -- handled by the sink).
+        local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
+        bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
+    else
+        bar:SetAlpha(1)
+    end
 end
 
 -- ------------------------------------------------------------
