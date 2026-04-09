@@ -70,10 +70,11 @@ local CATEGORY_GROUPS = {
     {
         name = "Other",
         categories = {
-            { key = "CLICK",  desc = "Click-casting binding apply, hover, PreClick state" },
-            { key = "PET",    desc = "Pet frame lifecycle and visibility" },
-            { key = "SCRIPT", desc = "Lua script errors and pcall failures" },
-            { key = "SYSTEM", desc = "Reload separators and init confirmation" },
+            { key = "CLICK",        desc = "Click-casting binding apply, hover, PreClick state" },
+            { key = "PET",          desc = "Pet frame lifecycle and visibility" },
+            { key = "SCRIPT",       desc = "Lua script errors and pcall failures" },
+            { key = "SYSTEM",       desc = "Reload separators and init confirmation" },
+            { key = "TARGETEDLIST", desc = "Targeted List cast pickup, stop, and interrupter lookup (alpha/beta only)" },
         },
     },
 }
