@@ -1729,13 +1729,17 @@ end
 -- ============================================================
 
 local function OnEvent(self, event, unit, ...)
+    -- ============================================================
+    -- Personal / group-frame Targeted Spells branch (existing)
+    -- ============================================================
     if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_EMPOWER_START" then
         ProcessCast(unit, false)
     elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
         ProcessCast(unit, true)
     elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
         HandleCastStop(unit, true)  -- Was interrupted
-    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or 
+    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or
+           event == "UNIT_SPELLCAST_FAILED_QUIET" or
            event == "UNIT_SPELLCAST_SUCCEEDED" or
            event == "UNIT_SPELLCAST_CHANNEL_STOP" or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
         HandleCastStop(unit, false)  -- Normal end
@@ -1757,6 +1761,53 @@ local function OnEvent(self, event, unit, ...)
         HandleCastStop(unit, false)
     elseif event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
         ScanAllEnemyCasts()
+    end
+
+    -- ============================================================
+    -- Targeted List branch (alpha/beta only, stubs until commit #4)
+    -- ============================================================
+    -- Routing through DF._TargetedList* shims so the handlers defined
+    -- in the Targeted List section at the bottom of this file don't
+    -- need to be forward-declared. Each handler is gated internally —
+    -- calls are effectively free on stable builds.
+    --
+    -- The full event-to-handler wiring (castId unpacking, empower
+    -- spellId offset, varargs forwarding, mob-death guards) is
+    -- implemented in commit #4. This scaffold only needs to invoke
+    -- the stubs so the file loads and the gating plumbing is exercised.
+    if event == "UNIT_SPELLCAST_START"
+       or event == "UNIT_SPELLCAST_CHANNEL_START"
+       or event == "UNIT_SPELLCAST_EMPOWER_START" then
+        if DF._TargetedListProcessCastStart then
+            DF._TargetedListProcessCastStart(unit, event, ...)
+        end
+    elseif event == "UNIT_SPELLCAST_STOP"
+           or event == "UNIT_SPELLCAST_FAILED"
+           or event == "UNIT_SPELLCAST_FAILED_QUIET"
+           or event == "UNIT_SPELLCAST_SUCCEEDED"
+           or event == "UNIT_SPELLCAST_INTERRUPTED"
+           or event == "UNIT_SPELLCAST_CHANNEL_STOP"
+           or event == "UNIT_SPELLCAST_EMPOWER_STOP"
+           or event == "NAME_PLATE_UNIT_REMOVED" then
+        if DF._TargetedListOnCastStop then
+            DF._TargetedListOnCastStop(unit, event, ...)
+        end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
+        if DF._TargetedListOnInterruptibilityChange then
+            DF._TargetedListOnInterruptibilityChange(unit, true)
+        end
+    elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        if DF._TargetedListOnInterruptibilityChange then
+            DF._TargetedListOnInterruptibilityChange(unit, false)
+        end
+    elseif event == "LOADING_SCREEN_DISABLED" then
+        if DF._TargetedListReleaseAllBars then
+            DF._TargetedListReleaseAllBars()
+        end
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        if DF._TargetedListRebuildRoster then
+            DF._TargetedListRebuildRoster()
+        end
     end
 end
 
@@ -1790,21 +1841,37 @@ local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+    -- FAILED_QUIET is a distinct event from FAILED. Some cancelled
+    -- casts (e.g. movement-cancel of certain empowered spells) only
+    -- fire FAILED_QUIET, leaving dangling bars if we don't subscribe.
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
+    -- INTERRUPTIBLE / NOT_INTERRUPTIBLE fire when a mob's current cast
+    -- toggles mid-cast (e.g. M+ phase changes). Needed so the Targeted
+    -- List bar can live-update its border color.
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTIBLE")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE")
     eventFrame:RegisterEvent("UNIT_TARGET")
     eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
     eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    -- Nameplate removal events are unreliable during zone transitions,
+    -- so the Targeted List also needs a cleanup sweep on loading screen
+    -- exit. GROUP_ROSTER_UPDATE drives the roster name cache rebuild.
+    eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
+    eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     eventFrame:Show()
 end
 
--- Returns true if either the group or personal display needs cast events.
+-- Returns true if any consumer of the shared cast-event stream needs it
+-- registered right now. Consumers: personal Targeted Spells display, the
+-- (permanently-disabled) group-frame display, and the new Targeted List.
 -- Checks both party and raid mode profiles because the addon may switch
 -- modes based on group composition without us re-running this check.
 local function NeedsCastEvents()
@@ -1815,7 +1882,13 @@ local function NeedsCastEvents()
         local personalOn = modeDb.personalTargetedSpellEnabled
         return groupOn or personalOn
     end
-    return modeNeeds(DF.db.party) or modeNeeds(DF.db.raid)
+    if modeNeeds(DF.db.party) or modeNeeds(DF.db.raid) then return true end
+    -- Targeted List is alpha/beta-only and party-only; the call is
+    -- gated by DF.RELEASE_CHANNEL inside the helper.
+    if DF.TargetedListNeedsCastEvents and DF:TargetedListNeedsCastEvents() then
+        return true
+    end
+    return false
 end
 
 -- Public: re-evaluate whether eventFrame should be registered. Call this
@@ -3505,6 +3578,261 @@ function DF:ShowCastHistory()
 end
 
 -- ============================================================
+-- TARGETED LIST
+-- ============================================================
+-- Stacked cast-bar display showing enemy casts targeting party
+-- members. Anchored to the party frame container. Replaces the
+-- group-frame Targeted Spells icons that Blizzard's 2026-04-07
+-- UnitIsUnit hotfix permanently broke.
+--
+-- Gated by DF.RELEASE_CHANNEL — feature is fully inert on stable
+-- releases. Alpha and beta builds run normally. The matching
+-- settings sub-tab in Options.lua is also gated so stable users
+-- never see it.
+--
+-- Party-mode only by design. We will not add raid support.
+--
+-- Implementation is split across commits:
+--   * commit #3 (this one): scaffold — state tables, frame pool,
+--     roster name cache, event hookup, empty lifecycle stubs
+--   * commit #4: cast lifecycle (0.2s delay + all 13 gotchas from
+--     the TS3 cross-reference in _Reference/targeted-spells-findings.md)
+--   * commit #5: render pipeline + layout (bar build, LayoutBars,
+--     Dispel-style skip-rebuild in the apply path)
+--   * commit #6: settings sub-tab in Options.lua
+--
+-- The user-facing name "Targeted List" is intentionally decoupled
+-- from the internal `targetedList*` db prefix. Renaming the feature
+-- is a locale-only change; no code touches the string.
+-- ============================================================
+
+-- File-scope cached APIs (project convention, commit 1a5603d).
+-- These are used by the cast lifecycle and render pipeline in later
+-- commits; caching them here keeps the hot path zero-lookup.
+local TL_UnitSpellTargetName = UnitSpellTargetName
+local TL_UnitSpellTargetClass = UnitSpellTargetClass
+local TL_UnitCastingInfo = UnitCastingInfo
+local TL_UnitChannelInfo = UnitChannelInfo
+local TL_UnitCastingDuration = UnitCastingDuration
+local TL_UnitChannelDuration = UnitChannelDuration
+local TL_UnitNameFromGUID = UnitNameFromGUID
+local TL_UnitClassFromGUID = UnitClassFromGUID
+local TL_UnitInParty = UnitInParty
+local TL_UnitCanAttack = UnitCanAttack
+local TL_UnitExists = UnitExists
+local TL_UnitName = UnitName
+local TL_UnitClass = UnitClass
+local TL_IsInGroup = IsInGroup
+local TL_IsInRaid = IsInRaid
+local TL_GetTime = GetTime
+local TL_C_Timer_After = C_Timer and C_Timer.After
+
+-- ------------------------------------------------------------
+-- State
+-- ------------------------------------------------------------
+
+-- activeTargetedListCasts[casterUnit] = {
+--     castId     = string,    -- cast GUID for id matching (gotcha #2)
+--     spellId    = number,
+--     startTime  = number,
+--     duration   = number,
+--     isChannel  = bool,
+--     bar        = Frame,     -- pooled bar frame (nil until commit #5)
+-- }
+local activeTargetedListCasts = {}
+
+-- Name lookup cache, rebuilt on GROUP_ROSTER_UPDATE. Avoids iterating
+-- party1-4 on every cast event. Only populated in party groups — raid
+-- support is intentionally not implemented (see section header).
+local targetedListRosterNames = {}
+
+-- Frame pool for bars. Created lazily on first use so stable builds
+-- that never touch the feature don't pay the allocation cost.
+local targetedListBarPool = nil
+
+-- Container frame that anchors the list to the party container.
+-- Created on first enable.
+local targetedListContainer = nil
+
+-- ------------------------------------------------------------
+-- Runtime gate
+-- ------------------------------------------------------------
+
+-- Single source of truth for "is this feature allowed to run at all".
+-- Every public entry point calls this; any time it returns false, the
+-- caller must be a no-op. This is the stable-release kill switch.
+local function TargetedList_IsGateOpen()
+    if DF.RELEASE_CHANNEL == "release" then return false end
+    return true
+end
+
+-- Secondary check: is the feature currently enabled by the user AND
+-- are we in a party (not raid, not solo)? Used by the cast lifecycle
+-- to decide whether to process incoming cast events.
+local function TargetedList_IsActive()
+    if not TargetedList_IsGateOpen() then return false end
+    if not DF.db then return false end
+    local party = DF.db.party
+    if not party or not party.targetedListEnabled then return false end
+    if not TL_IsInGroup() then return false end
+    if TL_IsInRaid() then return false end
+    return true
+end
+
+-- Exposed for NeedsCastEvents below, so the shared event frame stays
+-- registered when the Targeted List is the only active consumer.
+function DF:TargetedListNeedsCastEvents()
+    if not TargetedList_IsGateOpen() then return false end
+    if not DF.db then return false end
+    -- Party-only feature, but the raid profile may also toggle it on
+    -- even though it won't actually render. Still register events so
+    -- the user can see the toggle behave consistently in both modes.
+    local p = DF.db.party
+    return p and p.targetedListEnabled == true
+end
+
+-- ------------------------------------------------------------
+-- Roster name cache
+-- ------------------------------------------------------------
+
+-- Rebuilds targetedListRosterNames from the current party membership.
+-- Called on GROUP_ROSTER_UPDATE and on feature init. Cheap (<= 5
+-- entries) so we just wipe-and-rebuild rather than diffing.
+local function TargetedList_RebuildRosterCache()
+    wipe(targetedListRosterNames)
+    if not TargetedList_IsGateOpen() then return end
+    -- Party only. In raid the cache is left empty — the active check
+    -- will early-out before any cast lookup happens.
+    if TL_IsInRaid() or not TL_IsInGroup() then return end
+
+    local playerName = TL_UnitName("player")
+    if playerName then targetedListRosterNames[playerName] = "player" end
+
+    for i = 1, 4 do
+        local unit = "party" .. i
+        if TL_UnitExists(unit) then
+            local name = TL_UnitName(unit)
+            if name then targetedListRosterNames[name] = unit end
+        end
+    end
+end
+
+-- Expose for the shared roster-change path in TargetedSpells (so the
+-- existing GROUP_ROSTER_UPDATE handler can call us without reaching
+-- into file-local state).
+DF._TargetedListRebuildRoster = TargetedList_RebuildRosterCache
+
+-- ------------------------------------------------------------
+-- Cast-targeting filter
+-- ------------------------------------------------------------
+
+-- Returns (true, unit) if the caster's current spell is targeting a
+-- party member, (false, nil) otherwise. Uses the name cache for O(1)
+-- lookup. Both UnitSpellTargetName and UnitName(partyN) are expected
+-- to be non-secret strings (needs in-encounter PTR confirmation per
+-- _Reference/targeted-spells-findings.md "Pointers for resuming work").
+--
+-- Alternative filter worth probing: UnitInParty("nameplateXtarget"),
+-- which TS3 uses. If the compound-vs-party comparison still works
+-- post-hotfix, the name-matching layer can be deleted entirely.
+local function TargetedList_IsCastTargetingGroupMember(casterUnit)
+    local targetName = TL_UnitSpellTargetName(casterUnit)
+    if not targetName then return false, nil end
+    local unit = targetedListRosterNames[targetName]
+    if unit then return true, unit end
+    return false, nil
+end
+
+-- ------------------------------------------------------------
+-- Cast lifecycle stubs
+-- ------------------------------------------------------------
+-- These are wired to the shared OnEvent dispatcher below so the
+-- scaffold compiles and runs without behavior. Full implementations
+-- land in commit #4 with the 0.2s delayed pickup and all 13 gotchas.
+
+-- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START.
+-- varargs: (castGuid, spellId [, ...]) for regular casts.
+-- For empower, spellId is at select(2, ...) in our handler (unit is
+-- already consumed by the OnEvent signature) — commit #4 handles the
+-- offset.
+local function TargetedList_ProcessCastStart(casterUnit, event, ...)
+    if not TargetedList_IsActive() then return end
+    -- TODO(commit #4): schedule 0.2s delayed pickup via C_Timer.After,
+    -- then read UnitSpellTargetName / Unit[Casting|Channel]Duration,
+    -- match against roster cache, acquire bar, render.
+end
+
+-- Called for every cast-stop-ish event (STOP / FAILED / FAILED_QUIET /
+-- SUCCEEDED / INTERRUPTED / CHANNEL_STOP / EMPOWER_STOP / NAMEPLATE_REMOVED).
+-- Varargs contain the original event payload after `unit`.
+local function TargetedList_OnCastStop(casterUnit, event, ...)
+    if not TargetedList_IsActive() then return end
+    -- TODO(commit #4): match castId, release bar (gotcha #2), handle
+    -- SUCCEEDED-during-channel suppression (gotcha #3), handle
+    -- interrupted flash + UnitNameFromGUID interrupter lookup
+    -- (gotchas #4, #7).
+end
+
+local function TargetedList_OnInterruptibilityChange(casterUnit, isInterruptible)
+    if not TargetedList_IsActive() then return end
+    -- TODO(commit #4): live update bar color for matching cast
+    -- (gotcha #9).
+end
+
+local function TargetedList_ReleaseAllBars()
+    if not TargetedList_IsGateOpen() then return end
+    -- TODO(commit #4/#5): release every pooled bar, wipe
+    -- activeTargetedListCasts. Called on LOADING_SCREEN_DISABLED
+    -- (gotcha #11) and on feature disable.
+    wipe(activeTargetedListCasts)
+end
+
+-- Expose internal hooks for the shared OnEvent dispatcher above.
+DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
+DF._TargetedListOnCastStop = TargetedList_OnCastStop
+DF._TargetedListOnInterruptibilityChange = TargetedList_OnInterruptibilityChange
+DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
+
+-- ------------------------------------------------------------
+-- Public entry points
+-- ------------------------------------------------------------
+
+-- Called from DF:InitTargetedSpells() at addon init and from the
+-- settings toggle callback. Safe to call on stable (no-op via gate).
+function DF:InitTargetedList()
+    if not TargetedList_IsGateOpen() then return end
+
+    -- Rebuild the roster cache once at init. Subsequent rebuilds are
+    -- triggered via GROUP_ROSTER_UPDATE in the shared event dispatcher.
+    TargetedList_RebuildRosterCache()
+
+    -- Container + bar pool are created lazily by the render pipeline
+    -- in commit #5. Nothing to do here yet.
+end
+
+-- Called from the settings-apply path (commit #6). Dispel-style
+-- skip-rebuild logic lives in commit #5 — for now this is a stub so
+-- the scaffold compiles.
+function DF:UpdateTargetedListLayout()
+    if not TargetedList_IsGateOpen() then return end
+    -- TODO(commit #5): diff against last-applied layout key and skip
+    -- the full rebuild pass when only non-layout settings changed.
+end
+
+-- Called from the settings-apply path when the enable checkbox flips.
+function DF:ToggleTargetedList(enabled)
+    if not TargetedList_IsGateOpen() then return end
+    if enabled then
+        DF:InitTargetedList()
+    else
+        TargetedList_ReleaseAllBars()
+    end
+    -- Re-evaluate shared event registration — the cast event frame
+    -- may need to turn on/off depending on other consumers.
+    DF:UpdateTargetedSpellEventRegistration()
+end
+
+-- ============================================================
 -- INITIALIZATION
 -- ============================================================
 
@@ -3533,5 +3861,13 @@ function DF:InitTargetedSpells()
     if db.personalTargetedSpellEnabled then
         DF:TogglePersonalTargetedSpells(true)
     end
+
+    -- Initialize the Targeted List. Safe to call unconditionally — the
+    -- function is gated internally on DF.RELEASE_CHANNEL and on the
+    -- user's targetedListEnabled setting.
+    if DF.InitTargetedList then
+        DF:InitTargetedList()
+    end
+
     DF:UpdateTargetedSpellEventRegistration()
 end
