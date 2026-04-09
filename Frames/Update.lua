@@ -5,11 +5,31 @@ local addonName, DF = ...
 -- Contains frame update and layout functions
 -- ============================================================
 
--- Local caching of frequently used globals and WoW API for performance
+-- Local caching of frequently used globals and WoW API for performance.
+-- Audit finding #3 (2026-04-06): UpdateHealthFast and UpdatePower are
+-- called once per unit per UNIT_HEALTH / UNIT_POWER event, and each
+-- call hits 3-5 of these unit API functions. In a 25-player raid at
+-- typical combat event rates that's thousands of global hash lookups
+-- per second that compile to nothing with these locals in scope.
+-- Matching pattern: Frames/Bars.lua:8-19 already uses this pattern
+-- for its own unit API calls.
 local pairs, ipairs, type, tonumber, tostring = pairs, ipairs, type, tonumber, tostring
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 local format = string.format
 local issecretvalue = issecretvalue
+local InCombatLockdown = InCombatLockdown
+-- Unit health / power / state APIs (hot path in UpdateHealthFast + UpdatePower)
+local UnitExists = UnitExists
+local UnitClass = UnitClass
+local UnitIsConnected = UnitIsConnected
+local UnitIsDead = UnitIsDead
+local UnitIsGhost = UnitIsGhost
+local UnitHealth = UnitHealth
+local UnitHealthMax = UnitHealthMax
+local UnitHealthMissing = UnitHealthMissing
+local UnitPower = UnitPower
+local UnitPowerMax = UnitPowerMax
+local UnitPowerType = UnitPowerType
 
 -- Growth direction helper (file-scope, no closure allocation)
 local function GetGrowthOffset(direction, iconSize, pad)
