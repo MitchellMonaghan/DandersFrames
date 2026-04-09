@@ -5494,11 +5494,13 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 DETAILED = L["Detailed"],
                 MINIMAL = L["Minimal"],
             }
+            -- Only NEWEST / OLDEST are implemented. Other sort keys
+            -- (remaining time, interruptibility, target party order)
+            -- would need to read secret-tainted nameplate values and
+            -- are not representable in Lua sort comparators.
             local sortOptions = {
                 NEWEST = L["Newest First"],
-                SHORTEST = L["Shortest Remaining"],
-                INTERRUPTIBLE_FIRST = L["Interruptible First"],
-                TARGET_ORDER = L["Target Order"],
+                OLDEST = L["Oldest First"],
             }
 
             local function HideTLOptions(d) return not d.targetedListEnabled end

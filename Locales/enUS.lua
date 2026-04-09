@@ -932,6 +932,7 @@ L["Note: Font sizes are not changed. Adjust sizes in each element's page."] = tr
 L["Off"] = true
 L["Offset X"] = true
 L["Offset Y"] = true
+L["Oldest First"] = true
 L["Only changed settings will be saved"] = true
 L["Only Dispellable Debuffs"] = true
 L["Only My Buffs"] = true

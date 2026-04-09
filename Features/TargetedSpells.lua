@@ -4492,6 +4492,21 @@ local function TargetedList_ReleaseAllActiveBars()
     end
 end
 
+-- Scratch array reused across renders to avoid per-render allocations.
+local targetedListSortBuf = {}
+
+-- Sort comparators. Only NEWEST and OLDEST are currently implemented —
+-- other candidates (SHORTEST_REMAINING, INTERRUPTIBLE_FIRST, TARGET_ORDER)
+-- would need to inspect secret-tainted values (duration objects,
+-- uninterruptible flag, target-name-to-unit resolution) which errors
+-- in Lua. startTime is the only clean numeric sort key we have.
+local function TargetedList_SortNewestFirst(a, b)
+    return (a.startTime or 0) > (b.startTime or 0)
+end
+local function TargetedList_SortOldestFirst(a, b)
+    return (a.startTime or 0) < (b.startTime or 0)
+end
+
 local function TargetedList_Render()
     if not TargetedList_IsGateOpen() then return end
     -- Test mode owns its own render path via ShowTestTargetedList.
@@ -4500,19 +4515,37 @@ local function TargetedList_Render()
     TargetedList_EnsureBarPool()
     TargetedList_ReleaseAllActiveBars()
 
-    -- Gather active records. Order is insertion order (Lua pairs is
-    -- undefined); for v1 the sort is whatever pairs yields. Commit #5
-    -- polish will add real sort orders.
     local db = DF.db and DF.db.party
     local maxBars = (db and db.targetedListMaxBars) or 6
-    local count = 0
+
+    -- Gather active records into a sortable array.
+    wipe(targetedListSortBuf)
     for _, rec in pairs(activeTargetedListCasts) do
+        targetedListSortBuf[#targetedListSortBuf + 1] = rec
+    end
+
+    -- Apply sort order. Only NEWEST / OLDEST are supported — see the
+    -- comment above the comparators for why. Unknown values (e.g.
+    -- legacy SHORTEST / INTERRUPTIBLE_FIRST / TARGET_ORDER left in
+    -- profiles from earlier versions) fall through to NEWEST.
+    local sortOrder = (db and db.targetedListSortOrder) or "NEWEST"
+    if sortOrder == "OLDEST" then
+        table.sort(targetedListSortBuf, TargetedList_SortOldestFirst)
+    else
+        table.sort(targetedListSortBuf, TargetedList_SortNewestFirst)
+    end
+
+    -- Acquire bars for the first maxBars entries.
+    local count = 0
+    for i = 1, #targetedListSortBuf do
         if count >= maxBars then break end
+        local rec = targetedListSortBuf[i]
         local bar = targetedListBarPool:Acquire()
         TargetedList_ApplyBarContent(bar, rec)
         count = count + 1
         activeBars[count] = bar
     end
+    wipe(targetedListSortBuf)
 
     -- Show/hide container based on whether we have bars
     if targetedListContainer then
