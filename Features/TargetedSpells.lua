@@ -3702,7 +3702,8 @@ targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
     -- doesn't apply, so we need to re-apply content for the color).
     if event == "SPELL_UPDATE_COOLDOWN" then
         local db = DF.db and DF.db.party
-        if db and db.targetedListEnabled and db.targetedListInterruptReadyEnabled then
+        if db and db.targetedListEnabled and db.targetedListInterruptReadyEnabled
+           and casterToBar then
             -- Update bar colors for all tracked casts
             for unit, bar in pairs(casterToBar) do
                 local rec = activeTargetedListCasts[unit]
