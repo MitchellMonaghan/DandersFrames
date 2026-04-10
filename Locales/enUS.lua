@@ -818,6 +818,7 @@ L["Inside (Bottom)"] = true
 L["Inside (Top)"] = true
 L["Instanced / PvP"] = true
 L["Integrations"] = true
+L["Interrupt Ready Color"] = true
 L["Interrupt Settings"] = true
 L["Interrupt Text"] = true
 L["Interrupted Flash Duration"] = true

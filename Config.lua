@@ -1771,6 +1771,8 @@ DF.PartyDefaults = {
     targetedListInOpenWorld = true,
     targetedListInRaids = false,
     targetedListInterruptedFlashDuration = 1.0,
+    targetedListInterruptReadyEnabled = false,
+    targetedListInterruptReadyColor = {r = 0.2, g = 1, b = 0.2, a = 1},
     targetedListInterruptibleColor = {r = 1, g = 0.2, b = 0.2, a = 1},
     targetedListMaxBars = 6,
     targetedListShowArrowPrefix = true,

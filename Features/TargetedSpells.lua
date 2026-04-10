@@ -3626,6 +3626,118 @@ local TL_GetTime = GetTime
 local TL_C_Timer_After = C_Timer and C_Timer.After
 
 -- ------------------------------------------------------------
+-- Interrupt-ready tracking
+-- ------------------------------------------------------------
+-- Maps each class to its interrupt spell IDs. On PLAYER_LOGIN and
+-- SPELLS_CHANGED, we check which the player actually knows and
+-- cache them. At render time we check cooldown state via
+-- C_Spell.GetSpellCooldown to determine if any interrupt is ready.
+
+local TARGETEDLIST_INTERRUPT_MAP = {
+    DEATHKNIGHT = {47528},
+    DEMONHUNTER = {183752},
+    DRUID       = {106839, 78675, 38675},
+    EVOKER      = {351338},
+    HUNTER      = {147362, 187707},
+    MAGE        = {2139},
+    MONK        = {116705},
+    PALADIN     = {96231, 31935},
+    PRIEST      = {15487},
+    ROGUE       = {1766},
+    SHAMAN      = {57994},
+    WARLOCK     = {89766, 119910, 132409, 1276467},
+    WARRIOR     = {6552},
+}
+
+-- Resolved list of interrupt spell IDs the player currently knows.
+-- Rebuilt on PLAYER_LOGIN / SPELLS_CHANGED.
+local targetedListKnownInterrupts = {}
+
+local function TargetedList_RebuildKnownInterrupts()
+    wipe(targetedListKnownInterrupts)
+    local _, class = UnitClass("player")
+    if not class then return end
+    local candidates = TARGETEDLIST_INTERRUPT_MAP[class]
+    if not candidates then return end
+    for _, spellID in ipairs(candidates) do
+        if C_SpellBook and C_SpellBook.IsSpellKnownOrInSpellBook then
+            if C_SpellBook.IsSpellKnownOrInSpellBook(spellID)
+               or C_SpellBook.IsSpellKnownOrInSpellBook(spellID, Enum.SpellBookSpellBank.Pet) then
+                targetedListKnownInterrupts[#targetedListKnownInterrupts + 1] = spellID
+            end
+        end
+    end
+end
+
+-- Returns true (clean bool) if any of the player's known interrupt
+-- spells is off cooldown and ready to use.
+local function TargetedList_IsInterruptReady()
+    if #targetedListKnownInterrupts == 0 then return false end
+    for _, spellID in ipairs(targetedListKnownInterrupts) do
+        if C_Spell and C_Spell.GetSpellCooldown then
+            local info = C_Spell.GetSpellCooldown(spellID)
+            if info and info.startTime == 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Event frame for interrupt spell tracking. Listens for spell
+-- changes and cooldown updates to keep the known-interrupts list
+-- and bar colors current.
+local targetedListInterruptFrame = CreateFrame("Frame")
+targetedListInterruptFrame:RegisterEvent("PLAYER_LOGIN")
+targetedListInterruptFrame:RegisterEvent("SPELLS_CHANGED")
+targetedListInterruptFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" or event == "SPELLS_CHANGED" then
+        TargetedList_RebuildKnownInterrupts()
+    end
+    -- SPELL_UPDATE_COOLDOWN: re-render so bar colors reflect the
+    -- current interrupt-ready state. Only fires when ANY spell
+    -- cooldown changes, which is frequent but the render is
+    -- incremental (no bar rebuild — just color update in Step 3
+    -- doesn't apply, so we need to re-apply content for the color).
+    if event == "SPELL_UPDATE_COOLDOWN" then
+        local db = DF.db and DF.db.party
+        if db and db.targetedListEnabled and db.targetedListInterruptReadyEnabled then
+            -- Update bar colors for all tracked casts
+            for unit, bar in pairs(casterToBar) do
+                local rec = activeTargetedListCasts[unit]
+                if rec and not rec.fadingStartedAt and not rec.isTestCast then
+                    -- Re-apply the interruptible color logic
+                    local interruptibleColor = db.targetedListInterruptibleColor
+                        or {r=1, g=0.2, b=0.2, a=1}
+                    local uninterruptibleColor = db.targetedListUninterruptibleColor
+                        or {r=0.5, g=0.5, b=0.5, a=1}
+                    local readyColor = db.targetedListInterruptReadyColor
+                        or {r=0.2, g=1, b=0.2, a=1}
+
+                    if rec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
+                        local tex = bar.progress:GetStatusBarTexture()
+                        if tex and tex.SetVertexColorFromBoolean then
+                            -- Can't branch on secret uninterruptible, but we
+                            -- can check interrupt readiness (clean bool) and
+                            -- pick between ready/not-ready colors for the
+                            -- interruptible case.
+                            if TargetedList_IsInterruptReady() then
+                                tex:SetVertexColorFromBoolean(rec.uninterruptible,
+                                    uninterruptibleColor, readyColor)
+                            else
+                                tex:SetVertexColorFromBoolean(rec.uninterruptible,
+                                    uninterruptibleColor, interruptibleColor)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ------------------------------------------------------------
 -- State
 -- ------------------------------------------------------------
 
@@ -4585,6 +4697,18 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         or {r=1, g=0.2, b=0.2, a=1}
     local uninterruptibleColor = party and party.targetedListUninterruptibleColor
         or {r=0.5, g=0.5, b=0.5, a=1}
+    -- Three-way color: uninterruptible / interruptible / interrupt-ready.
+    -- When interrupt-ready tracking is on and the player has an
+    -- interrupt off cooldown, interruptible casts show the "ready"
+    -- color instead of the normal interruptible color.
+    local readyEnabled = party and party.targetedListInterruptReadyEnabled
+    local readyColor = (readyEnabled and party.targetedListInterruptReadyColor)
+        or interruptibleColor
+    local effectiveInterColor = interruptibleColor
+    if readyEnabled and not isTest and TargetedList_IsInterruptReady() then
+        effectiveInterColor = readyColor
+    end
+
     if isTest then
         local c = activeRec.uninterruptible and uninterruptibleColor or interruptibleColor
         bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
@@ -4592,16 +4716,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         local tex = bar.progress:GetStatusBarTexture()
         if tex and tex.SetVertexColorFromBoolean then
             tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
-                uninterruptibleColor, interruptibleColor)
+                uninterruptibleColor, effectiveInterColor)
         else
             bar.progress:SetStatusBarColor(
-                interruptibleColor.r, interruptibleColor.g,
-                interruptibleColor.b, interruptibleColor.a)
+                effectiveInterColor.r, effectiveInterColor.g,
+                effectiveInterColor.b, effectiveInterColor.a)
         end
     else
         bar.progress:SetStatusBarColor(
-            interruptibleColor.r, interruptibleColor.g,
-            interruptibleColor.b, interruptibleColor.a)
+            effectiveInterColor.r, effectiveInterColor.g,
+            effectiveInterColor.b, effectiveInterColor.a)
     end
 
     -- Important-spells filter at render time. C_Spell.IsSpellImportant

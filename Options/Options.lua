@@ -5595,6 +5595,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlInterColor.disableOn = HideTLOptions
             local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate), 35)
             tlUninterColor.disableOn = HideTLOptions
+            local tlInterReadyCheck = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Interrupt Ready Color"], db, "targetedListInterruptReadyEnabled", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlInterReadyCheck.disableOn = HideTLOptions
+            local function HideInterReadyOptions(d) return not d.targetedListEnabled or not d.targetedListInterruptReadyEnabled end
+            local tlInterReadyColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Interrupt Ready Color"], db, "targetedListInterruptReadyColor", true, TargetedListUpdate), 35)
+            tlInterReadyColor.disableOn = HideInterReadyOptions
             local tlHighlight = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Highlight Important Spells"], db, "targetedListHighlightImportant", function()
                 self:RefreshStates()
                 TargetedListUpdate()
