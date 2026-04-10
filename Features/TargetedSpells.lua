@@ -4158,43 +4158,44 @@ local function TargetedList_BuildBar(parent)
     return bar
 end
 
--- Helper: map db anchor name to (point, justifyH) for a text element
--- inside the bar's progress region.
-local function TargetedList_ResolveTextAnchor(anchorName)
-    if anchorName == "CENTER" then return "CENTER", "CENTER" end
-    if anchorName == "RIGHT" then return "RIGHT", "RIGHT" end
-    return "LEFT", "LEFT"  -- default
+-- Helper: resolve an anchor-name string to a WoW SetPoint argument.
+local function TargetedList_ResolveAnchorPoint(anchorName)
+    if anchorName == "CENTER" then return "CENTER" end
+    if anchorName == "RIGHT" then return "RIGHT" end
+    return "LEFT"
 end
 
--- Apply anchor/offset settings to a bar's text elements. Called per
--- bar during render and again from UpdateTargetedListLayout when
--- settings change.
+-- Apply anchor/offset/alignment settings to a bar's text elements.
+-- Anchor controls WHERE the element is placed on the bar. Alignment
+-- controls how text WITHIN the element is justified — independently
+-- of anchor, so users can e.g. anchor target name to RIGHT but
+-- left-justify the text within it.
 local function TargetedList_ApplyTextLayout(bar, db)
     if not bar or not db then return end
 
-    local function applyTextElement(fs, anchorKey, xKey, yKey, defaultAnchor)
+    local function applyTextElement(fs, anchorKey, alignKey, xKey, yKey, defaultAnchor, defaultAlign)
         if not fs then return end
-        local anchor = db[anchorKey] or defaultAnchor
-        local point, justify = TargetedList_ResolveTextAnchor(anchor)
+        local point = TargetedList_ResolveAnchorPoint(db[anchorKey] or defaultAnchor)
+        local align = db[alignKey] or defaultAlign or point
         fs:ClearAllPoints()
         fs:SetPoint(point, bar.progress, point,
             db[xKey] or 0, db[yKey] or 0)
-        fs:SetJustifyH(justify)
+        fs:SetJustifyH(align)
     end
 
     applyTextElement(bar.spellName,
-        "targetedListSpellNameAnchor", "targetedListSpellNameX", "targetedListSpellNameY", "LEFT")
+        "targetedListSpellNameAnchor", "targetedListSpellNameAlign",
+        "targetedListSpellNameX", "targetedListSpellNameY", "LEFT", "LEFT")
     applyTextElement(bar.targetName,
-        "targetedListTargetNameAnchor", "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT")
+        "targetedListTargetNameAnchor", "targetedListTargetNameAlign",
+        "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT", "RIGHT")
 
     -- Duration: the Cooldown frame renders its own countdown text at
     -- its center. We position the frame itself (as a narrow box) at
     -- the configured anchor, and the text appears centered inside.
     if bar.duration then
-        local anchor = db.targetedListDurationAnchor or "RIGHT"
-        local point = TargetedList_ResolveTextAnchor(anchor)
+        local point = TargetedList_ResolveAnchorPoint(db.targetedListDurationAnchor or "RIGHT")
         local fontSize = db.targetedListFontSize or 12
-        -- Sized generously enough to fit "99:99" at typical font sizes.
         local cdW = math.max(40, fontSize * 3)
         local cdH = math.max(14, fontSize + 4)
         bar.duration:ClearAllPoints()

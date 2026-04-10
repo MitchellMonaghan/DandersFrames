@@ -273,6 +273,7 @@ L["AFK"] = true
 L["AFK Icon"] = true
 L["Aggro Highlight"] = true
 L["Aggro Settings"] = true
+L["Alignment"] = true
 L["All Buffs"] = true
 L["All Debuffs"] = true
 L["All Dispellable"] = true

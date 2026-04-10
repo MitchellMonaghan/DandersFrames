@@ -1789,12 +1789,15 @@ DF.PartyDefaults = {
     -- (LEFT / CENTER / RIGHT) applied within the bar's progress
     -- region. X / Y are pixel offsets from that anchor.
     targetedListSpellNameAnchor = "LEFT",
+    targetedListSpellNameAlign = "LEFT",
     targetedListSpellNameX = 4,
     targetedListSpellNameY = 0,
     targetedListTargetNameAnchor = "RIGHT",
+    targetedListTargetNameAlign = "RIGHT",
     targetedListTargetNameX = -4,
     targetedListTargetNameY = 0,
     targetedListDurationAnchor = "RIGHT",
+    targetedListDurationAlign = "RIGHT",
     targetedListDurationX = -4,
     targetedListDurationY = 0,
 
