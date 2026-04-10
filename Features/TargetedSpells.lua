@@ -3607,6 +3607,10 @@ end
 -- File-scope cached APIs (project convention, commit 1a5603d).
 -- These are used by the cast lifecycle and render pipeline in later
 -- commits; caching them here keeps the hot path zero-lookup.
+-- issecretvalue guard: may not exist in all environments. Fallback
+-- returns false (treat as non-secret) so clean comparisons proceed.
+local TL_issecretvalue = issecretvalue or function() return false end
+
 local TL_UnitSpellTargetName = UnitSpellTargetName
 local TL_UnitSpellTargetClass = UnitSpellTargetClass
 local TL_UnitCastingInfo = UnitCastingInfo
@@ -3688,7 +3692,7 @@ local function TargetedList_UpdateInterruptReadyCache()
             if info then
                 local st = info.startTime
                 -- Guard: if startTime is secret, keep the cached value
-                if st ~= nil and (not issecretvalue or not issecretvalue(st)) then
+                if st ~= nil and not TL_issecretvalue(st) then
                     if st == 0 then
                         targetedListInterruptReadyCached = true
                         return
@@ -4713,7 +4717,13 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         or {r=0.5, g=0.5, b=0.5, a=1}
     -- Pick effective interruptible color: if interrupt-ready tracking
     -- is on and the player's interrupt is off cooldown, use readyColor.
+    -- Update the cache now so the first render of a bar picks up the
+    -- current state (SPELL_UPDATE_COOLDOWN only fires on changes, not
+    -- on initial state).
     local readyEnabled = party and party.targetedListInterruptReadyEnabled
+    if readyEnabled and not isTest then
+        TargetedList_UpdateInterruptReadyCache()
+    end
     local effectiveInterColor = interruptibleColor
     if readyEnabled and not isTest and targetedListInterruptReadyCached then
         effectiveInterColor = party.targetedListInterruptReadyColor
