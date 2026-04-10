@@ -5578,7 +5578,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 TargetedListUpdate()
             end), 30)
             tlShowBorder.disableOn = HideTLOptions
-            local tlBorderColor = presetGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Border Color"], db, "targetedListBorderColor", true, TargetedListUpdate), 35)
+            local tlBorderColor = presetGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Border Color"], db, "targetedListBorderColor", true, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListBorderColor then DF:LightweightUpdateTargetedListBorderColor() end end, true), 35)
             tlBorderColor.disableOn = HideBorderOptions
             AddToSection(presetGroup, nil, 2)
 
@@ -5591,9 +5591,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local colorGroup = GUI:CreateSettingsGroup(self.child, 260)
             colorGroup:AddWidget(GUI:CreateHeader(self.child, L["Bar Color"]), 40)
-            local tlInterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Interruptible Color"], db, "targetedListInterruptibleColor", true, TargetedListUpdate), 35)
+            local tlInterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Interruptible Color"], db, "targetedListInterruptibleColor", true, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListBarColor then DF:LightweightUpdateTargetedListBarColor() end end, true), 35)
             tlInterColor.disableOn = HideTLOptions
-            local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate), 35)
+            local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListBarColor then DF:LightweightUpdateTargetedListBarColor() end end, true), 35)
             tlUninterColor.disableOn = HideTLOptions
             local tlHighlight = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Highlight Important Spells"], db, "targetedListHighlightImportant", function()
                 self:RefreshStates()
@@ -5601,7 +5601,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             end), 30)
             tlHighlight.disableOn = HideTLOptions
             local function HideHighlightOptions(d) return not d.targetedListEnabled or not d.targetedListHighlightImportant end
-            local tlHighlightColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Highlight Color"], db, "targetedListHighlightColor", false, TargetedListUpdate), 35)
+            local tlHighlightColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Highlight Color"], db, "targetedListHighlightColor", false, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListHighlightColor then DF:LightweightUpdateTargetedListHighlightColor() end end, true), 35)
             tlHighlightColor.disableOn = HideHighlightOptions
             AddToSection(colorGroup, nil, 1)
 

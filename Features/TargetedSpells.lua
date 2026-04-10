@@ -5742,6 +5742,60 @@ function DF:UpdateTargetedListLayout()
     end
 end
 
+-- Lightweight updates for color picker drag. These only touch the
+-- specific visual property on existing bars — no layout rebuild, no
+-- pool churn, no content re-application. Designed to run at color-
+-- picker drag-tick rate without lag.
+
+function DF:LightweightUpdateTargetedListBarColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local interColor = db.targetedListInterruptibleColor or {r=1, g=0.2, b=0.2, a=1}
+    local uninterColor = db.targetedListUninterruptibleColor or {r=0.5, g=0.5, b=0.5, a=1}
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec and not rec.fadingStartedAt then
+            if rec.isTestCast then
+                local c = rec.uninterruptible and uninterColor or interColor
+                bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
+            elseif rec.uninterruptible ~= nil then
+                local tex = bar.progress:GetStatusBarTexture()
+                if tex and tex.SetVertexColorFromBoolean then
+                    tex:SetVertexColorFromBoolean(rec.uninterruptible,
+                        uninterColor, interColor)
+                end
+            end
+        end
+    end
+end
+
+function DF:LightweightUpdateTargetedListBorderColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local bc = db.targetedListBorderColor or {r=0, g=0, b=0, a=1}
+    for _, bar in pairs(casterToBar) do
+        if bar.border and bar.border:IsShown() then
+            bar.border:SetBackdropBorderColor(bc.r, bc.g, bc.b, bc.a or 1)
+        end
+    end
+end
+
+function DF:LightweightUpdateTargetedListHighlightColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local hc = db.targetedListHighlightColor or {r=1, g=0.8, b=0}
+    for _, bar in pairs(casterToBar) do
+        if bar.highlightFrame and bar.highlightFrame:IsShown() then
+            if DF.UpdateGlowBorder then
+                DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
+            end
+        end
+    end
+end
+
 -- Called from the settings-apply path when the enable checkbox flips.
 function DF:ToggleTargetedList(enabled)
     if not TargetedList_IsGateOpen() then return end
