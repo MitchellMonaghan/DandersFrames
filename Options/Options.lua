@@ -5657,13 +5657,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             spellNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Spell Name"]), 40)
             local tlSNFontSize = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListSpellNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNFontSize.disableOn = HideTLOptions
+            local tlSNMaxLen = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Length (0=off)"], 0, 30, 1, db, "targetedListSpellNameMaxLength", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlSNMaxLen.disableOn = HideTLOptions
             local tlSNAnchor = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListSpellNameAnchor", TargetedListUpdate), 55)
             tlSNAnchor.disableOn = HideTLOptions
             local tlSNAlign = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListSpellNameAlign", TargetedListUpdate), 55)
             tlSNAlign.disableOn = HideTLOptions
-            local tlSNX = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListSpellNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlSNX = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -500, 500, 1, db, "targetedListSpellNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNX.disableOn = HideTLOptions
-            local tlSNY = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListSpellNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlSNY = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -500, 500, 1, db, "targetedListSpellNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNY.disableOn = HideTLOptions
             AddToSection(spellNamePosGroup, nil, 1)
 
@@ -5671,13 +5673,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             targetNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Target Name"]), 40)
             local tlTNFontSize = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListTargetNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNFontSize.disableOn = HideTargetNameOptions
+            local tlTNMaxLen = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Length (0=off)"], 0, 30, 1, db, "targetedListTargetNameMaxLength", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlTNMaxLen.disableOn = HideTargetNameOptions
             local tlTNAnchor = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListTargetNameAnchor", TargetedListUpdate), 55)
             tlTNAnchor.disableOn = HideTargetNameOptions
             local tlTNAlign = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListTargetNameAlign", TargetedListUpdate), 55)
             tlTNAlign.disableOn = HideTargetNameOptions
-            local tlTNX = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListTargetNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlTNX = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -500, 500, 1, db, "targetedListTargetNameX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNX.disableOn = HideTargetNameOptions
-            local tlTNY = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListTargetNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlTNY = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -500, 500, 1, db, "targetedListTargetNameY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNY.disableOn = HideTargetNameOptions
             AddToSection(targetNamePosGroup, nil, 2)
 
@@ -5688,9 +5692,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlDurAnchor.disableOn = HideDurationPosOptions
             local tlDurAlign = durationPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListDurationAlign", TargetedListUpdate), 55)
             tlDurAlign.disableOn = HideDurationPosOptions
-            local tlDurX = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -100, 100, 1, db, "targetedListDurationX", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlDurX = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -500, 500, 1, db, "targetedListDurationX", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlDurX.disableOn = HideDurationPosOptions
-            local tlDurY = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -20, 20, 1, db, "targetedListDurationY", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlDurY = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -500, 500, 1, db, "targetedListDurationY", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlDurY.disableOn = HideDurationPosOptions
             AddToSection(durationPosGroup, nil, 1)
 
