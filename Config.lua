@@ -1806,6 +1806,12 @@ DF.PartyDefaults = {
     targetedListDurationAlign = "RIGHT",
     targetedListDurationX = -4,
     targetedListDurationY = 0,
+    targetedListInterruptTextAnchor = "CENTER",
+    targetedListInterruptTextAlign = "CENTER",
+    targetedListInterruptTextFontSize = 12,
+    targetedListInterruptTextWidth = 0,
+    targetedListInterruptTextX = 0,
+    targetedListInterruptTextY = 0,
 
     -- Test Mode
     -- testShowTargetedList drives the Targeted List demo bars in party

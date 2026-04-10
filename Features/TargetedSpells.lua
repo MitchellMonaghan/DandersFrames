@@ -4230,6 +4230,12 @@ local function TargetedList_ApplyTextLayout(bar, db)
         "targetedListTargetNameWidth",
         "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT", "RIGHT")
 
+    -- Interrupt text — normally hidden, shown during interrupted flash
+    applyTextElement(bar.interruptText,
+        "targetedListInterruptTextAnchor", "targetedListInterruptTextAlign",
+        "targetedListInterruptTextWidth",
+        "targetedListInterruptTextX", "targetedListInterruptTextY", "CENTER", "CENTER")
+
     -- Duration: the Cooldown frame renders its own countdown text at
     -- its center. We position the frame itself (as a narrow box) at
     -- the configured anchor, and the text appears centered inside.
@@ -4331,7 +4337,8 @@ local function TargetedList_ApplyBarAppearance(bar, db)
     bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
     bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
     if bar.interruptText then
-        bar.interruptText:SetFont(fontPath, fontSize, outline)
+        local intFontSize = db.targetedListInterruptTextFontSize or fontSize
+        bar.interruptText:SetFont(fontPath, intFontSize, outline)
     end
     -- NOTE: The duration Cooldown frame renders its countdown text
     -- via Blizzard's native cooldown system, which uses a built-in
@@ -5269,10 +5276,10 @@ function DF:ShowTestTargetedList()
             end)
         end
     else
-        -- Static mode: spawn maxBars at once with normal durations
-        -- but with startTime set into the past so each bar shows a
-        -- varied frozen fill (20-80%). No ticker runs, so bars stay
-        -- at their initial fill point for easy customisation.
+        -- Static mode: showcase all visual states for customisation.
+        -- Bars show a mix of: normal casting (interruptible +
+        -- uninterruptible), interrupted (with interrupter name), and
+        -- important glow. Each bar is frozen at a varied fill point.
         local now = TL_GetTime()
         for i = 1, maxBars do
             TargetedList_SpawnTestCast()
@@ -5280,14 +5287,21 @@ function DF:ShowTestTargetedList()
             local rec = activeTargetedListCasts[key]
             if rec then
                 local dur = rec.testCastDuration or 4
-                -- Freeze at 20-80% fill by shifting startTime into the past
                 local fillPct = 0.2 + ((i - 1) * 0.12) % 0.6
                 rec.startTime = now - (dur * fillPct)
+                rec.testCastDuration = 99999
                 rec.testInterruptAt = nil
                 rec.testWillInterrupt = false
-                -- Very long effective remaining time so the fade ticker
-                -- never picks these up
-                rec.testCastDuration = 99999
+
+                -- Bar states: distribute across the bars
+                -- Last bar (or bar 3 if maxBars >= 3): show as interrupted
+                if i == maxBars or (maxBars >= 3 and i == 3) then
+                    rec.fadingStartedAt = now
+                    rec.fadingDuration = 99999  -- never expires in static
+                    rec.wasInterrupted = true
+                    rec.testInterrupterName = TargetedList_GetTestTargetName(
+                        ((i + 1) % 5) + 1)
+                end
             end
         end
         TargetedList_Render()
@@ -5301,15 +5315,30 @@ function DF:HideTestTargetedList()
         targetedListTestTicker:Cancel()
         targetedListTestTicker = nil
     end
-    -- Remove all test records from the active table
+    -- Remove test records and release their bars individually
     for key in pairs(activeTargetedListCasts) do
         if type(key) == "string" and key:sub(1, 5) == "test-" then
             activeTargetedListCasts[key] = nil
+            local bar = casterToBar[key]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[key] = nil
+            end
         end
     end
-    TargetedList_ReleaseAllActiveBars()
-    if targetedListContainer and not next(activeTargetedListCasts) then
-        targetedListContainer:Hide()
+    -- Rebuild activeBars from remaining live records
+    wipe(activeBars)
+    local count = 0
+    for unit, bar in pairs(casterToBar) do
+        count = count + 1
+        activeBars[count] = bar
+    end
+    if targetedListContainer then
+        if count > 0 then
+            TargetedList_LayoutBars()
+        else
+            targetedListContainer:Hide()
+        end
     end
 end
 

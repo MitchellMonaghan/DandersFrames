@@ -5709,6 +5709,22 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlDurY.disableOn = HideDurationPosOptions
             AddToSection(durationPosGroup, nil, 1)
 
+            local interruptPosGroup = GUI:CreateSettingsGroup(self.child, 260)
+            interruptPosGroup:AddWidget(GUI:CreateHeader(self.child, L["Interrupt Text"]), 40)
+            local tlIntFontSize = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListInterruptTextFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlIntFontSize.disableOn = HideTLOptions
+            local tlIntWidth = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Width"], 0, 400, 1, db, "targetedListInterruptTextWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlIntWidth.disableOn = HideTLOptions
+            local tlIntAnchor = interruptPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListInterruptTextAnchor", TargetedListUpdate), 55)
+            tlIntAnchor.disableOn = HideTLOptions
+            local tlIntAlign = interruptPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListInterruptTextAlign", TargetedListUpdate), 55)
+            tlIntAlign.disableOn = HideTLOptions
+            local tlIntX = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset X"], -500, 500, 1, db, "targetedListInterruptTextX", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlIntX.disableOn = HideTLOptions
+            local tlIntY = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Offset Y"], -500, 500, 1, db, "targetedListInterruptTextY", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlIntY.disableOn = HideTLOptions
+            AddToSection(interruptPosGroup, nil, 2)
+
             currentSection = nil
             AddSpace(10, "both")
 
