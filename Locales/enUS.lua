@@ -1190,6 +1190,7 @@ L["Source Mode"] = true
 L["Spacing"] = true
 L["Spacing X"] = true
 L["Spacing Y"] = true
+L["Static (No Reorder)"] = true
 L["Spark"] = true
 L["Specialization data not available."] = true
 L["Spell Name"] = true

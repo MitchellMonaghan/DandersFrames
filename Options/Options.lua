@@ -5542,7 +5542,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlSpace.disableOn = HideTLOptions
             local tlGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Growth Direction"], growthOptions, db, "targetedListGrowth", TargetedListUpdate), 55)
             tlGrowth.disableOn = HideTLOptions
-            local sortOptions = { NEWEST = L["Newest First"], OLDEST = L["Oldest First"] }
+            local sortOptions = { NEWEST = L["Newest First"], OLDEST = L["Oldest First"], STATIC = L["Static (No Reorder)"] }
             local tlSort = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Sort Order"], sortOptions, db, "targetedListSortOrder", TargetedListUpdate), 55)
             tlSort.disableOn = HideTLOptions
             AddToSection(layoutGroup, nil, 1)

@@ -4046,6 +4046,12 @@ local TL_C_ClassColor = C_ClassColor
 -- (The bar pool itself is declared later, next to its helpers.)
 local activeBars = {}  -- ordered list of currently-displayed bars
 
+-- Per-caster bar map: casterToBar[casterUnit] = bar frame.
+-- This is the incremental tracking table — bars persist until their
+-- cast record is removed, avoiding the teardown-all/rebuild-all
+-- pattern that caused performance issues.
+local casterToBar = {}
+
 -- Active test mode — when true, the container is populated from
 -- synthetic data instead of live casts.
 local targetedListTestActive = false
@@ -4567,51 +4573,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         end
     end
 
-    -- Fade-out / interrupted-flash visual state.
-    if activeRec.fadingStartedAt then
-        local elapsed = TL_GetTime() - activeRec.fadingStartedAt
-        local dur = activeRec.fadingDuration or 0.25
-        local pct = 1 - math.min(1, math.max(0, elapsed / dur))
-        bar:SetAlpha(pct)
-        if activeRec.wasInterrupted then
-            bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
-            -- Show interrupter name. Test records store a clean
-            -- string; live records pipe the secret-tainted result of
-            -- UnitNameFromGUID through SetText (secret-safe sink).
-            if bar.interruptText then
-                bar.spellName:Hide()
-                bar.targetName:Hide()
-                if bar.duration then bar.duration:Hide() end
-                if isTest and activeRec.testInterrupterName then
-                    bar.interruptText:SetText(activeRec.testInterrupterName)
-                elseif activeRec.interrupterGuid and TL_UnitNameFromGUID then
-                    bar.interruptText:SetText(TL_UnitNameFromGUID(activeRec.interrupterGuid) or "")
-                    -- Class-color the interrupter name
-                    if TL_UnitClassFromGUID and TL_C_ClassColor
-                       and TL_C_ClassColor.GetClassColor then
-                        local _, iClass = TL_UnitClassFromGUID(activeRec.interrupterGuid)
-                        if iClass then
-                            local col = TL_C_ClassColor.GetClassColor(iClass)
-                            if col then
-                                bar.interruptText:SetTextColor(col.r, col.g, col.b, 1)
-                            end
-                        end
-                    end
-                end
-                bar.interruptText:Show()
-            end
-        end
-    else
-        -- Not fading — ensure interruptText is hidden and normal text visible
-        if bar.interruptText then
-            bar.interruptText:Hide()
-        end
+    -- Text visibility (normal, non-fading state). Fading bars have
+    -- their text managed by Step 3 of the incremental Render.
+    if not activeRec.fadingStartedAt then
+        if bar.interruptText then bar.interruptText:Hide() end
         bar.spellName:SetShown(party and party.targetedListShowSpellName ~= false)
         bar.targetName:SetShown(party and party.targetedListShowTargetName ~= false)
-        -- Normal (non-fading) hide-own-casts filter. UnitIsUnit
-        -- (nameplateTarget, "player") returns a secret-tainted
-        -- boolean — SetAlphaFromBoolean is the secret-safe sink that
-        -- picks one of two alpha values.
+    end
+
+    -- Hide-own-casts filter (non-fading path only).
+    if not activeRec.fadingStartedAt then
         if party and party.targetedListHideOwnCasts
            and bar.SetAlphaFromBoolean then
             local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
@@ -4678,11 +4649,12 @@ end
 -- test mode when rebuilding demo bars.
 
 local function TargetedList_ReleaseAllActiveBars()
-    if not targetedListBarPool then return end
     for i = #activeBars, 1, -1 do
-        targetedListBarPool:Release(activeBars[i])
+        local bar = activeBars[i]
+        if bar then targetedListBarPool:Release(bar) end
         activeBars[i] = nil
     end
+    wipe(casterToBar)
 end
 
 -- ------------------------------------------------------------
@@ -4822,60 +4794,129 @@ local function TargetedList_SortOldestFirst(a, b)
     return (a.startTime or 0) < (b.startTime or 0)
 end
 
+-- ============================================================
+-- INCREMENTAL RENDER (TS3-style)
+-- ============================================================
+-- Instead of tearing down and rebuilding ALL bars every state
+-- change, bars persist in casterToBar[unit]. Render:
+--   1. Expires completed fades (release that one bar)
+--   2. Ensures every live record has a bar (acquire if missing)
+--   3. Updates fading bars' alpha/color in-place
+--   4. Sorts and repositions — no pool churn
+--
+-- Content (ApplyBarContent) runs ONCE at acquisition. Subsequent
+-- renders only touch alpha/color for fading bars and re-anchor
+-- positions via LayoutBars.
+
 local function TargetedList_Render()
     if not TargetedList_IsGateOpen() then return end
-
     TargetedList_EnsureBarPool()
-    TargetedList_ReleaseAllActiveBars()
 
     local db = DF.db and DF.db.party
     local maxBars = (db and db.targetedListMaxBars) or 6
-
-    -- First pass: expire any fading records whose fade window has
-    -- elapsed. These are cleaned up in-place so the render below
-    -- doesn't have to deal with them.
     local now = TL_GetTime()
+
+    -- Step 1: expire fading records whose window elapsed.
     for unit, rec in pairs(activeTargetedListCasts) do
         if rec.fadingStartedAt
            and (now - rec.fadingStartedAt) >= (rec.fadingDuration or 0) then
             activeTargetedListCasts[unit] = nil
+            local bar = casterToBar[unit]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[unit] = nil
+            end
         end
     end
 
-    -- Gather surviving records into a sortable array.
+    -- Step 2: ensure every live record has a bar.
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if not casterToBar[unit] then
+            local bar = targetedListBarPool:Acquire()
+            casterToBar[unit] = bar
+            TargetedList_ApplyBarContent(bar, rec)
+        end
+    end
+
+    -- Step 3: update fading bars' visual state (alpha + color + text).
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt then
+            local bar = casterToBar[unit]
+            if bar then
+                local elapsed = now - rec.fadingStartedAt
+                local dur = rec.fadingDuration or 0.25
+                local pct = 1 - math.min(1, math.max(0, elapsed / dur))
+                bar:SetAlpha(pct)
+                if rec.wasInterrupted then
+                    bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
+                    if bar.interruptText then
+                        bar.spellName:Hide()
+                        bar.targetName:Hide()
+                        if bar.duration then bar.duration:Hide() end
+                        if rec.isTestCast and rec.testInterrupterName then
+                            bar.interruptText:SetText(rec.testInterrupterName)
+                        elseif rec.interrupterGuid and TL_UnitNameFromGUID then
+                            bar.interruptText:SetText(
+                                TL_UnitNameFromGUID(rec.interrupterGuid) or "")
+                            if TL_UnitClassFromGUID and TL_C_ClassColor
+                               and TL_C_ClassColor.GetClassColor then
+                                local _, iClass = TL_UnitClassFromGUID(
+                                    rec.interrupterGuid)
+                                if iClass then
+                                    local col = TL_C_ClassColor.GetClassColor(iClass)
+                                    if col then
+                                        bar.interruptText:SetTextColor(
+                                            col.r, col.g, col.b, 1)
+                                    end
+                                end
+                            end
+                        end
+                        bar.interruptText:Show()
+                    end
+                end
+            end
+        end
+    end
+
+    -- Step 4: sort and build the ordered activeBars list.
     wipe(targetedListSortBuf)
-    for _, rec in pairs(activeTargetedListCasts) do
+    for unit, rec in pairs(activeTargetedListCasts) do
         targetedListSortBuf[#targetedListSortBuf + 1] = rec
     end
 
-    -- Apply sort order. Only NEWEST / OLDEST are supported — see the
-    -- comment above the comparators for why. Unknown values (e.g.
-    -- legacy SHORTEST / INTERRUPTIBLE_FIRST / TARGET_ORDER left in
-    -- profiles from earlier versions) fall through to NEWEST.
     local sortOrder = (db and db.targetedListSortOrder) or "NEWEST"
-    if sortOrder == "OLDEST" then
+    if sortOrder == "STATIC" then
+        -- No sort — bars stay in arrival order. Pairs iteration is
+        -- undefined but stable within a session, so bars don't jump.
+        -- This is the "no reorder" mode.
+    elseif sortOrder == "OLDEST" then
         table.sort(targetedListSortBuf, TargetedList_SortOldestFirst)
     else
         table.sort(targetedListSortBuf, TargetedList_SortNewestFirst)
     end
 
-    -- Acquire bars for the first maxBars entries.
+    wipe(activeBars)
     local count = 0
     for i = 1, #targetedListSortBuf do
-        if count >= maxBars then break end
         local rec = targetedListSortBuf[i]
-        local bar = targetedListBarPool:Acquire()
-        TargetedList_ApplyBarContent(bar, rec)
-        count = count + 1
-        activeBars[count] = bar
+        local bar = casterToBar[rec.casterUnit]
+        if bar then
+            count = count + 1
+            if count <= maxBars then
+                activeBars[count] = bar
+                bar:Show()
+            else
+                bar:Hide()
+            end
+        end
     end
     wipe(targetedListSortBuf)
 
-    -- Show/hide container based on whether we have bars
+    -- Step 5: position and show container.
     if targetedListContainer then
         if count > 0 then
             targetedListContainer:Show()
-        elseif not targetedListTestActive then
+        else
             targetedListContainer:Hide()
         end
     end
@@ -5333,8 +5374,17 @@ end
 function DF:UpdateTargetedListLayout()
     if not TargetedList_IsGateOpen() then return end
     targetedListLayoutVersion = targetedListLayoutVersion + 1
-    -- Single render path for both test and live records. Test records
-    -- live in the same activeTargetedListCasts table as live records.
+    -- Re-apply appearance + content to all existing bars so settings
+    -- changes (font, texture, border, etc.) take effect on bars that
+    -- are already acquired (the incremental render only applies
+    -- content at acquisition time, not on every render tick).
+    local db = DF.db and DF.db.party
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec then
+            TargetedList_ApplyBarContent(bar, rec)
+        end
+    end
     TargetedList_Render()
     -- Also resize the mover if it's visible
     if targetedListMover and targetedListMover:IsShown() then
