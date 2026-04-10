@@ -3669,19 +3669,27 @@ local function TargetedList_RebuildKnownInterrupts()
     end
 end
 
--- Returns true (clean bool) if any of the player's known interrupt
--- spells is off cooldown and ready to use.
-local function TargetedList_IsInterruptReady()
-    if #targetedListKnownInterrupts == 0 then return false end
-    for _, spellID in ipairs(targetedListKnownInterrupts) do
-        if C_Spell and C_Spell.GetSpellCooldown then
-            local info = C_Spell.GetSpellCooldown(spellID)
-            if info and info.startTime == 0 then
-                return true
-            end
+-- Returns the secret-safe "is interrupt ready" boolean for the
+-- player's first known interrupt spell. The result may be secret-
+-- tainted — callers must feed it into SetVertexColorFromBoolean or
+-- similar sinks, never truth-test it in Lua.
+--
+-- Returns: (isReady: bool|secret, hasInterrupt: bool)
+-- hasInterrupt is a clean bool (true if the player has any known
+-- interrupt spell). isReady is the (possibly secret) cooldown state.
+local function TargetedList_GetInterruptReadyState()
+    if #targetedListKnownInterrupts == 0 then return false, false end
+    local spellID = targetedListKnownInterrupts[1]
+    if C_Spell and C_Spell.GetSpellCooldownDuration then
+        local duration = C_Spell.GetSpellCooldownDuration(spellID)
+        if duration and duration.IsZero then
+            -- IsZero() returns a (possibly secret) boolean: true when
+            -- cooldown is 0 (interrupt ready). This is secret-safe to
+            -- feed into SetVertexColorFromBoolean.
+            return duration:IsZero(), true
         end
     end
-    return false
+    return false, true
 end
 
 -- Event frame for interrupt spell tracking. Listens for spell
@@ -3704,29 +3712,43 @@ targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
         local db = DF.db and DF.db.party
         if db and db.targetedListEnabled and db.targetedListInterruptReadyEnabled
            and casterToBar then
-            -- Update bar colors for all tracked casts
+            local interruptibleColor = db.targetedListInterruptibleColor
+                or {r=1, g=0.2, b=0.2, a=1}
+            local uninterruptibleColor = db.targetedListUninterruptibleColor
+                or {r=0.5, g=0.5, b=0.5, a=1}
+            local readyColor = db.targetedListInterruptReadyColor
+                or {r=0.2, g=1, b=0.2, a=1}
+
+            -- Get the interrupt-ready state. isReady may be secret-
+            -- tainted — we never truth-test it, only pipe it through
+            -- C_CurveUtil or SetVertexColorFromBoolean.
+            local isReady, hasInterrupt = TargetedList_GetInterruptReadyState()
+            if not hasInterrupt then return end
+
             for unit, bar in pairs(casterToBar) do
                 local rec = activeTargetedListCasts[unit]
                 if rec and not rec.fadingStartedAt and not rec.isTestCast then
-                    -- Re-apply the interruptible color logic
-                    local interruptibleColor = db.targetedListInterruptibleColor
-                        or {r=1, g=0.2, b=0.2, a=1}
-                    local uninterruptibleColor = db.targetedListUninterruptibleColor
-                        or {r=0.5, g=0.5, b=0.5, a=1}
-                    local readyColor = db.targetedListInterruptReadyColor
-                        or {r=0.2, g=1, b=0.2, a=1}
-
                     if rec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
                         local tex = bar.progress:GetStatusBarTexture()
                         if tex and tex.SetVertexColorFromBoolean then
-                            -- Can't branch on secret uninterruptible, but we
-                            -- can check interrupt readiness (clean bool) and
-                            -- pick between ready/not-ready colors for the
-                            -- interruptible case.
-                            if TargetedList_IsInterruptReady() then
+                            -- We want: interruptible + ready → readyColor
+                            --          interruptible + not ready → interruptibleColor
+                            --          uninterruptible → uninterruptibleColor
+                            --
+                            -- Secret-safe approach: use C_CurveUtil to
+                            -- pick between readyColor and interruptibleColor
+                            -- based on the secret isReady bool, then use
+                            -- SetVertexColorFromBoolean for the uninterruptible
+                            -- check. C_CurveUtil.EvaluateColorValueFromBoolean
+                            -- is a secret-safe sink that picks between two
+                            -- colors based on a secret boolean.
+                            if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+                                local effectiveColor = C_CurveUtil.EvaluateColorValueFromBoolean(
+                                    isReady, readyColor, interruptibleColor)
                                 tex:SetVertexColorFromBoolean(rec.uninterruptible,
-                                    uninterruptibleColor, readyColor)
+                                    uninterruptibleColor, effectiveColor)
                             else
+                                -- Fallback: just use base interruptible color
                                 tex:SetVertexColorFromBoolean(rec.uninterruptible,
                                     uninterruptibleColor, interruptibleColor)
                             end
@@ -4013,20 +4035,19 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     -- timeout. TS3 uses OnCooldownDone for this but that requires a
     -- Cooldown frame per bar — our simpler approach uses C_Timer.
     -- 15 seconds covers the longest enemy casts in WoW.
+    -- Safety timer: force-remove the record if no stop event fires
+    -- within 15 seconds. Uses DF._TargetedListRender to trigger a
+    -- render pass which handles the cleanup (bar release + slot free)
+    -- through the normal expiry path by marking as fading with 0 dur.
     local SAFETY_TIMEOUT = 15
     if TL_C_Timer_After then
         TL_C_Timer_After(SAFETY_TIMEOUT, function()
             local rec = activeTargetedListCasts[casterUnit]
             if rec and not rec.fadingStartedAt and not rec.isTestCast then
-                -- Cast is still active with no stop event after timeout.
-                -- Force-remove it.
-                activeTargetedListCasts[casterUnit] = nil
-                local bar = casterToBar[casterUnit]
-                if bar then
-                    targetedListBarPool:Release(bar)
-                    casterToBar[casterUnit] = nil
-                end
-                casterToSlot[casterUnit] = nil
+                -- Mark as fading with instant expiry so the next Render
+                -- cleans it up through the normal path (Step 1).
+                rec.fadingStartedAt = TL_GetTime()
+                rec.fadingDuration = 0
                 if DF._TargetedListRender then
                     DF._TargetedListRender()
                 end
@@ -4698,18 +4719,18 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         or {r=1, g=0.2, b=0.2, a=1}
     local uninterruptibleColor = party and party.targetedListUninterruptibleColor
         or {r=0.5, g=0.5, b=0.5, a=1}
-    -- Three-way color: uninterruptible / interruptible / interrupt-ready.
-    -- When interrupt-ready tracking is on and the player has an
-    -- interrupt off cooldown, interruptible casts show the "ready"
-    -- color instead of the normal interruptible color.
-    local readyEnabled = party and party.targetedListInterruptReadyEnabled
-    local readyColor = (readyEnabled and party.targetedListInterruptReadyColor)
-        or interruptibleColor
-    local effectiveInterColor = interruptibleColor
-    if readyEnabled and not isTest and TargetedList_IsInterruptReady() then
-        effectiveInterColor = readyColor
-    end
-
+    -- Color logic:
+    -- Test bars: clean bool, use plain SetStatusBarColor.
+    -- Live bars: two-step secret-safe sink chain.
+    --   Step A: SetVertexColorFromBoolean(uninterruptible,
+    --           uninterruptibleColor, interruptibleColor)
+    --   Step B (if interrupt-ready enabled): overlay a second
+    --           SetVertexColorFromBoolean(isReady,
+    --           readyColor, <leave as-is>) — but WoW only supports
+    --           one SetVertexColorFromBoolean per texture, so we
+    --           handle this via the SPELL_UPDATE_COOLDOWN event
+    --           handler which re-applies color when cooldown state
+    --           changes. At initial render we use the base color.
     if isTest then
         local c = activeRec.uninterruptible and uninterruptibleColor or interruptibleColor
         bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
@@ -4717,16 +4738,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         local tex = bar.progress:GetStatusBarTexture()
         if tex and tex.SetVertexColorFromBoolean then
             tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
-                uninterruptibleColor, effectiveInterColor)
+                uninterruptibleColor, interruptibleColor)
         else
             bar.progress:SetStatusBarColor(
-                effectiveInterColor.r, effectiveInterColor.g,
-                effectiveInterColor.b, effectiveInterColor.a)
+                interruptibleColor.r, interruptibleColor.g,
+                interruptibleColor.b, interruptibleColor.a)
         end
     else
         bar.progress:SetStatusBarColor(
-            effectiveInterColor.r, effectiveInterColor.g,
-            effectiveInterColor.b, effectiveInterColor.a)
+            interruptibleColor.r, interruptibleColor.g,
+            interruptibleColor.b, interruptibleColor.a)
     end
 
     -- Important-spells filter at render time. C_Spell.IsSpellImportant
