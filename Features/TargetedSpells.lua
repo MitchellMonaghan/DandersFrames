@@ -4492,9 +4492,12 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     end
 
     -- Progress fill + countdown text:
-    -- Skip for fading records — the fill should freeze at the point
-    -- where the cast stopped or was interrupted.
-    if activeRec.fadingStartedAt then
+    -- testFrozenFill provides a direct fill value for static test bars.
+    -- Fading records skip fill updates (stays where cast stopped).
+    if activeRec.testFrozenFill then
+        bar.progress:SetMinMaxValues(0, 1)
+        bar.progress:SetValue(activeRec.testFrozenFill)
+    elseif activeRec.fadingStartedAt then
         -- Don't update progress. The fill stays where it was.
     elseif isTest and activeRec.testCastDuration then
         local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
@@ -4861,9 +4864,11 @@ local function TargetedList_Render()
                         bar.targetName:Hide()
                         if bar.duration then bar.duration:Hide() end
                         if rec.isTestCast and rec.testInterrupterName then
-                            bar.interruptText:SetText(rec.testInterrupterName)
+                            bar.interruptText:SetText("Interrupted: " .. rec.testInterrupterName)
                         elseif rec.interrupterGuid and TL_UnitNameFromGUID then
-                            bar.interruptText:SetText(
+                            -- UnitNameFromGUID returns a secret-tainted string,
+                            -- piped through SetFormattedText (secret-safe sink)
+                            bar.interruptText:SetFormattedText("Interrupted: %s",
                                 TL_UnitNameFromGUID(rec.interrupterGuid) or "")
                             if TL_UnitClassFromGUID and TL_C_ClassColor
                                and TL_C_ClassColor.GetClassColor then
@@ -5221,12 +5226,19 @@ function DF:ShowTestTargetedList()
     TargetedList_EnsureContainer()
     TargetedList_EnsureBarPool()
 
-    -- Clear any existing test records
+    -- Clear any existing test records AND their bars from casterToBar
+    -- (prevents duplicates when toggling between animate/non-animate)
     for key in pairs(activeTargetedListCasts) do
         if type(key) == "string" and key:sub(1, 5) == "test-" then
             activeTargetedListCasts[key] = nil
+            local bar = casterToBar[key]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[key] = nil
+            end
         end
     end
+    wipe(activeBars)
     targetedListTestNextId = 1
 
     local db = DF.db and DF.db.party
@@ -5280,27 +5292,36 @@ function DF:ShowTestTargetedList()
         -- Bars show a mix of: normal casting (interruptible +
         -- uninterruptible), interrupted (with interrupter name), and
         -- important glow. Each bar is frozen at a varied fill point.
-        local now = TL_GetTime()
         for i = 1, maxBars do
             TargetedList_SpawnTestCast()
             local key = "test-" .. (targetedListTestNextId - 1)
             local rec = activeTargetedListCasts[key]
             if rec then
-                local dur = rec.testCastDuration or 4
-                local fillPct = 0.2 + ((i - 1) * 0.12) % 0.6
-                rec.startTime = now - (dur * fillPct)
+                -- Freeze the bar at a varied fill point. We store this
+                -- directly rather than using time math (which broke when
+                -- testCastDuration was set to 99999 making elapsed/dur ≈ 0).
+                rec.testFrozenFill = 0.2 + ((i - 1) * 0.12) % 0.6
                 rec.testCastDuration = 99999
                 rec.testInterruptAt = nil
                 rec.testWillInterrupt = false
 
-                -- Bar states: distribute across the bars
-                -- Last bar (or bar 3 if maxBars >= 3): show as interrupted
-                if i == maxBars or (maxBars >= 3 and i == 3) then
-                    rec.fadingStartedAt = now
+                -- Distribute visual states across the bars:
+                -- Bar 3 (if maxBars >= 3) or last bar: show as interrupted
+                if maxBars >= 3 and i == 3 then
+                    rec.fadingStartedAt = TL_GetTime()
                     rec.fadingDuration = 99999  -- never expires in static
                     rec.wasInterrupted = true
+                    rec.testFrozenFill = 0.55   -- partial fill on interrupt
                     rec.testInterrupterName = TargetedList_GetTestTargetName(
                         ((i + 1) % 5) + 1)
+                elseif i == maxBars and maxBars ~= 3 then
+                    -- Last bar also interrupted if not already bar 3
+                    rec.fadingStartedAt = TL_GetTime()
+                    rec.fadingDuration = 99999
+                    rec.wasInterrupted = true
+                    rec.testFrozenFill = 0.7
+                    rec.testInterrupterName = TargetedList_GetTestTargetName(
+                        ((i + 2) % 5) + 1)
                 end
             end
         end
