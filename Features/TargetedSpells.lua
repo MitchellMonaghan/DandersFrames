@@ -3904,20 +3904,36 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     -- within 15 seconds. Uses DF._TargetedListRender to trigger a
     -- render pass which handles the cleanup (bar release + slot free)
     -- through the normal expiry path by marking as fading with 0 dur.
-    local SAFETY_TIMEOUT = 15
+    -- Safety timer: periodically check if the unit is still casting.
+    -- If not, force-remove the record. This catches cases where the
+    -- cast stop event doesn't fire (CC, LOS, mob death, etc.).
+    -- Unlike the previous fixed-timeout approach, this reschedules
+    -- as long as the unit is still casting — so long channels (20s+)
+    -- aren't prematurely removed.
+    local SAFETY_CHECK_INTERVAL = 5
     if TL_C_Timer_After then
-        TL_C_Timer_After(SAFETY_TIMEOUT, function()
+        local function safetyCheck()
             local rec = activeTargetedListCasts[casterUnit]
-            if rec and not rec.fadingStartedAt and not rec.isTestCast then
-                -- Mark as fading with instant expiry so the next Render
-                -- cleans it up through the normal path (Step 1).
+            if not rec or rec.fadingStartedAt or rec.isTestCast then
+                return  -- already handled or test record
+            end
+            -- Check if the unit is still actually casting/channeling
+            local stillCasting = TL_UnitExists(casterUnit)
+                and (TL_UnitCastingInfo(casterUnit) ~= nil
+                     or TL_UnitChannelInfo(casterUnit) ~= nil)
+            if stillCasting then
+                -- Still casting — reschedule another check
+                TL_C_Timer_After(SAFETY_CHECK_INTERVAL, safetyCheck)
+            else
+                -- Not casting anymore — force-remove
                 rec.fadingStartedAt = TL_GetTime()
                 rec.fadingDuration = 0
                 if DF._TargetedListRender then
                     DF._TargetedListRender()
                 end
             end
-        end)
+        end
+        TL_C_Timer_After(SAFETY_CHECK_INTERVAL, safetyCheck)
     end
 
     -- Debug log: only clean values. spellId / spellName / texture are
