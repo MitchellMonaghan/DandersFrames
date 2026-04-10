@@ -4309,10 +4309,14 @@ local function TargetedList_ApplyBarAppearance(bar, db)
     end
 
     -- ----- StatusBar texture -----
-    -- The db stores the full texture PATH (same format as healthTexture,
-    -- petTexture, etc.) — the texture dropdown writes paths directly.
+    -- Only call SetStatusBarTexture if the path changed — calling it
+    -- unconditionally resets the StatusBar's internal value/fill state,
+    -- which clobbers the progress fill set by ApplyBarContent.
     local texturePath = db.targetedListTexture or "Interface\\TargetingFrame\\UI-StatusBar"
-    bar.progress:SetStatusBarTexture(texturePath)
+    if bar._lastTexturePath ~= texturePath then
+        bar.progress:SetStatusBarTexture(texturePath)
+        bar._lastTexturePath = texturePath
+    end
 
     -- ----- Background alpha -----
     local bgAlpha = db.targetedListBackgroundAlpha or 0.6
@@ -4378,6 +4382,7 @@ local function TargetedList_ResetBar(pool, bar)
         bar.duration:Clear()
     end
     bar.icon:SetTexture(nil)
+    bar._lastTexturePath = nil
     if bar.highlightFrame then
         bar.highlightFrame:Hide()
     end
@@ -5239,19 +5244,18 @@ end
 -- on existing bars — no bar rebuild, no pool churn. This is what
 -- runs every tick for smooth fill animation.
 local function TargetedList_UpdateTestProgress()
+    -- Iterate all tracked bars via casterToBar (not activeBars which
+    -- may have nil gaps in STATIC mode that ipairs would skip).
     local now = TL_GetTime()
-    for _, bar in ipairs(activeBars) do
-        local rec = bar.casterUnit and activeTargetedListCasts[bar.casterUnit]
-        if rec and rec.isTestCast and rec.testCastDuration then
-            -- Skip fading bars — their fill should freeze at the
-            -- point where the cast was interrupted or completed.
-            if not rec.fadingStartedAt then
-                local cutoff = rec.testInterruptAt or rec.testCastDuration
-                local elapsed = now - rec.startTime
-                local pct = math.min(1, math.max(0, elapsed / cutoff))
-                bar.progress:SetMinMaxValues(0, 1)
-                bar.progress:SetValue(pct)
-            end
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec and rec.isTestCast and rec.testCastDuration
+           and not rec.fadingStartedAt and not rec.testFrozenFill then
+            local cutoff = rec.testInterruptAt or rec.testCastDuration
+            local elapsed = now - rec.startTime
+            local pct = math.min(1, math.max(0, elapsed / cutoff))
+            bar.progress:SetMinMaxValues(0, 1)
+            bar.progress:SetValue(pct)
         end
     end
 end
