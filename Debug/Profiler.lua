@@ -1548,6 +1548,63 @@ function Profiler:CreateUI()
     f.splitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     UpdateSplitBtnText()
 
+    -- OnUpdate Hook warning banner (shown when hook is disabled)
+    -- Positioned at the bottom of the profiler window, above the data rows
+    local hookBanner = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    hookBanner:SetHeight(28)
+    hookBanner:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 6)
+    hookBanner:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 6)
+    hookBanner:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    hookBanner:SetBackdropColor(0.3, 0.15, 0, 0.9)
+    hookBanner:SetBackdropBorderColor(0.8, 0.5, 0, 1)
+    f.hookBanner = hookBanner
+
+    local hookText = hookBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hookText:SetPoint("LEFT", 8, 0)
+    hookText:SetTextColor(1, 0.8, 0.2)
+    f.hookBannerText = hookText
+
+    local hookCheckbox = CreateFrame("CheckButton", nil, hookBanner, "UICheckButtonTemplate")
+    hookCheckbox:SetSize(22, 22)
+    hookCheckbox:SetPoint("RIGHT", -6, 0)
+    hookCheckbox:SetChecked(self.onUpdateHookEnabled)
+    hookCheckbox:SetScript("OnClick", function(cb)
+        if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
+        local newState = cb:GetChecked()
+        DandersFramesDB_v2.profilerOnUpdateHook = newState
+        -- Update banner to show pending state
+        if newState == self.onUpdateHookEnabled then
+            -- Back to current state, no reload needed
+            UpdateHookBanner()
+        else
+            hookText:SetText(newState
+                and "OnUpdate hook enabled — type /rl to apply"
+                or "OnUpdate hook disabled — type /rl to apply")
+        end
+    end)
+    f.hookCheckbox = hookCheckbox
+
+    local hookLabel = hookBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hookLabel:SetPoint("RIGHT", hookCheckbox, "LEFT", -2, 0)
+    hookLabel:SetText("Enable")
+    hookLabel:SetTextColor(1, 0.8, 0.2)
+
+    local function UpdateHookBanner()
+        if self.onUpdateHookEnabled then
+            hookBanner:Hide()
+        else
+            hookText:SetText("OnUpdate tracking is disabled. Enable and /rl to use the OnUpdate tab.")
+            hookCheckbox:SetChecked(DandersFramesDB_v2 and DandersFramesDB_v2.profilerOnUpdateHook or false)
+            hookBanner:Show()
+        end
+    end
+    f.UpdateHookBanner = UpdateHookBanner
+    UpdateHookBanner()
+
     -- Column headers
     local xOffset = CONTENT_LEFT + 2
     for _, col in ipairs(COLUMNS) do
@@ -1623,10 +1680,5 @@ function Profiler:ToggleUI()
         profilerFrame:Hide()
     else
         self:CreateUI()
-        -- Warn if OnUpdate hook is not active
-        if not self.onUpdateHookEnabled then
-            print("|cffff9900DandersFrames Profiler:|r OnUpdate tracking is |cffff0000disabled|r. The OnUpdate tab will be empty.")
-            print("|cffff9900DandersFrames Profiler:|r To enable, run |cffeda55f/df profiler hook|r then |cffeda55f/rl|r")
-        end
     end
 end
