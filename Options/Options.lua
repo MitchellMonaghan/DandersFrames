@@ -1488,6 +1488,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             db.petHealthFont = font; db.petHealthFontOutline = outline
             db.targetedSpellDurationFont = font; db.targetedSpellDurationOutline = outline
             db.personalTargetedSpellDurationFont = font; db.personalTargetedSpellDurationOutline = outline
+            db.targetedListFont = font; db.targetedListFontOutline = outline
             db.defensiveIconDurationFont = font; db.defensiveIconDurationOutline = outline
             db.statusIconFont = font; db.statusIconFontOutline = outline
             if db.groupLabelFont ~= nil then
@@ -1519,6 +1520,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if DF.UpdateAllTargetedSpellLayouts then DF:UpdateAllTargetedSpellLayouts() end
             if (DF.testMode or DF.raidTestMode) and DF.UpdateAllTestTargetedSpell then DF:UpdateAllTestTargetedSpell() end
             if DF.UpdateTestPersonalTargetedSpells then DF:UpdateTestPersonalTargetedSpells() end
+            if DF.UpdateTargetedListLayout then DF:UpdateTargetedListLayout() end
             if DF.UpdateAllFramesStatusIcons then DF:UpdateAllFramesStatusIcons() end
             
             -- Refresh test frames to apply new fonts
@@ -5494,14 +5496,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 DETAILED = L["Detailed"],
                 MINIMAL = L["Minimal"],
             }
-            -- Only NEWEST / OLDEST are implemented. Other sort keys
-            -- (remaining time, interruptibility, target party order)
-            -- would need to read secret-tainted nameplate values and
-            -- are not representable in Lua sort comparators.
-            local sortOptions = {
-                NEWEST = L["Newest First"],
-                OLDEST = L["Oldest First"],
-            }
+
 
             local function HideTLOptions(d) return not d.targetedListEnabled end
             local function HideIconOptions(d) return not d.targetedListEnabled or not d.targetedListShowIcon end
@@ -5531,23 +5526,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlMaxBars.disableOn = HideTLOptions
             Add(settingsGroup, nil, 1)
 
-            -- ===== CONTENT TYPES GROUP (Column 2) =====
-            local contentGroup = GUI:CreateSettingsGroup(self.child, 280)
-            contentGroup:AddWidget(GUI:CreateHeader(self.child, L["Content Types"]), 40)
-            contentGroup:AddWidget(GUI:CreateLabel(self.child, L["Show in content types:"], 250), 25)
-            local tlOpenWorld = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Open World"], db, "targetedListInOpenWorld", TargetedListUpdate), 25)
-            tlOpenWorld.disableOn = HideTLOptions
-            local tlDungeons = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Dungeons"], db, "targetedListInDungeons", TargetedListUpdate), 25)
-            tlDungeons.disableOn = HideTLOptions
-            local tlArena = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Arena"], db, "targetedListInArena", TargetedListUpdate), 25)
-            tlArena.disableOn = HideTLOptions
-            local tlRaids = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Raids"], db, "targetedListInRaids", TargetedListUpdate), 25)
-            tlRaids.disableOn = HideTLOptions
-            local tlBGs = contentGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Battlegrounds"], db, "targetedListInBattlegrounds", TargetedListUpdate), 25)
-            tlBGs.disableOn = HideTLOptions
-            contentGroup.hideOn = HideTLOptions
-            Add(contentGroup, nil, 2)
-
             AddSpace(10, "both")
 
             -- ===== LAYOUT SECTION =====
@@ -5564,8 +5542,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlSpace.disableOn = HideTLOptions
             local tlGrowth = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Growth Direction"], growthOptions, db, "targetedListGrowth", TargetedListUpdate), 55)
             tlGrowth.disableOn = HideTLOptions
-            local tlSort = layoutGroup:AddWidget(GUI:CreateDropdown(self.child, L["Sort Order"], sortOptions, db, "targetedListSortOrder", TargetedListUpdate), 55)
-            tlSort.disableOn = HideTLOptions
             AddToSection(layoutGroup, nil, 1)
 
             local presetGroup = GUI:CreateSettingsGroup(self.child, 260)
@@ -5679,6 +5655,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local spellNamePosGroup = GUI:CreateSettingsGroup(self.child, 260)
             spellNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Spell Name"]), 40)
+            local tlSNFontSize = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListSpellNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlSNFontSize.disableOn = HideTLOptions
             local tlSNAnchor = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListSpellNameAnchor", TargetedListUpdate), 55)
             tlSNAnchor.disableOn = HideTLOptions
             local tlSNAlign = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListSpellNameAlign", TargetedListUpdate), 55)
@@ -5691,6 +5669,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
 
             local targetNamePosGroup = GUI:CreateSettingsGroup(self.child, 260)
             targetNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Target Name"]), 40)
+            local tlTNFontSize = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListTargetNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlTNFontSize.disableOn = HideTargetNameOptions
             local tlTNAnchor = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListTargetNameAnchor", TargetedListUpdate), 55)
             tlTNAnchor.disableOn = HideTargetNameOptions
             local tlTNAlign = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListTargetNameAlign", TargetedListUpdate), 55)

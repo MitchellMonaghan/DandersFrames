@@ -4173,6 +4173,13 @@ end
 local function TargetedList_ApplyTextLayout(bar, db)
     if not bar or not db then return end
 
+    -- Progress bar width for text element sizing. Each text element
+    -- gets the full progress region width so SetJustifyH has room to
+    -- take effect — without a width constraint the FontString auto-
+    -- sizes to its content and justify is invisible.
+    local progressW = bar.progress:GetWidth()
+    if progressW < 10 then progressW = (db.targetedListWidth or 240) - 4 end
+
     local function applyTextElement(fs, anchorKey, alignKey, xKey, yKey, defaultAnchor, defaultAlign)
         if not fs then return end
         local point = TargetedList_ResolveAnchorPoint(db[anchorKey] or defaultAnchor)
@@ -4180,6 +4187,7 @@ local function TargetedList_ApplyTextLayout(bar, db)
         fs:ClearAllPoints()
         fs:SetPoint(point, bar.progress, point,
             db[xKey] or 0, db[yKey] or 0)
+        fs:SetWidth(progressW)
         fs:SetJustifyH(align)
     end
 
@@ -4289,14 +4297,16 @@ local function TargetedList_ApplyBarAppearance(bar, db)
     local outline = db.targetedListFontOutline
     if outline == "NONE" then outline = "" end
 
-    bar.spellName:SetFont(fontPath, fontSize, outline)
-    bar.targetName:SetFont(fontPath, fontSize, outline)
+    -- Per-element font sizes fall back to the global targetedListFontSize
+    local spellNameFontSize = db.targetedListSpellNameFontSize or fontSize
+    local targetNameFontSize = db.targetedListTargetNameFontSize or fontSize
+    bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
+    bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
     -- NOTE: The duration Cooldown frame renders its countdown text
     -- via Blizzard's native cooldown system, which uses a built-in
     -- font object (NumberFontNormal-ish). Custom font paths can't
     -- be applied — SetCountdownFont takes a font object name string,
-    -- not a (path, size, outline) triple. The user's font settings
-    -- apply to spell name and target name only.
+    -- not a (path, size, outline) triple.
 
     -- ----- Per-element show/hide toggles -----
     bar.spellName:SetShown(db.targetedListShowSpellName ~= false)
@@ -4385,7 +4395,7 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     local targetName = TL_UnitSpellTargetName(casterUnit)
     if targetName then
         if party and party.targetedListShowArrowPrefix then
-            bar.targetName:SetFormattedText("→ %s", targetName)
+            bar.targetName:SetFormattedText("> %s", targetName)
         else
             bar.targetName:SetText(targetName)
         end
@@ -4954,7 +4964,7 @@ local function TargetedList_ApplyTestBarContent(bar, index)
     -- Target name + class color from TestData.units
     local targetName = TargetedList_GetTestTargetName(index)
     if db.targetedListShowArrowPrefix then
-        bar.targetName:SetFormattedText("→ %s", targetName)
+        bar.targetName:SetFormattedText("> %s", targetName)
     else
         bar.targetName:SetText(targetName)
     end
