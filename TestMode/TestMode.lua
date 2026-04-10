@@ -6735,6 +6735,9 @@ function DF:CreateTestPanel()
     panel.showTargetedListCheck = secIndicators:AddCheckbox("Targeted List", "testShowTargetedList", function()
         if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedList() end
     end, "indicators_targetedlist")
+    panel.animTargetedListCheck = secIndicators:AddCheckbox("Animate Targeted List", "testAnimateTargetedList", function()
+        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedList() end
+    end)
     panel.showStatusIconsCheck = secIndicators:AddCheckbox("Status / Ready", "testShowStatusIcons", function()
         if DF.testMode or DF.raidTestMode then DF:RefreshTestFrames() end
     end, "indicators_icons")
@@ -6887,6 +6890,7 @@ function DF:CreateTestPanel()
         self.showADCheck:SetChecked(db.testShowAuraDesigner)
         self.showExternalDefCheck:SetChecked(db.testShowExternalDef)
         self.showTargetedListCheck:SetChecked(db.testShowTargetedList)
+        self.animTargetedListCheck:SetChecked(db.testAnimateTargetedList)
         self.showStatusIconsCheck:SetChecked(db.testShowStatusIcons ~= false)
         self.showIconsCheck:SetChecked(db.testShowIcons ~= false)
         self.showSelectionCheck:SetChecked(db.testShowSelection)

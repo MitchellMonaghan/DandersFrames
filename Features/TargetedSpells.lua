@@ -4392,6 +4392,10 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     local spellId = activeRec.spellId
     local isTest = activeRec.isTestCast
 
+    -- Store casterUnit on the bar for lightweight progress lookups
+    -- (the test ticker reads this to find the matching record).
+    bar.casterUnit = casterUnit
+
     -- Spell name: test records store a clean string; live records
     -- pipe the (possibly secret) result through SetText.
     if isTest and activeRec.testSpellName then
@@ -5029,8 +5033,16 @@ local function TargetedList_SpawnTestCast()
     local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spec.spellId)
 
     local castDuration = 2 + (targetedListTestNextId % 5) * 1.0  -- 2-6s
+    local willInterrupt = (targetedListTestNextId % 3 == 0)
     local key = "test-" .. targetedListTestNextId
     targetedListTestNextId = targetedListTestNextId + 1
+
+    -- Interrupted casts trigger at 40-80% of their duration so they
+    -- look like real mid-cast interrupts, not completed-then-interrupted.
+    local interruptAt = nil
+    if willInterrupt then
+        interruptAt = castDuration * (0.4 + (targetedListTestNextId % 5) * 0.1)
+    end
 
     activeTargetedListCasts[key] = {
         isTestCast       = true,
@@ -5045,15 +5057,33 @@ local function TargetedList_SpawnTestCast()
         testTargetName   = targetName,
         testTargetClass  = targetClass,
         testCastDuration = castDuration,
-        -- Flag for the test lifecycle ticker to transition to fading
-        testWillInterrupt = (targetedListTestNextId % 3 == 0),
+        testWillInterrupt = willInterrupt,
+        testInterruptAt  = interruptAt,
     }
 
     TargetedList_Render()
 end
 
+-- Lightweight progress update for test bars. Only touches SetValue
+-- on existing bars — no bar rebuild, no pool churn. This is what
+-- runs every tick for smooth fill animation.
+local function TargetedList_UpdateTestProgress()
+    local now = TL_GetTime()
+    for _, bar in ipairs(activeBars) do
+        -- Find the matching record by casterUnit (which is the test key)
+        local rec = bar.casterUnit and activeTargetedListCasts[bar.casterUnit]
+        if rec and rec.isTestCast and rec.testCastDuration and not rec.fadingStartedAt then
+            local elapsed = now - rec.startTime
+            local pct = math.min(1, math.max(0, elapsed / rec.testCastDuration))
+            bar.progress:SetMinMaxValues(0, 1)
+            bar.progress:SetValue(pct)
+        end
+    end
+end
+
 -- Check test casts and transition them to fading when their cast
--- duration elapses. Called by the test ticker alongside spawning.
+-- duration elapses. Called by the test ticker. Only triggers a full
+-- Render on state transitions (cast finished → fading), not every tick.
 local function TargetedList_UpdateTestCasts()
     local db = DF.db and DF.db.party
     if not db then return end
@@ -5065,8 +5095,11 @@ local function TargetedList_UpdateTestCasts()
     for key, rec in pairs(activeTargetedListCasts) do
         if rec.isTestCast and not rec.fadingStartedAt then
             local elapsed = now - rec.startTime
-            if elapsed >= (rec.testCastDuration or 3) then
-                -- Cast finished — transition to fading
+            -- Interrupted casts trigger at testInterruptAt (40-80% of
+            -- duration) rather than 100%, so they look like real mid-cast
+            -- interrupts instead of completed-then-interrupted.
+            local cutoff = rec.testInterruptAt or rec.testCastDuration or 3
+            if elapsed >= cutoff then
                 local wasInt = rec.testWillInterrupt
                 rec.fadingStartedAt = now
                 rec.fadingDuration = wasInt and flashDuration or fadeDuration
@@ -5096,49 +5129,68 @@ function DF:ShowTestTargetedList()
     end
     targetedListTestNextId = 1
 
-    -- Spawn initial batch of casts so the display isn't empty
     local db = DF.db and DF.db.party
     local maxBars = (db and db.targetedListMaxBars) or 6
-    local initialCount = math.min(maxBars, 4)  -- start with up to 4 bars
-    for i = 1, initialCount do
-        TargetedList_SpawnTestCast()
-    end
+    local animate = db and db.testAnimateTargetedList
 
-    -- Start a ticker that spawns new casts and manages lifecycle.
-    -- Spawn interval is ~2s so casts overlap visually.
-    if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
-        local spawnInterval = 2.0
-        local spawnTimer = 0
-        targetedListTestTicker = C_Timer.NewTicker(0.1, function()
-            if not targetedListTestActive then
-                if targetedListTestTicker then
-                    targetedListTestTicker:Cancel()
-                    targetedListTestTicker = nil
+    if animate then
+        -- Animated mode: spawn initial batch staggered, ticker manages lifecycle
+        local initialCount = math.min(maxBars, 4)
+        for i = 1, initialCount do
+            TargetedList_SpawnTestCast()
+        end
+
+        -- Ticker spawns new casts and manages lifecycle.
+        if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
+            local spawnInterval = 2.0
+            local spawnTimer = 0
+            targetedListTestTicker = C_Timer.NewTicker(0.05, function()
+                if not targetedListTestActive then
+                    if targetedListTestTicker then
+                        targetedListTestTicker:Cancel()
+                        targetedListTestTicker = nil
+                    end
+                    return
                 end
-                return
-            end
 
-            -- Manage existing test cast lifecycle and re-render for
-            -- smooth progress fill + countdown updates
-            TargetedList_UpdateTestCasts()
-            TargetedList_Render()
+                -- Check for cast completions / interrupts
+                TargetedList_UpdateTestCasts()
 
-            -- Periodically spawn new casts
-            spawnTimer = spawnTimer + 0.1
-            if spawnTimer >= spawnInterval then
-                spawnTimer = 0
-                -- Only spawn if under max bars
-                local count = 0
-                for _, rec in pairs(activeTargetedListCasts) do
-                    if rec.isTestCast and not rec.fadingStartedAt then
-                        count = count + 1
+                -- Lightweight progress fill update (no bar rebuild)
+                TargetedList_UpdateTestProgress()
+
+                -- Periodically spawn new casts
+                spawnTimer = spawnTimer + 0.05
+                if spawnTimer >= spawnInterval then
+                    spawnTimer = 0
+                    local count = 0
+                    for _, rec in pairs(activeTargetedListCasts) do
+                        if rec.isTestCast and not rec.fadingStartedAt then
+                            count = count + 1
+                        end
+                    end
+                    if count < ((DF.db and DF.db.party and DF.db.party.targetedListMaxBars) or 6) then
+                        TargetedList_SpawnTestCast()
                     end
                 end
-                if count < ((DF.db and DF.db.party and DF.db.party.targetedListMaxBars) or 6) then
-                    TargetedList_SpawnTestCast()
-                end
+            end)
+        end
+    else
+        -- Static mode: spawn maxBars at once with long durations.
+        -- No ticker, no animation. Users see the full bar layout for
+        -- customisation without distraction.
+        for i = 1, maxBars do
+            TargetedList_SpawnTestCast()
+            -- Give each bar a very long duration so they don't expire
+            local key = "test-" .. (targetedListTestNextId - 1)
+            local rec = activeTargetedListCasts[key]
+            if rec then
+                rec.testCastDuration = 9999
+                rec.testInterruptAt = nil
+                rec.testWillInterrupt = false
             end
-        end)
+        end
+        TargetedList_Render()
     end
 end
 

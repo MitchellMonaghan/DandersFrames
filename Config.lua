@@ -1813,6 +1813,7 @@ DF.PartyDefaults = {
     -- DF.RELEASE_CHANNEL). There is no raid-mode equivalent because the
     -- Targeted List itself is party-only.
     testShowTargetedList = false,
+    testAnimateTargetedList = true,
     testAnimateHealth = false,
     testBossDebuffCount = 1,
     testBuffCount = 2,
