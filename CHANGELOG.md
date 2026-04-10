@@ -1,5 +1,11 @@
 # DandersFrames Changelog
 
+## [4.2.9] - 2026-04-10
+
+### Bug Fixes
+
+* (Dispel Overlay) Fix "All Dispellable" mode not showing the dispel overlay when using the Blizzard aura data source
+
 ## [4.2.8] - 2026-04-08
 
 ### New Features
