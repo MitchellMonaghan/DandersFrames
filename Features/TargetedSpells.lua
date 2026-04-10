@@ -4564,20 +4564,27 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     end
 
     -- Important-spell glow: reuses the existing InitGlowBorder /
-    -- UpdateGlowBorder infrastructure. The glow frame is shown/hidden
-    -- via SetAlphaFromBoolean(isImportant) which is the same secret-
-    -- safe sink used by the filter above.
+    -- UpdateGlowBorder infrastructure. For test bars we use a stored
+    -- testIsImportant flag (since our test spell IDs aren't actually
+    -- flagged as important by Blizzard). For live bars we use
+    -- SetAlphaFromBoolean with the secret-tainted IsSpellImportant result.
     if bar.highlightFrame then
-        if party and party.targetedListHighlightImportant
-           and TL_C_Spell_IsSpellImportant then
+        if party and party.targetedListHighlightImportant then
             local hc = party.targetedListHighlightColor or {r=1, g=0.8, b=0}
             if DF.InitGlowBorder then DF.InitGlowBorder(bar.highlightFrame) end
             if DF.UpdateGlowBorder then
                 DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
             end
             bar.highlightFrame:Show()
-            local isImportant = TL_C_Spell_IsSpellImportant(spellId)
-            bar.highlightFrame:SetAlphaFromBoolean(isImportant)
+            if isTest and activeRec.testIsImportant ~= nil then
+                -- Clean bool — use SetShown directly
+                bar.highlightFrame:SetShown(activeRec.testIsImportant)
+            elseif TL_C_Spell_IsSpellImportant then
+                local isImportant = TL_C_Spell_IsSpellImportant(spellId)
+                bar.highlightFrame:SetAlphaFromBoolean(isImportant)
+            else
+                bar.highlightFrame:Hide()
+            end
         else
             bar.highlightFrame:Hide()
         end
@@ -4865,6 +4872,14 @@ local function TargetedList_Render()
                         if bar.duration then bar.duration:Hide() end
                         if rec.isTestCast and rec.testInterrupterName then
                             bar.interruptText:SetText("Interrupted: " .. rec.testInterrupterName)
+                            -- Class-color the test interrupter name
+                            if rec.testInterrupterClass and TL_C_ClassColor
+                               and TL_C_ClassColor.GetClassColor then
+                                local col = TL_C_ClassColor.GetClassColor(rec.testInterrupterClass)
+                                if col then
+                                    bar.interruptText:SetTextColor(col.r, col.g, col.b, 1)
+                                end
+                            end
                         elseif rec.interrupterGuid and TL_UnitNameFromGUID then
                             -- UnitNameFromGUID returns a secret-tainted string,
                             -- piped through SetFormattedText (secret-safe sink)
@@ -5159,8 +5174,11 @@ local function TargetedList_SpawnTestCast()
         testCastDuration = castDuration,
         testWillInterrupt = willInterrupt,
         testInterruptAt  = interruptAt,
-        -- Fake interrupter name for display during interrupted flash
+        -- Fake interrupter name + class for display during interrupted flash
         testInterrupterName = willInterrupt and targetName or nil,
+        testInterrupterClass = willInterrupt and targetClass or nil,
+        -- Alternate importance: odd-numbered casts are "important"
+        testIsImportant = (targetedListTestNextId % 2 == 0),
     }
     -- NOTE: caller is responsible for calling TargetedList_Render()
     -- after all spawns/modifications are done. This avoids premature
@@ -5329,13 +5347,16 @@ function DF:ShowTestTargetedList()
                     rec.testFrozenFill = 0.55   -- partial fill on interrupt
                     rec.testInterrupterName = TargetedList_GetTestTargetName(
                         ((i + 1) % 5) + 1)
+                    rec.testInterrupterClass = TargetedList_GetTestTargetClass(
+                        ((i + 1) % 5) + 1)
                 elseif i == maxBars and maxBars ~= 3 then
-                    -- Last bar also interrupted if not already bar 3
                     rec.fadingStartedAt = TL_GetTime()
                     rec.fadingDuration = 99999
                     rec.wasInterrupted = true
                     rec.testFrozenFill = 0.7
                     rec.testInterrupterName = TargetedList_GetTestTargetName(
+                        ((i + 2) % 5) + 1)
+                    rec.testInterrupterClass = TargetedList_GetTestTargetClass(
                         ((i + 2) % 5) + 1)
                 end
             end
