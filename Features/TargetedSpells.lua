@@ -1781,11 +1781,6 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListProcessCastStart then
             DF._TargetedListProcessCastStart(unit, event, ...)
         end
-    -- NAME_PLATE_UNIT_ADDED and UNIT_TARGET are intentionally NOT
-    -- routed to TargetedList — they don't carry spellId, and the
-    -- secret-taint workaround (gotcha #0) makes the API-only re-pickup
-    -- path fragile. Existing personal/group handlers above still see
-    -- them. See TargetedList_ProcessCastStart for the rationale.
     elseif event == "UNIT_SPELLCAST_STOP"
            or event == "UNIT_SPELLCAST_FAILED"
            or event == "UNIT_SPELLCAST_FAILED_QUIET"
@@ -1797,6 +1792,16 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListOnCastStop then
             DF._TargetedListOnCastStop(unit, event, ...)
         end
+    elseif event == "UNIT_SPELLCAST_DELAYED"
+           or event == "UNIT_SPELLCAST_CHANNEL_UPDATE"
+           or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
+        -- Mid-cast update: the cast duration or progress changed
+        -- (pushback, channel extension, empower stage). Re-read
+        -- the duration object and re-apply bar content so the fill
+        -- and countdown stay in sync with the actual cast.
+        if DF._TargetedListOnCastUpdate then
+            DF._TargetedListOnCastUpdate(unit, event, ...)
+        end
     elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
         if DF._TargetedListOnInterruptibilityChange then
             DF._TargetedListOnInterruptibilityChange(unit, true)
@@ -1805,9 +1810,33 @@ local function OnEvent(self, event, unit, ...)
         if DF._TargetedListOnInterruptibilityChange then
             DF._TargetedListOnInterruptibilityChange(unit, false)
         end
-    elseif event == "LOADING_SCREEN_DISABLED" then
-        if DF._TargetedListReleaseAllBars then
-            DF._TargetedListReleaseAllBars()
+    elseif event == "UNIT_TARGET" then
+        -- Enemy changed target mid-cast. If we're tracking this
+        -- caster, verify the new target is still a party member.
+        -- If not, drop the bar. We can't pick up NEW casts from
+        -- UNIT_TARGET (no spellId in payload), but we can drop
+        -- existing ones that are no longer relevant.
+        if DF._TargetedListOnTargetChange then
+            DF._TargetedListOnTargetChange(unit)
+        end
+    elseif event == "LOADING_SCREEN_DISABLED"
+           or event == "ZONE_CHANGED_NEW_AREA"
+           or event == "UPDATE_INSTANCE_INFO" then
+        -- Zone transition or loading screen: validate all tracked
+        -- bars and remove any that are stale.
+        if DF._TargetedListValidateAll then
+            DF._TargetedListValidateAll()
+        end
+    elseif event == "CVAR_UPDATE" then
+        -- If enemy nameplates are disabled, all bars should go.
+        local cvar = ...
+        if cvar == "nameplateShowEnemies" then
+            local val = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("nameplateShowEnemies")
+            if val == "0" then
+                if DF._TargetedListReleaseAllBars then
+                    DF._TargetedListReleaseAllBars()
+                end
+            end
         end
     end
 end
@@ -1842,9 +1871,6 @@ local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
-    -- FAILED_QUIET is a distinct event from FAILED. Some cancelled
-    -- casts (e.g. movement-cancel of certain empowered spells) only
-    -- fire FAILED_QUIET, leaving dangling bars if we don't subscribe.
     eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
@@ -1852,9 +1878,14 @@ local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
-    -- INTERRUPTIBLE / NOT_INTERRUPTIBLE fire when a mob's current cast
-    -- toggles mid-cast (e.g. M+ phase changes). Needed so the Targeted
-    -- List bar can live-update its border color.
+    -- Mid-cast update events: pushback, channel duration change, empower
+    -- stage progression. Without these the bar desynchs from the actual
+    -- cast when the enemy gets interrupted-but-not-stopped, pushed back,
+    -- or an empower stage changes.
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_UPDATE")
+    -- Interruptibility toggles mid-cast (M+ phase changes).
     eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTIBLE")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE")
     eventFrame:RegisterEvent("UNIT_TARGET")
@@ -1862,9 +1893,12 @@ local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
-    -- Nameplate removal events are unreliable during zone transitions,
-    -- so the Targeted List needs a cleanup sweep on loading screen exit.
+    -- Cleanup + zone transition events.
     eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
+    eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    eventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
+    -- CVAR changes that affect nameplate visibility.
+    eventFrame:RegisterEvent("CVAR_UPDATE")
     eventFrame:Show()
 end
 
@@ -4054,6 +4088,99 @@ local function TargetedList_OnInterruptibilityChange(casterUnit, isInterruptible
     -- Commit #5: apply to the bar via SetVertexColorFromBoolean.
 end
 
+-- Mid-cast update handler: UNIT_SPELLCAST_DELAYED, CHANNEL_UPDATE,
+-- EMPOWER_UPDATE. The cast duration may have changed (pushback,
+-- channel extension, empower stage). Re-read the duration object and
+-- re-apply content so the bar fill stays in sync.
+local function TargetedList_OnCastUpdate(casterUnit, event, ...)
+    if not TargetedList_IsActive() then return end
+    local rec = activeTargetedListCasts[casterUnit]
+    if not rec or rec.fadingStartedAt then return end
+
+    -- Re-read the duration object (may have changed).
+    local isChannel = rec.isChannel
+    local newDuration
+    if isChannel then
+        newDuration = TL_UnitChannelDuration and TL_UnitChannelDuration(casterUnit)
+    else
+        newDuration = TL_UnitCastingDuration and TL_UnitCastingDuration(casterUnit)
+    end
+    if newDuration then
+        rec.duration = newDuration
+    end
+
+    -- Re-read notInterruptible (may have changed with pushback).
+    if isChannel then
+        rec.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+    else
+        rec.uninterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    end
+
+    -- Re-apply content to the existing bar to update fill + countdown.
+    local bar = casterToBar and casterToBar[casterUnit]
+    if bar then
+        TargetedList_ApplyBarContent(bar, rec)
+    end
+end
+
+-- Mid-cast target change handler: the enemy swapped target while
+-- casting. If we're already tracking this caster, verify the new
+-- target is still a party member. If not, drop the bar. We can't
+-- pick up NEW casts from UNIT_TARGET (no spellId in the payload)
+-- but we CAN drop existing bars that are no longer relevant.
+local function TargetedList_OnTargetChange(casterUnit)
+    if not TargetedList_IsActive() then return end
+    local rec = activeTargetedListCasts[casterUnit]
+    if not rec or rec.fadingStartedAt or rec.isTestCast then return end
+
+    -- Check if the caster's new target is still a party member
+    -- (or no target at all, which we might want to keep if
+    -- showUntargeted is on).
+    local target = casterUnit .. "target"
+    local hasTarget = TL_UnitExists(target)
+    local party = DF.db and DF.db.party
+
+    if hasTarget then
+        if not TargetedList_CastTargetIsPartyMember(casterUnit) then
+            -- New target isn't a party member — drop the bar
+            activeTargetedListCasts[casterUnit] = nil
+            if DF._TargetedListRender then DF._TargetedListRender() end
+        end
+    elseif not (party and party.targetedListShowUntargeted) then
+        -- No target and untargeted display is off — drop
+        activeTargetedListCasts[casterUnit] = nil
+        if DF._TargetedListRender then DF._TargetedListRender() end
+    end
+end
+
+-- Stale-bar validation: iterate all tracked bars and verify each
+-- one is still valid (nameplate exists, unit is casting/channeling).
+-- Remove any that are stale. Called on zone transitions and loading
+-- screen exit to catch bars that weren't cleaned up by normal events
+-- (e.g. missed NAME_PLATE_UNIT_REMOVED during heavy nameplate
+-- recycling, or zone changes that don't fire proper stop events).
+local function TargetedList_ValidateTrackedBars()
+    if not TargetedList_IsGateOpen() then return end
+    local anyRemoved = false
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if not rec.isTestCast and not rec.fadingStartedAt then
+            -- Check: does the nameplate still exist?
+            if not TL_UnitExists(unit) then
+                activeTargetedListCasts[unit] = nil
+                anyRemoved = true
+            -- Check: is the unit still casting/channeling?
+            elseif TL_UnitCastingInfo(unit) == nil
+               and TL_UnitChannelInfo(unit) == nil then
+                activeTargetedListCasts[unit] = nil
+                anyRemoved = true
+            end
+        end
+    end
+    if anyRemoved and DF._TargetedListRender then
+        DF._TargetedListRender()
+    end
+end
+
 -- Gotcha #11: nameplate removal events don't reliably fire on zone
 -- transitions. Also used on feature disable and on explicit cleanup.
 local function TargetedList_ReleaseAllBars()
@@ -4068,7 +4195,10 @@ end
 -- Expose internal hooks for the shared OnEvent dispatcher above.
 DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
 DF._TargetedListOnCastStop = TargetedList_OnCastStop
+DF._TargetedListOnCastUpdate = TargetedList_OnCastUpdate
 DF._TargetedListOnInterruptibilityChange = TargetedList_OnInterruptibilityChange
+DF._TargetedListOnTargetChange = TargetedList_OnTargetChange
+DF._TargetedListValidateAll = TargetedList_ValidateTrackedBars
 DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
 
 -- ------------------------------------------------------------
@@ -5567,7 +5697,10 @@ end
 
 DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
 DF._TargetedListOnCastStop = TargetedList_OnCastStop
+DF._TargetedListOnCastUpdate = TargetedList_OnCastUpdate
 DF._TargetedListOnInterruptibilityChange = TargetedList_OnInterruptibilityChange
+DF._TargetedListOnTargetChange = TargetedList_OnTargetChange
+DF._TargetedListValidateAll = TargetedList_ValidateTrackedBars
 
 -- ------------------------------------------------------------
 -- Public entry points
