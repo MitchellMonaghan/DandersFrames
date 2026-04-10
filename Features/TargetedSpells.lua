@@ -4951,27 +4951,19 @@ local function TargetedList_ApplyTestBarContent(bar, index)
     local spec = TARGETED_LIST_TEST_SPELLS[((index - 1) % #TARGETED_LIST_TEST_SPELLS) + 1]
     local spellId = spec.spellId
 
-    -- Clean spellId — safe to format if we wanted; we use sinks anyway.
-    local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spellId) or "Test Spell"
-    -- Truncate spell name if max length is set (clean string, safe for
-    -- UTF8Sub). For live bars, the FontString width constraint clips
-    -- secret-tainted text automatically.
-    local spellMaxLen = db.targetedListSpellNameMaxLength or 0
-    if spellMaxLen > 0 and DF.UTF8Len and DF:UTF8Len(spellName) > spellMaxLen then
-        spellName = DF:UTF8Sub(spellName, 1, spellMaxLen) .. "..."
+    -- Spell name + icon
+    if TL_C_Spell_GetSpellName then
+        bar.spellName:SetText(TL_C_Spell_GetSpellName(spellId) or "Test Spell")
+    else
+        bar.spellName:SetText("Test Spell")
     end
-    bar.spellName:SetText(spellName)
     if TL_C_Spell_GetSpellTexture then
         bar.icon:SetTexture(TL_C_Spell_GetSpellTexture(spellId))
     end
 
-    -- Target name + class color from TestData.units
+    -- Target name — width clipping handles overflow the same way live
+    -- bars do for secret-tainted text, so test mode is visually accurate.
     local targetName = TargetedList_GetTestTargetName(index)
-    -- Truncate target name
-    local targetMaxLen = db.targetedListTargetNameMaxLength or 0
-    if targetMaxLen > 0 and DF.UTF8Len and DF:UTF8Len(targetName) > targetMaxLen then
-        targetName = DF:UTF8Sub(targetName, 1, targetMaxLen) .. "..."
-    end
     if db.targetedListShowArrowPrefix then
         bar.targetName:SetFormattedText("> %s", targetName)
     else
