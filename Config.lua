@@ -1781,7 +1781,7 @@ DF.PartyDefaults = {
     targetedListSpacing = 2,
     targetedListStylePreset = "DEFAULT",
     targetedListTargetNameClassColor = true,
-    targetedListTexture = "Blizzard",
+    targetedListTexture = "Interface\\TargetingFrame\\UI-StatusBar",
     targetedListUninterruptibleColor = {r = 0.5, g = 0.5, b = 0.5, a = 1},
     targetedListWidth = 240,
     targetedListX = 0,

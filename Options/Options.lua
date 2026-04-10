@@ -5647,7 +5647,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             -- (spell name, target name, duration) can be independently
             -- anchored to LEFT / CENTER / RIGHT within the bar's
             -- progress region with a pixel offset applied on top.
-            local textPosSection = Add(GUI:CreateCollapsibleSection(self.child, L["Text Position"], false), 36, "both")
+            local textPosSection = Add(GUI:CreateCollapsibleSection(self.child, L["Text Position"], true), 36, "both")
             currentSection = textPosSection
 
             local textAnchorOptions = { LEFT = L["Left"], CENTER = L["Center"], RIGHT = L["Right"] }

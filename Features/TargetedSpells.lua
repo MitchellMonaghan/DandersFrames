@@ -4266,14 +4266,10 @@ local function TargetedList_ApplyBarAppearance(bar, db)
         bar.progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
     end
 
-    -- ----- StatusBar texture via LibSharedMedia (DF:GetTexture wraps LSM) -----
-    local texturePath = "Interface\\Buttons\\WHITE8x8"
-    if DF.GetTexture then
-        local resolved = DF:GetTexture(db.targetedListTexture or "Blizzard")
-        if type(resolved) == "string" and resolved ~= "" then
-            texturePath = resolved
-        end
-    end
+    -- ----- StatusBar texture -----
+    -- The db stores the full texture PATH (same format as healthTexture,
+    -- petTexture, etc.) — the texture dropdown writes paths directly.
+    local texturePath = db.targetedListTexture or "Interface\\TargetingFrame\\UI-StatusBar"
     bar.progress:SetStatusBarTexture(texturePath)
 
     -- ----- Background alpha -----
