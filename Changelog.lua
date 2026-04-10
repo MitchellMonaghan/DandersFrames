@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-09T12:39:20Z"
+DF.BUILD_DATE = "2026-04-10T18:49:51Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -37,7 +37,7 @@ For the curious — measured in a 5m 38s raid boss fight (493,901 calls profiled
 * **Aura cache hit rate:** 99.6% (36,204 of 36,360 events skip the full scan)
 * **Dispel overlay CPU share:** 16.4% → 0.8% (**−95%**)
 * **Absorb update per call:** ~111 µs / ~80 B → 38.4 µs / 0 B (**−65% CPU, zero allocation**)
-* **Aura tracking:** Now uses the `UNIT_AURA updateInfo` payload (oUF/ElvUI-style incremental updates) with a shared `DF.AuraCache` keyed by aura instance ID. Both Aura Designer and Dispel overlay read from the same cache instead of re-querying `C_UnitAuras`
+* **Aura tracking:** Now uses the `UNIT_AURA updateInfo` payload with a shared `DF.AuraCache` keyed by aura instance ID. Both Aura Designer and Dispel overlay read from the same cache instead of re-querying `C_UnitAuras`
 * **Aura Designer indicator entries** are pooled (max 64 reused), and instance keys are cached in a two-level lookup table
 * **Dispel overlay** caches its layout state and short-circuits `ApplyOverlayLayout` when nothing relevant changed — same pattern was then applied to absorb shields
 * **Update.lua** caches `UnitHealth`, `UnitPower`, `InCombatLockdown` and 9 other Unit\* APIs as file-scope locals to skip global lookups in the hot path
