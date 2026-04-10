@@ -1008,6 +1008,13 @@ local function CaptureAurasFromBlizzardFrame(frame, triggerUpdate)
             if id then
                 cache.debuffs[id] = true
                 cache.debuffOrder[#cache.debuffOrder + 1] = id
+                -- Nil-check on secret values is safe (verified) — dispelName
+                -- is nil for non-dispellable debuffs, non-nil (possibly secret)
+                -- for dispellable ones. Populates allDispellable so the Dispel
+                -- overlay works in Blizzard mode's "All Dispellable" setting.
+                if aura.dispelName ~= nil then
+                    cache.allDispellable[id] = true
+                end
                 if IsAuraFilteredOut and not IsAuraFilteredOut(unit, id, dispelFilterStr) then
                     cache.playerDispellable[id] = true
                 end
