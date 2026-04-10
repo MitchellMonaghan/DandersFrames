@@ -1158,6 +1158,7 @@ L["Show Shadow"] = true
 L["Show Spell Name"] = true
 L["Show Tank"] = true
 L["Show Target Name"] = true
+L["Show Untargeted Casts"] = true
 L["Show the animated ZZZ icon on the player frame."] = true
 L["Show the DF color picker when any addon opens a color picker."] = true
 L["Show Timer"] = true

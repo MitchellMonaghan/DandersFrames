@@ -1775,6 +1775,7 @@ DF.PartyDefaults = {
     targetedListMaxBars = 6,
     targetedListShowArrowPrefix = true,
     targetedListShowBorder = true,
+    targetedListShowUntargeted = false,
     targetedListShowDuration = true,
     targetedListShowIcon = true,
     targetedListShowSpellName = true,

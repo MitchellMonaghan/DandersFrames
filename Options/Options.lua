@@ -5522,6 +5522,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlImportantOnly.disableOn = HideTLOptions
             local tlHideOwn = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Own Casts"], db, "targetedListHideOwnCasts", TargetedListUpdate), 30)
             tlHideOwn.disableOn = HideTLOptions
+            local tlShowUntargeted = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Untargeted Casts"], db, "targetedListShowUntargeted", TargetedListUpdate), 30)
+            tlShowUntargeted.disableOn = HideTLOptions
             local tlMaxBars = settingsGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Bars"], 1, 20, 1, db, "targetedListMaxBars", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlMaxBars.disableOn = HideTLOptions
             Add(settingsGroup, nil, 1)

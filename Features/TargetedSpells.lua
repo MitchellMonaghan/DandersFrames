@@ -3822,9 +3822,25 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     if not TargetedList_ShouldPickup() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
-    -- Targeting filter via UnitInParty(nameplateXtarget). See
-    -- TargetedList_CastTargetIsPartyMember for why this works.
-    if not TargetedList_CastTargetIsPartyMember(casterUnit) then return end
+    -- Targeting filter: check if the cast targets a party member.
+    -- If "Show Untargeted" is on, also accept casts that have no
+    -- target at all (ground AoEs, self-buffs, untargeted channels).
+    local party = DF.db and DF.db.party
+    local showUntargeted = party and party.targetedListShowUntargeted
+    local target = casterUnit .. "target"
+    local hasTarget = TL_UnitExists(target)
+
+    if hasTarget then
+        -- Has a target — check if it's a party member
+        if not TargetedList_CastTargetIsPartyMember(casterUnit) then
+            return
+        end
+    elseif not showUntargeted then
+        -- No target and untargeted display is off — skip
+        return
+    end
+    -- If hasTarget is false and showUntargeted is true, we fall through
+    -- and show the bar with no target name.
 
     -- IMPORTANT — gotcha #0 update: spellId from the event payload is
     -- ALSO secret-tainted on nameplates. We can pass it through
