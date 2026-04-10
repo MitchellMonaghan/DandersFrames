@@ -4644,10 +4644,11 @@ local function TargetedList_LayoutBars()
     -- activeBars may have nil gaps (released slots) — we use a
     -- numeric for loop and skip nils so bars stay at their
     -- assigned position. The slot index IS the position index.
+    local maxBarsLocal = db.targetedListMaxBars or 6
     local maxSlot = #activeBars
     -- For STATIC, the highest slot might exceed #activeBars since
     -- Lua's # operator stops at the first nil. Scan for the real max.
-    for i = maxBars, 1, -1 do
+    for i = maxBarsLocal, 1, -1 do
         if activeBars[i] then maxSlot = i; break end
     end
 
