@@ -4173,29 +4173,32 @@ end
 local function TargetedList_ApplyTextLayout(bar, db)
     if not bar or not db then return end
 
-    -- Progress bar width for text element sizing. Each text element
-    -- gets the full progress region width so SetJustifyH has room to
-    -- take effect — without a width constraint the FontString auto-
-    -- sizes to its content and justify is invisible.
+    -- Progress bar width as the default text element width. Each text
+    -- element needs a width for SetJustifyH to work and for overflow
+    -- clipping. Per-element widthKey overrides this when > 0.
     local progressW = bar.progress:GetWidth()
     if progressW < 10 then progressW = (db.targetedListWidth or 240) - 4 end
 
-    local function applyTextElement(fs, anchorKey, alignKey, xKey, yKey, defaultAnchor, defaultAlign)
+    local function applyTextElement(fs, anchorKey, alignKey, widthKey, xKey, yKey, defaultAnchor, defaultAlign)
         if not fs then return end
         local point = TargetedList_ResolveAnchorPoint(db[anchorKey] or defaultAnchor)
         local align = db[alignKey] or defaultAlign or point
+        local w = (widthKey and db[widthKey] or 0) or 0
+        if w <= 0 then w = progressW end
         fs:ClearAllPoints()
         fs:SetPoint(point, bar.progress, point,
             db[xKey] or 0, db[yKey] or 0)
-        fs:SetWidth(progressW)
+        fs:SetWidth(w)
         fs:SetJustifyH(align)
     end
 
     applyTextElement(bar.spellName,
         "targetedListSpellNameAnchor", "targetedListSpellNameAlign",
+        "targetedListSpellNameWidth",
         "targetedListSpellNameX", "targetedListSpellNameY", "LEFT", "LEFT")
     applyTextElement(bar.targetName,
         "targetedListTargetNameAnchor", "targetedListTargetNameAlign",
+        "targetedListTargetNameWidth",
         "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT", "RIGHT")
 
     -- Duration: the Cooldown frame renders its own countdown text at

@@ -1792,10 +1792,12 @@ DF.PartyDefaults = {
     -- region. X / Y are pixel offsets from that anchor.
     targetedListSpellNameAnchor = "LEFT",
     targetedListSpellNameAlign = "LEFT",
+    targetedListSpellNameWidth = 0,
     targetedListSpellNameX = 4,
     targetedListSpellNameY = 0,
     targetedListTargetNameAnchor = "RIGHT",
     targetedListTargetNameAlign = "RIGHT",
+    targetedListTargetNameWidth = 0,
     targetedListTargetNameX = -4,
     targetedListTargetNameY = 0,
     targetedListDurationAnchor = "RIGHT",
