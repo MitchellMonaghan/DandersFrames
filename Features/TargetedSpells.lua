@@ -4334,8 +4334,10 @@ local function TargetedList_ApplyBarAppearance(bar, db)
     -- not a (path, size, outline) triple.
 
     -- ----- Per-element show/hide toggles -----
-    bar.spellName:SetShown(db.targetedListShowSpellName ~= false)
-    bar.targetName:SetShown(db.targetedListShowTargetName ~= false)
+    -- NOTE: spell name and target name visibility is handled in
+    -- ApplyBarContent because it depends on the fading/interrupt
+    -- state (hidden during interrupted flash to make room for the
+    -- interrupter name). Only duration is toggled here.
     bar.duration:SetShown(db.targetedListShowDuration ~= false)
 end
 
@@ -4477,18 +4479,18 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     end
 
     -- Progress fill + countdown text:
-    -- Test records have a clean numeric testCastDuration → use
-    -- SetMinMaxValues/SetValue for the bar and SetCooldown for the
-    -- countdown. Live records have an opaque TimerDuration object →
-    -- use SetTimerDuration and SetCooldownFromDurationObject.
-    if isTest and activeRec.testCastDuration then
+    -- Skip for fading records — the fill should freeze at the point
+    -- where the cast stopped or was interrupted.
+    if activeRec.fadingStartedAt then
+        -- Don't update progress. The fill stays where it was.
+    elseif isTest and activeRec.testCastDuration then
+        local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
         local elapsed = TL_GetTime() - activeRec.startTime
-        local dur = activeRec.testCastDuration
-        local pct = math.min(1, math.max(0, elapsed / dur))
+        local pct = math.min(1, math.max(0, elapsed / cutoff))
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(pct)
         if bar.duration and bar.duration.SetCooldown then
-            bar.duration:SetCooldown(activeRec.startTime, dur)
+            bar.duration:SetCooldown(activeRec.startTime, cutoff)
         end
     elseif activeRec.duration and bar.progress.SetTimerDuration then
         local direction = activeRec.isChannel
@@ -4579,6 +4581,7 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             if bar.interruptText then
                 bar.spellName:Hide()
                 bar.targetName:Hide()
+                if bar.duration then bar.duration:Hide() end
                 if isTest and activeRec.testInterrupterName then
                     bar.interruptText:SetText(activeRec.testInterrupterName)
                 elseif activeRec.interrupterGuid and TL_UnitNameFromGUID then
@@ -5145,9 +5148,6 @@ local function TargetedList_UpdateTestCasts()
     for key, rec in pairs(activeTargetedListCasts) do
         if rec.isTestCast and not rec.fadingStartedAt then
             local elapsed = now - rec.startTime
-            -- Interrupted casts trigger at testInterruptAt (40-80% of
-            -- duration) rather than 100%, so they look like real mid-cast
-            -- interrupts instead of completed-then-interrupted.
             local cutoff = rec.testInterruptAt or rec.testCastDuration or 3
             if elapsed >= cutoff then
                 local wasInt = rec.testWillInterrupt
@@ -5160,6 +5160,8 @@ local function TargetedList_UpdateTestCasts()
         end
     end
 
+    -- Only re-render if a cast actually transitioned to fading.
+    -- The fade ticker handles continuous alpha updates separately.
     if needsRender then
         TargetedList_Render()
     end
