@@ -3669,27 +3669,37 @@ local function TargetedList_RebuildKnownInterrupts()
     end
 end
 
--- Returns the secret-safe "is interrupt ready" boolean for the
--- player's first known interrupt spell. The result may be secret-
--- tainted — callers must feed it into SetVertexColorFromBoolean or
--- similar sinks, never truth-test it in Lua.
---
--- Returns: (isReady: bool|secret, hasInterrupt: bool)
--- hasInterrupt is a clean bool (true if the player has any known
--- interrupt spell). isReady is the (possibly secret) cooldown state.
-local function TargetedList_GetInterruptReadyState()
-    if #targetedListKnownInterrupts == 0 then return false, false end
-    local spellID = targetedListKnownInterrupts[1]
-    if C_Spell and C_Spell.GetSpellCooldownDuration then
-        local duration = C_Spell.GetSpellCooldownDuration(spellID)
-        if duration and duration.IsZero then
-            -- IsZero() returns a (possibly secret) boolean: true when
-            -- cooldown is 0 (interrupt ready). This is secret-safe to
-            -- feed into SetVertexColorFromBoolean.
-            return duration:IsZero(), true
+-- Cached interrupt-ready state. Updated by the SPELL_UPDATE_COOLDOWN
+-- handler. Clean boolean — safe for Lua if/then branching.
+local targetedListInterruptReadyCached = false
+
+-- Check if any known interrupt is off cooldown. Uses issecretvalue
+-- to guard against secret-tainted cooldown info (can happen in some
+-- combat contexts). When values are secret, falls back to the last
+-- cached state.
+local function TargetedList_UpdateInterruptReadyCache()
+    if #targetedListKnownInterrupts == 0 then
+        targetedListInterruptReadyCached = false
+        return
+    end
+    for _, spellID in ipairs(targetedListKnownInterrupts) do
+        if C_Spell and C_Spell.GetSpellCooldown then
+            local info = C_Spell.GetSpellCooldown(spellID)
+            if info then
+                local st = info.startTime
+                -- Guard: if startTime is secret, keep the cached value
+                if st ~= nil and (not issecretvalue or not issecretvalue(st)) then
+                    if st == 0 then
+                        targetedListInterruptReadyCached = true
+                        return
+                    end
+                end
+            end
         end
     end
-    return false, true
+    -- Only update to false if we successfully checked all spells
+    -- (none were secret). If any was secret we keep the cached value.
+    targetedListInterruptReadyCached = false
 end
 
 -- Event frame for interrupt spell tracking. Listens for spell
@@ -3712,6 +3722,9 @@ targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
         local db = DF.db and DF.db.party
         if db and db.targetedListEnabled and db.targetedListInterruptReadyEnabled
            and casterToBar then
+            -- Update the cached interrupt-ready state (clean bool)
+            TargetedList_UpdateInterruptReadyCache()
+
             local interruptibleColor = db.targetedListInterruptibleColor
                 or {r=1, g=0.2, b=0.2, a=1}
             local uninterruptibleColor = db.targetedListUninterruptibleColor
@@ -3719,11 +3732,9 @@ targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
             local readyColor = db.targetedListInterruptReadyColor
                 or {r=0.2, g=1, b=0.2, a=1}
 
-            -- Get the interrupt-ready state. isReady may be secret-
-            -- tainted — we never truth-test it, only pipe it through
-            -- C_CurveUtil or SetVertexColorFromBoolean.
-            local isReady, hasInterrupt = TargetedList_GetInterruptReadyState()
-            if not hasInterrupt then return end
+            -- Pick interruptible color based on cached clean bool
+            local effectiveInterColor = targetedListInterruptReadyCached
+                and readyColor or interruptibleColor
 
             for unit, bar in pairs(casterToBar) do
                 local rec = activeTargetedListCasts[unit]
@@ -3731,27 +3742,8 @@ targetedListInterruptFrame:SetScript("OnEvent", function(self, event)
                     if rec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
                         local tex = bar.progress:GetStatusBarTexture()
                         if tex and tex.SetVertexColorFromBoolean then
-                            -- We want: interruptible + ready → readyColor
-                            --          interruptible + not ready → interruptibleColor
-                            --          uninterruptible → uninterruptibleColor
-                            --
-                            -- Secret-safe approach: use C_CurveUtil to
-                            -- pick between readyColor and interruptibleColor
-                            -- based on the secret isReady bool, then use
-                            -- SetVertexColorFromBoolean for the uninterruptible
-                            -- check. C_CurveUtil.EvaluateColorValueFromBoolean
-                            -- is a secret-safe sink that picks between two
-                            -- colors based on a secret boolean.
-                            if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
-                                local effectiveColor = C_CurveUtil.EvaluateColorValueFromBoolean(
-                                    isReady, readyColor, interruptibleColor)
-                                tex:SetVertexColorFromBoolean(rec.uninterruptible,
-                                    uninterruptibleColor, effectiveColor)
-                            else
-                                -- Fallback: just use base interruptible color
-                                tex:SetVertexColorFromBoolean(rec.uninterruptible,
-                                    uninterruptibleColor, interruptibleColor)
-                            end
+                            tex:SetVertexColorFromBoolean(rec.uninterruptible,
+                                uninterruptibleColor, effectiveInterColor)
                         end
                     end
                 end
@@ -4719,18 +4711,15 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         or {r=1, g=0.2, b=0.2, a=1}
     local uninterruptibleColor = party and party.targetedListUninterruptibleColor
         or {r=0.5, g=0.5, b=0.5, a=1}
-    -- Color logic:
-    -- Test bars: clean bool, use plain SetStatusBarColor.
-    -- Live bars: two-step secret-safe sink chain.
-    --   Step A: SetVertexColorFromBoolean(uninterruptible,
-    --           uninterruptibleColor, interruptibleColor)
-    --   Step B (if interrupt-ready enabled): overlay a second
-    --           SetVertexColorFromBoolean(isReady,
-    --           readyColor, <leave as-is>) — but WoW only supports
-    --           one SetVertexColorFromBoolean per texture, so we
-    --           handle this via the SPELL_UPDATE_COOLDOWN event
-    --           handler which re-applies color when cooldown state
-    --           changes. At initial render we use the base color.
+    -- Pick effective interruptible color: if interrupt-ready tracking
+    -- is on and the player's interrupt is off cooldown, use readyColor.
+    local readyEnabled = party and party.targetedListInterruptReadyEnabled
+    local effectiveInterColor = interruptibleColor
+    if readyEnabled and not isTest and targetedListInterruptReadyCached then
+        effectiveInterColor = party.targetedListInterruptReadyColor
+            or interruptibleColor
+    end
+
     if isTest then
         local c = activeRec.uninterruptible and uninterruptibleColor or interruptibleColor
         bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
@@ -4738,16 +4727,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         local tex = bar.progress:GetStatusBarTexture()
         if tex and tex.SetVertexColorFromBoolean then
             tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
-                uninterruptibleColor, interruptibleColor)
+                uninterruptibleColor, effectiveInterColor)
         else
             bar.progress:SetStatusBarColor(
-                interruptibleColor.r, interruptibleColor.g,
-                interruptibleColor.b, interruptibleColor.a)
+                effectiveInterColor.r, effectiveInterColor.g,
+                effectiveInterColor.b, effectiveInterColor.a)
         end
     else
         bar.progress:SetStatusBarColor(
-            interruptibleColor.r, interruptibleColor.g,
-            interruptibleColor.b, interruptibleColor.a)
+            effectiveInterColor.r, effectiveInterColor.g,
+            effectiveInterColor.b, effectiveInterColor.a)
     end
 
     -- Important-spells filter at render time. C_Spell.IsSpellImportant
@@ -5058,6 +5047,18 @@ local function TargetedList_Render()
                 targetedListBarPool:Release(bar)
                 casterToBar[unit] = nil
             end
+            casterToSlot[unit] = nil
+        end
+    end
+
+    -- Step 1b: release orphaned bars. A bar is orphaned when its
+    -- record was removed directly (e.g. fadeDuration == 0 in OnCastStop)
+    -- rather than through the fading path. Without this, the bar stays
+    -- visible in casterToBar with no record to drive its removal.
+    for unit, bar in pairs(casterToBar) do
+        if not activeTargetedListCasts[unit] then
+            targetedListBarPool:Release(bar)
+            casterToBar[unit] = nil
             casterToSlot[unit] = nil
         end
     end
