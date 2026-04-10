@@ -3879,6 +3879,32 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
         -- (SetText, SetTexture, SetTextColor via C_ClassColor).
     }
 
+    -- Safety timer: if the cast stop event never fires (CC, LOS,
+    -- mob death, etc.), force-remove the record after a generous
+    -- timeout. TS3 uses OnCooldownDone for this but that requires a
+    -- Cooldown frame per bar — our simpler approach uses C_Timer.
+    -- 15 seconds covers the longest enemy casts in WoW.
+    local SAFETY_TIMEOUT = 15
+    if TL_C_Timer_After then
+        TL_C_Timer_After(SAFETY_TIMEOUT, function()
+            local rec = activeTargetedListCasts[casterUnit]
+            if rec and not rec.fadingStartedAt and not rec.isTestCast then
+                -- Cast is still active with no stop event after timeout.
+                -- Force-remove it.
+                activeTargetedListCasts[casterUnit] = nil
+                local bar = casterToBar[casterUnit]
+                if bar then
+                    targetedListBarPool:Release(bar)
+                    casterToBar[casterUnit] = nil
+                end
+                casterToSlot[casterUnit] = nil
+                if DF._TargetedListRender then
+                    DF._TargetedListRender()
+                end
+            end
+        end)
+    end
+
     -- Debug log: only clean values. spellId / spellName / texture are
     -- all secret-tainted and can't be formatted.
     if DF.Debug then
