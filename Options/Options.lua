@@ -5590,6 +5590,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlInterColor.disableOn = HideTLOptions
             local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate), 35)
             tlUninterColor.disableOn = HideTLOptions
+            local tlHighlight = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Highlight Important Spells"], db, "targetedListHighlightImportant", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlHighlight.disableOn = HideTLOptions
+            local function HideHighlightOptions(d) return not d.targetedListEnabled or not d.targetedListHighlightImportant end
+            local tlHighlightColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Highlight Color"], db, "targetedListHighlightColor", false, TargetedListUpdate), 35)
+            tlHighlightColor.disableOn = HideHighlightOptions
             AddToSection(colorGroup, nil, 1)
 
             local iconGroup = GUI:CreateSettingsGroup(self.child, 260)

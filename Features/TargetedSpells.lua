@@ -4155,6 +4155,16 @@ local function TargetedList_BuildBar(parent)
     durationCooldown:SetHideCountdownNumbers(false)
     bar.duration = durationCooldown
 
+    -- Highlight frame for important-spell glow. Reuses the existing
+    -- InitGlowBorder / UpdateGlowBorder infrastructure from the
+    -- personal targeted spells icon system. Shown only for important
+    -- spells via SetAlphaFromBoolean (secret-safe).
+    local highlight = CreateFrame("Frame", nil, bar)
+    highlight:SetAllPoints(bar)
+    highlight:SetFrameLevel(bar:GetFrameLevel() + 5)
+    highlight:Hide()
+    bar.highlightFrame = highlight
+
     return bar
 end
 
@@ -4316,10 +4326,12 @@ end
 -- Release callback for the pool.
 local function TargetedList_ResetBar(pool, bar)
     bar:Hide()
+    bar:SetAlpha(1)
     bar:ClearAllPoints()
     bar.casterUnit = nil
     bar.spellId = nil
     bar.isChannel = nil
+    bar.testAnim = nil
     bar.progress:SetValue(0)
     bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
     bar.spellName:SetText("")
@@ -4328,6 +4340,9 @@ local function TargetedList_ResetBar(pool, bar)
         bar.duration:Clear()
     end
     bar.icon:SetTexture(nil)
+    if bar.highlightFrame then
+        bar.highlightFrame:Hide()
+    end
 end
 
 -- Manual pool — CreateFramePool requires an XML template, which we
@@ -4480,6 +4495,26 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     else
         if bar.SetShownFromBoolean then
             bar:SetShownFromBoolean(true, true, false)
+        end
+    end
+
+    -- Important-spell glow: reuses the existing InitGlowBorder /
+    -- UpdateGlowBorder infrastructure. The glow frame is shown/hidden
+    -- via SetAlphaFromBoolean(isImportant) which is the same secret-
+    -- safe sink used by the filter above.
+    if bar.highlightFrame then
+        if party and party.targetedListHighlightImportant
+           and TL_C_Spell_IsSpellImportant then
+            local hc = party.targetedListHighlightColor or {r=1, g=0.8, b=0}
+            if DF.InitGlowBorder then DF.InitGlowBorder(bar.highlightFrame) end
+            if DF.UpdateGlowBorder then
+                DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
+            end
+            bar.highlightFrame:Show()
+            local isImportant = TL_C_Spell_IsSpellImportant(spellId)
+            bar.highlightFrame:SetAlphaFromBoolean(isImportant)
+        else
+            bar.highlightFrame:Hide()
         end
     end
 
@@ -5004,6 +5039,97 @@ local function TargetedList_ApplyTestBarContent(bar, index)
         local fakeDur = 2 + (index % 5) * 1.5  -- 2s, 3.5s, 5s, 6.5s, 8s, 2s, ...
         bar.duration:SetCooldown(GetTime(), fakeDur)
     end
+
+    -- Important-spell glow preview. In test mode IsSpellImportant
+    -- returns a clean bool so we can use it directly. Alternate
+    -- bars between important (glow visible) and not.
+    if bar.highlightFrame and db.targetedListHighlightImportant then
+        local hc = db.targetedListHighlightColor or {r=1, g=0.8, b=0}
+        if DF.InitGlowBorder then DF.InitGlowBorder(bar.highlightFrame) end
+        if DF.UpdateGlowBorder then
+            DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
+        end
+        -- Alternate: odd bars glow, even bars don't
+        local showGlow = (index % 2 == 1)
+        bar.highlightFrame:SetShown(showGlow)
+    elseif bar.highlightFrame then
+        bar.highlightFrame:Hide()
+    end
+end
+
+-- Ticker for animated test bars. Each bar cycles through: cast →
+-- fade-out (or interrupted flash) → reset. This lets users preview
+-- how bars look during their full lifecycle without being in a dungeon.
+local targetedListTestTicker = nil
+
+-- Per-bar animation state. Stored as bar.testAnim = { phase, startTime, ... }
+-- Phases: "casting" → "fading" → back to "casting".
+local function TargetedList_UpdateTestAnimation()
+    local db = DF.db and DF.db.party
+    if not db or not targetedListTestActive then return end
+
+    local now = GetTime()
+    local fadeDuration = db.targetedListFadeOutDuration or 0.25
+    local flashDuration = db.targetedListInterruptedFlashDuration or 1.0
+
+    for i, bar in ipairs(activeBars) do
+        local anim = bar.testAnim
+        if not anim then
+            -- Initialise: each bar starts at a staggered time so
+            -- they don't all animate in lockstep.
+            anim = {
+                phase = "casting",
+                castDuration = 2 + (i % 5) * 1.0,  -- 2s, 3s, 4s, 5s, 6s
+                startTime = now - ((i - 1) * 0.6),  -- stagger start
+                wasInterrupted = (i % 3 == 0),       -- every 3rd bar interrupted
+            }
+            bar.testAnim = anim
+        end
+
+        local elapsed = now - anim.startTime
+
+        if anim.phase == "casting" then
+            -- Progress fill: linearly from 0 to 1 over castDuration
+            local pct = math.min(1, elapsed / anim.castDuration)
+            bar.progress:SetMinMaxValues(0, 1)
+            bar.progress:SetValue(pct)
+            bar:SetAlpha(1)
+
+            -- Apply interruptible / uninterruptible color
+            local spec = TARGETED_LIST_TEST_SPELLS[((i - 1) % #TARGETED_LIST_TEST_SPELLS) + 1]
+            local interruptibleColor = db.targetedListInterruptibleColor
+                or {r=1, g=0.2, b=0.2, a=1}
+            local uninterruptibleColor = db.targetedListUninterruptibleColor
+                or {r=0.5, g=0.5, b=0.5, a=1}
+            local c = spec.uninterruptible and uninterruptibleColor or interruptibleColor
+            bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a)
+
+            if pct >= 1 then
+                -- Transition to fading
+                anim.phase = "fading"
+                anim.fadeStart = now
+                anim.fadeDur = anim.wasInterrupted and flashDuration or fadeDuration
+            end
+
+        elseif anim.phase == "fading" then
+            local fadeElapsed = now - anim.fadeStart
+            local fadeProgress = math.min(1, fadeElapsed / math.max(0.01, anim.fadeDur))
+            bar:SetAlpha(1 - fadeProgress)
+
+            if anim.wasInterrupted then
+                -- Yellow flash tint during interrupted fade
+                bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
+            end
+
+            if fadeProgress >= 1 then
+                -- Reset to casting with a new start time
+                anim.phase = "casting"
+                anim.startTime = now
+                anim.wasInterrupted = not anim.wasInterrupted  -- alternate
+                bar:SetAlpha(1)
+            end
+        end
+    end
 end
 
 function DF:ShowTestTargetedList()
@@ -5019,24 +5145,45 @@ function DF:ShowTestTargetedList()
 
     for i = 1, maxBars do
         local bar = targetedListBarPool:Acquire()
+        bar.testAnim = nil  -- reset animation state
         activeBars[i] = bar
     end
 
     targetedListContainer:Show()
-    -- LayoutBars applies appearance (texture, font, border, etc.)
-    -- FIRST, then we apply test content AFTER so that SetStatusBarColor
-    -- isn't clobbered by SetStatusBarTexture inside ApplyBarAppearance.
     TargetedList_LayoutBars()
 
-    -- Apply test content after layout so bar color sticks on top of
-    -- the configured texture.
+    -- Apply initial test content (spell name, icon, target name, etc.)
     for i, bar in ipairs(activeBars) do
         TargetedList_ApplyTestBarContent(bar, i)
+    end
+
+    -- Start the animation ticker (30 fps is smooth enough for
+    -- cast-bar fill and fade animations).
+    if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
+        targetedListTestTicker = C_Timer.NewTicker(0.033, function()
+            if not targetedListTestActive then
+                if targetedListTestTicker then
+                    targetedListTestTicker:Cancel()
+                    targetedListTestTicker = nil
+                end
+                return
+            end
+            TargetedList_UpdateTestAnimation()
+        end)
     end
 end
 
 function DF:HideTestTargetedList()
     targetedListTestActive = false
+    -- Cancel the animation ticker
+    if targetedListTestTicker then
+        targetedListTestTicker:Cancel()
+        targetedListTestTicker = nil
+    end
+    -- Clear animation state on all bars
+    for _, bar in ipairs(activeBars) do
+        bar.testAnim = nil
+    end
     TargetedList_ReleaseAllActiveBars()
     if targetedListContainer and not next(activeTargetedListCasts) then
         targetedListContainer:Hide()

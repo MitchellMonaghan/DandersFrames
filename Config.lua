@@ -1761,6 +1761,8 @@ DF.PartyDefaults = {
     targetedListGrowth = "DOWN",
     targetedListHeight = 22,
     targetedListHideOwnCasts = false,
+    targetedListHighlightImportant = true,
+    targetedListHighlightColor = {r = 1, g = 0.8, b = 0},
     targetedListIconPosition = "LEFT",
     targetedListImportantOnly = true,
     targetedListInArena = true,
