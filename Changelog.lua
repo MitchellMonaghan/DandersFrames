@@ -1,8 +1,18 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-10T18:49:51Z"
+DF.BUILD_DATE = "2026-04-10T22:33:30Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [4.2.9] - 2026-04-10
+
+### Improvements
+
+* (GUI) Modernised all scroll bars across the addon to use the new slim pill-style thumb instead of the default Blizzard scroll bars
+
+### Bug Fixes
+
+* (Dispel Overlay) Fix "All Dispellable" mode not showing the dispel overlay when using the Blizzard aura data source
 
 ## [4.2.8] - 2026-04-08
 
