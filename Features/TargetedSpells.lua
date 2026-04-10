@@ -4052,6 +4052,13 @@ local activeBars = {}  -- ordered list of currently-displayed bars
 -- pattern that caused performance issues.
 local casterToBar = {}
 
+-- Slot tracking for STATIC sort order. Each record gets a fixed slot
+-- index at acquisition time. The slot persists until the record is
+-- removed. When a record is removed its slot becomes available for
+-- the next new record.
+local casterToSlot = {}   -- [casterUnit] = slotIndex
+local nextFreeSlot = 1    -- next slot to assign
+
 -- Active test mode — when true, the container is populated from
 -- synthetic data instead of live casts.
 local targetedListTestActive = false
@@ -4633,25 +4640,33 @@ local function TargetedList_LayoutBars()
     local spacing = db.targetedListSpacing or 2
     local growth = db.targetedListGrowth or "DOWN"
 
-    -- Position each active bar in order.
-    for i, bar in ipairs(activeBars) do
-        bar:SetSize(barW, barH)
-        bar:ClearAllPoints()
-        if growth == "UP" then
-            -- Index 1 at bottom, growing up
-            bar:SetPoint("BOTTOM", targetedListContainer, "BOTTOM",
-                0, (i - 1) * (barH + spacing))
-        else
-            -- Index 1 at top, growing down (default)
-            bar:SetPoint("TOP", targetedListContainer, "TOP",
-                0, -(i - 1) * (barH + spacing))
+    -- Position each active bar by index. For STATIC sort mode,
+    -- activeBars may have nil gaps (released slots) — we use a
+    -- numeric for loop and skip nils so bars stay at their
+    -- assigned position. The slot index IS the position index.
+    local maxSlot = #activeBars
+    -- For STATIC, the highest slot might exceed #activeBars since
+    -- Lua's # operator stops at the first nil. Scan for the real max.
+    for i = maxBars, 1, -1 do
+        if activeBars[i] then maxSlot = i; break end
+    end
+
+    for i = 1, maxSlot do
+        local bar = activeBars[i]
+        if bar then
+            bar:SetSize(barW, barH)
+            bar:ClearAllPoints()
+            if growth == "UP" then
+                bar:SetPoint("BOTTOM", targetedListContainer, "BOTTOM",
+                    0, (i - 1) * (barH + spacing))
+            else
+                bar:SetPoint("TOP", targetedListContainer, "TOP",
+                    0, -(i - 1) * (barH + spacing))
+            end
+            TargetedList_ApplyBarAppearance(bar, db)
+            TargetedList_ApplyTextLayout(bar, db)
+            bar:Show()
         end
-        -- Apply static appearance (icon, border, bg, texture, font,
-        -- show/hide toggles) before text layout — text anchor points
-        -- depend on the progress bar having its own anchors applied.
-        TargetedList_ApplyBarAppearance(bar, db)
-        TargetedList_ApplyTextLayout(bar, db)
-        bar:Show()
     end
 end
 
@@ -4672,6 +4687,8 @@ local function TargetedList_ReleaseAllActiveBars()
         activeBars[i] = nil
     end
     wipe(casterToBar)
+    wipe(casterToSlot)
+    nextFreeSlot = 1
 end
 
 -- ------------------------------------------------------------
@@ -4834,6 +4851,7 @@ local function TargetedList_Render()
     local now = TL_GetTime()
 
     -- Step 1: expire fading records whose window elapsed.
+    -- Free their bar and slot.
     for unit, rec in pairs(activeTargetedListCasts) do
         if rec.fadingStartedAt
            and (now - rec.fadingStartedAt) >= (rec.fadingDuration or 0) then
@@ -4843,14 +4861,29 @@ local function TargetedList_Render()
                 targetedListBarPool:Release(bar)
                 casterToBar[unit] = nil
             end
+            casterToSlot[unit] = nil
         end
     end
 
-    -- Step 2: ensure every live record has a bar.
+    -- Step 2: ensure every live record has a bar. Assign a slot index
+    -- for STATIC sort order — the slot persists for the record's
+    -- lifetime so its bar never changes position.
     for unit, rec in pairs(activeTargetedListCasts) do
         if not casterToBar[unit] then
             local bar = targetedListBarPool:Acquire()
             casterToBar[unit] = bar
+
+            -- Find the lowest available slot for STATIC mode.
+            -- For non-STATIC modes the slot is unused but harmless.
+            if not casterToSlot[unit] then
+                -- Find lowest unused slot
+                local slot = 1
+                local usedSlots = {}
+                for _, s in pairs(casterToSlot) do usedSlots[s] = true end
+                while usedSlots[slot] do slot = slot + 1 end
+                casterToSlot[unit] = slot
+            end
+
             TargetedList_ApplyBarContent(bar, rec)
         end
     end
@@ -4906,38 +4939,54 @@ local function TargetedList_Render()
     end
 
     -- Step 4: sort and build the ordered activeBars list.
-    wipe(targetedListSortBuf)
-    for unit, rec in pairs(activeTargetedListCasts) do
-        targetedListSortBuf[#targetedListSortBuf + 1] = rec
-    end
-
     local sortOrder = (db and db.targetedListSortOrder) or "NEWEST"
-    if sortOrder == "STATIC" then
-        -- No sort — bars stay in arrival order. Pairs iteration is
-        -- undefined but stable within a session, so bars don't jump.
-        -- This is the "no reorder" mode.
-    elseif sortOrder == "OLDEST" then
-        table.sort(targetedListSortBuf, TargetedList_SortOldestFirst)
-    else
-        table.sort(targetedListSortBuf, TargetedList_SortNewestFirst)
-    end
 
     wipe(activeBars)
     local count = 0
-    for i = 1, #targetedListSortBuf do
-        local rec = targetedListSortBuf[i]
-        local bar = casterToBar[rec.casterUnit]
-        if bar then
-            count = count + 1
-            if count <= maxBars then
-                activeBars[count] = bar
+
+    if sortOrder == "STATIC" then
+        -- Slot-based positioning: each bar has a fixed slot index
+        -- assigned at acquisition. Bars never shift. Gaps are left
+        -- when a bar is removed.
+        for unit, rec in pairs(activeTargetedListCasts) do
+            local slot = casterToSlot[unit]
+            local bar = casterToBar[unit]
+            if bar and slot and slot <= maxBars then
+                activeBars[slot] = bar
                 bar:Show()
-            else
+                if slot > count then count = slot end
+            elseif bar then
                 bar:Hide()
             end
         end
+    else
+        -- Sort-based positioning: gather, sort, assign sequentially.
+        wipe(targetedListSortBuf)
+        for unit, rec in pairs(activeTargetedListCasts) do
+            targetedListSortBuf[#targetedListSortBuf + 1] = rec
+        end
+
+        if sortOrder == "OLDEST" then
+            table.sort(targetedListSortBuf, TargetedList_SortOldestFirst)
+        else
+            table.sort(targetedListSortBuf, TargetedList_SortNewestFirst)
+        end
+
+        for i = 1, #targetedListSortBuf do
+            local rec = targetedListSortBuf[i]
+            local bar = casterToBar[rec.casterUnit]
+            if bar then
+                count = count + 1
+                if count <= maxBars then
+                    activeBars[count] = bar
+                    bar:Show()
+                else
+                    bar:Hide()
+                end
+            end
+        end
+        wipe(targetedListSortBuf)
     end
-    wipe(targetedListSortBuf)
 
     -- Step 5: position and show container.
     if targetedListContainer then
@@ -5372,7 +5421,7 @@ function DF:HideTestTargetedList()
         targetedListTestTicker:Cancel()
         targetedListTestTicker = nil
     end
-    -- Remove test records and release their bars individually
+    -- Remove test records and release their bars + slots individually
     for key in pairs(activeTargetedListCasts) do
         if type(key) == "string" and key:sub(1, 5) == "test-" then
             activeTargetedListCasts[key] = nil
@@ -5381,6 +5430,7 @@ function DF:HideTestTargetedList()
                 targetedListBarPool:Release(bar)
                 casterToBar[key] = nil
             end
+            casterToSlot[key] = nil
         end
     end
     -- Rebuild activeBars from remaining live records
