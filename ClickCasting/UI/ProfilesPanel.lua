@@ -48,10 +48,11 @@ function CC:CreateProfilesPanelContent()
     CC.profileListFrame = profileList
     
     -- Profile list scroll frame
-    local profileScroll = CreateFrame("ScrollFrame", nil, profileList, "UIPanelScrollFrameTemplate")
+    local profileScroll = CreateFrame("ScrollFrame", nil, profileList, "ScrollFrameTemplate")
     profileScroll:SetPoint("TOPLEFT", 2, -2)
     profileScroll:SetPoint("BOTTOMRIGHT", -22, 2)
-    
+    DF.GUI.StyleScrollBar(profileScroll)
+
     local profileContent = CreateFrame("Frame", nil, profileScroll)
     profileContent:SetWidth(profileScroll:GetWidth())
     profileContent:SetHeight(1)
@@ -378,10 +379,11 @@ function CC:CreateProfilesPanelContent()
     loadoutContainer:SetBackdropBorderColor(C.border.r, C.border.g, C.border.b, 0.5)
     
     -- Loadout scroll frame
-    local loadoutScroll = CreateFrame("ScrollFrame", nil, loadoutContainer, "UIPanelScrollFrameTemplate")
+    local loadoutScroll = CreateFrame("ScrollFrame", nil, loadoutContainer, "ScrollFrameTemplate")
     loadoutScroll:SetPoint("TOPLEFT", 2, -2)
     loadoutScroll:SetPoint("BOTTOMRIGHT", -22, 2)
-    
+    DF.GUI.StyleScrollBar(loadoutScroll)
+
     local loadoutContent = CreateFrame("Frame", nil, loadoutScroll)
     loadoutContent:SetHeight(1)
     loadoutScroll:SetScrollChild(loadoutContent)

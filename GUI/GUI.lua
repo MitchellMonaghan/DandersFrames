@@ -70,6 +70,42 @@ local function CreatePanelBackdrop(frame)
 end
 GUI.CreatePanelBackdrop = CreatePanelBackdrop
 
+-- Style a ScrollFrameTemplate scrollbar to use the pill-shaped thumb
+-- All scroll frames must use ScrollFrameTemplate (not UIPanelScrollFrameTemplate)
+local function StyleScrollBar(scrollFrame)
+    local sb = scrollFrame.ScrollBar
+    if not sb then return end
+
+    -- Hide track background and track end caps
+    if sb.Background then sb.Background:Hide() end
+    if sb.Track then
+        if sb.Track.Begin then sb.Track.Begin:Hide() end
+        if sb.Track.End then sb.Track.End:Hide() end
+        if sb.Track.Middle then sb.Track.Middle:Hide() end
+    end
+
+    -- Style the pill-shaped thumb — hide default textures, overlay with themed color
+    if sb.Thumb then
+        if sb.Thumb.Begin then sb.Thumb.Begin:Hide() end
+        if sb.Thumb.End then sb.Thumb.End:Hide() end
+        if sb.Thumb.Middle then sb.Thumb.Middle:Hide() end
+        if not sb.Thumb.customBg then
+            local thumb = sb.Thumb:CreateTexture(nil, "ARTWORK")
+            thumb:SetAllPoints()
+            thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+            sb.Thumb.customBg = thumb
+        end
+    end
+
+    -- Hide navigation buttons
+    if sb.Back then sb.Back:Hide() sb.Back:SetSize(1, 1) end
+    if sb.Forward then sb.Forward:Hide() sb.Forward:SetSize(1, 1) end
+
+    -- Slim width
+    sb:SetWidth(10)
+end
+GUI.StyleScrollBar = StyleScrollBar
+
 -- =========================================================================
 -- WIDGET FACTORY
 -- =========================================================================
@@ -2574,7 +2610,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     end)
     
     -- Scroll frame - positioned below search box
-    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 2, -(SEARCH_HEIGHT + 4))
     scrollFrame:SetPoint("BOTTOMRIGHT", -20, 2)
     
@@ -2582,13 +2618,8 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     scrollChild:SetWidth(234)  -- Match button width for texture dropdown
     scrollFrame:SetScrollChild(scrollChild)
     
-    -- Hide scroll bar styling
-    local scrollBar = scrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", -16, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", -16, 16)
-    end
-    
+    StyleScrollBar(scrollFrame)
+
     local menuButtons = {}
     local ITEM_HEIGHT = 28
     local MAX_VISIBLE = 8
@@ -2878,7 +2909,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     end)
     
     -- Scroll frame - positioned below search box
-    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 2, -(SEARCH_HEIGHT + 4))
     scrollFrame:SetPoint("BOTTOMRIGHT", -20, 2)
     
@@ -2886,17 +2917,12 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     scrollChild:SetWidth(234)  -- Match button width for font dropdown
     scrollFrame:SetScrollChild(scrollChild)
     
-    -- Hide scroll bar styling
-    local scrollBar = scrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", -16, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", -16, 16)
-    end
-    
+    StyleScrollBar(scrollFrame)
+
     local menuButtons = {}
     local ITEM_HEIGHT = 24
     local MAX_VISIBLE = 10
-    
+
     -- Function to rebuild menu with current fonts
     local function RebuildMenu(filterText)
         -- Clear old buttons
@@ -3157,7 +3183,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     end)
 
     -- Scroll frame
-    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 2, -(SEARCH_HEIGHT + 4))
     scrollFrame:SetPoint("BOTTOMRIGHT", -20, 2)
 
@@ -3165,11 +3191,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     scrollChild:SetWidth(234)
     scrollFrame:SetScrollChild(scrollChild)
 
-    local scrollBar = scrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", -16, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", -16, 16)
-    end
+    StyleScrollBar(scrollFrame)
 
     local menuButtons = {}
     local ITEM_HEIGHT = 22
@@ -4312,14 +4334,15 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     leftBg:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
     leftBg:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
     
-    local leftScroll = CreateFrame("ScrollFrame", nil, leftBg, "UIPanelScrollFrameTemplate")
+    local leftScroll = CreateFrame("ScrollFrame", nil, leftBg, "ScrollFrameTemplate")
     leftScroll:SetPoint("TOPLEFT", 4, -4)
     leftScroll:SetPoint("BOTTOMRIGHT", -24, 4)
     
     local leftContent = CreateFrame("Frame", nil, leftScroll)
     leftContent:SetSize(COL_WIDTH - 28, 1)
     leftScroll:SetScrollChild(leftContent)
-    
+    StyleScrollBar(leftScroll)
+
     -- ========== RIGHT COLUMN: Highlighted Units ==========
     local rightHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     rightHeader:SetPoint("TOPLEFT", leftBg, "TOPRIGHT", COL_GAP, 18)
@@ -4341,14 +4364,15 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     rightBg:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
     rightBg:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
     
-    local rightScroll = CreateFrame("ScrollFrame", nil, rightBg, "UIPanelScrollFrameTemplate")
+    local rightScroll = CreateFrame("ScrollFrame", nil, rightBg, "ScrollFrameTemplate")
     rightScroll:SetPoint("TOPLEFT", 4, -4)
     rightScroll:SetPoint("BOTTOMRIGHT", -24, 4)
     
     local rightContent = CreateFrame("Frame", nil, rightScroll)
     rightContent:SetSize(COL_WIDTH - 28, 1)
     rightScroll:SetScrollChild(rightContent)
-    
+    StyleScrollBar(rightScroll)
+
     -- ========== HELPER FUNCTIONS ==========
     
     -- Get current group roster
@@ -5177,7 +5201,7 @@ function GUI:CreateSelectableList(parent, width, height, onSelect)
     CreateElementBackdrop(container)
 
     -- Scroll frame
-    local scroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+    local scroll = CreateFrame("ScrollFrame", nil, container, "ScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 2, -2)
     scroll:SetPoint("BOTTOMRIGHT", -20, 2)
 
@@ -5185,16 +5209,7 @@ function GUI:CreateSelectableList(parent, width, height, onSelect)
     child:SetWidth(width - 24)
     scroll:SetScrollChild(child)
 
-    -- Style the scrollbar
-    if scroll.ScrollBar then
-        local scrollBar = scroll.ScrollBar
-        if scrollBar.ThumbTexture then
-            scrollBar.ThumbTexture:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.6)
-            scrollBar.ThumbTexture:SetWidth(6)
-        end
-        if scrollBar.ScrollUpButton then scrollBar.ScrollUpButton:SetAlpha(0) scrollBar.ScrollUpButton:SetSize(1,1) end
-        if scrollBar.ScrollDownButton then scrollBar.ScrollDownButton:SetAlpha(0) scrollBar.ScrollDownButton:SetSize(1,1) end
-    end
+    StyleScrollBar(scroll)
 
     -- State
     local items = {}
@@ -5382,7 +5397,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
     searchBox.placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
 
     -- Scroll frame for menu items
-    local menuScroll = CreateFrame("ScrollFrame", nil, menuFrame, "UIPanelScrollFrameTemplate")
+    local menuScroll = CreateFrame("ScrollFrame", nil, menuFrame, "ScrollFrameTemplate")
     menuScroll:SetPoint("TOPLEFT", 4, -(SEARCH_HEIGHT + 12))
     menuScroll:SetPoint("BOTTOMRIGHT", -20, 4)
 
@@ -5390,16 +5405,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
     menuChild:SetWidth(MENU_WIDTH - 28)
     menuScroll:SetScrollChild(menuChild)
 
-    -- Style scrollbar
-    if menuScroll.ScrollBar then
-        local scrollBar = menuScroll.ScrollBar
-        if scrollBar.ThumbTexture then
-            scrollBar.ThumbTexture:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.6)
-            scrollBar.ThumbTexture:SetWidth(6)
-        end
-        if scrollBar.ScrollUpButton then scrollBar.ScrollUpButton:SetAlpha(0) scrollBar.ScrollUpButton:SetSize(1,1) end
-        if scrollBar.ScrollDownButton then scrollBar.ScrollDownButton:SetAlpha(0) scrollBar.ScrollDownButton:SetSize(1,1) end
-    end
+    StyleScrollBar(menuScroll)
 
     -- State
     local allOptions = {}  -- { { value = "x", text = "X", category = "Cat" }, ... }
@@ -6310,7 +6316,7 @@ function DF:CreateGUI()
         return table.concat(lines, "\n")
     end
 
-    local changelogScroll = CreateFrame("ScrollFrame", nil, changelogOverlay, "UIPanelScrollFrameTemplate")
+    local changelogScroll = CreateFrame("ScrollFrame", nil, changelogOverlay, "ScrollFrameTemplate")
     changelogScroll:SetPoint("TOPLEFT", 8, -38)
     changelogScroll:SetPoint("BOTTOMRIGHT", -26, 8)
 
@@ -6326,6 +6332,7 @@ function DF:CreateGUI()
     changelogContent:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     changelogContent:SetScript("OnEditFocusGained", function(self) self:HighlightText(0, 0) end)
     changelogScroll:SetScrollChild(changelogContent)
+    StyleScrollBar(changelogScroll)
     GUI.FormatChangelog = FormatChangelog
     GUI.changelogContent = changelogContent
     GUI.changelogScroll = changelogScroll
@@ -6855,45 +6862,16 @@ function DF:CreateGUI()
         tabScrollStartY = -36
     end
     
-    -- Use ScrollFrameTemplate like old addon (not UIPanelScrollFrameTemplate)
     local tabScroll = CreateFrame("ScrollFrame", nil, tabFrame, "ScrollFrameTemplate")
     tabScroll:SetPoint("TOPLEFT", 4, tabScrollStartY)
     tabScroll:SetPoint("BOTTOMRIGHT", -14, 4)
     
-    -- Style scrollbar (matching old addon approach)
-    local sb = tabScroll.ScrollBar
-    if sb then
-        -- Hide the default textures
-        if sb.Background then sb.Background:Hide() end
-        if sb.Track then 
-            if sb.Track.Begin then sb.Track.Begin:Hide() end
-            if sb.Track.End then sb.Track.End:Hide() end
-            if sb.Track.Middle then sb.Track.Middle:Hide() end
-        end
-        
-        -- Style the thumb
-        if sb.Thumb then
-            if sb.Thumb.Begin then sb.Thumb.Begin:Hide() end
-            if sb.Thumb.End then sb.Thumb.End:Hide() end
-            if sb.Thumb.Middle then sb.Thumb.Middle:Hide() end
-            
-            if not sb.Thumb.customBg then
-                local thumb = sb.Thumb:CreateTexture(nil, "ARTWORK")
-                thumb:SetAllPoints()
-                thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-                sb.Thumb.customBg = thumb
-            end
-        end
-        
-        -- Make scrollbar slimmer
-        sb:SetWidth(10)
-        sb:ClearAllPoints()
-        sb:SetPoint("TOPRIGHT", tabFrame, "TOPRIGHT", -4, tabScrollStartY)
-        sb:SetPoint("BOTTOMRIGHT", tabFrame, "BOTTOMRIGHT", -4, 4)
-        
-        -- Hide the buttons (up/down arrows)
-        if sb.Back then sb.Back:Hide() sb.Back:SetSize(1, 1) end
-        if sb.Forward then sb.Forward:Hide() sb.Forward:SetSize(1, 1) end
+    StyleScrollBar(tabScroll)
+    -- Custom positioning for tab scrollbar
+    if tabScroll.ScrollBar then
+        tabScroll.ScrollBar:ClearAllPoints()
+        tabScroll.ScrollBar:SetPoint("TOPRIGHT", tabFrame, "TOPRIGHT", -4, tabScrollStartY)
+        tabScroll.ScrollBar:SetPoint("BOTTOMRIGHT", tabFrame, "BOTTOMRIGHT", -4, 4)
     end
     
     local tabContainer = CreateFrame("Frame", nil, tabScroll)
@@ -7312,39 +7290,8 @@ function DF:CreateGUI()
         page:SetPoint("TOPLEFT", 8, -8)
         page:SetPoint("BOTTOMRIGHT", -8, 8)
         
-        -- Style scrollbar (matching old addon approach)
-        if page.ScrollBar then
-            local sb = page.ScrollBar
-            
-            -- Hide the default textures
-            if sb.Background then sb.Background:Hide() end
-            if sb.Track then
-                if sb.Track.Begin then sb.Track.Begin:Hide() end
-                if sb.Track.End then sb.Track.End:Hide() end
-                if sb.Track.Middle then sb.Track.Middle:Hide() end
-            end
-            
-            -- Style the thumb
-            if sb.Thumb then
-                if sb.Thumb.Begin then sb.Thumb.Begin:Hide() end
-                if sb.Thumb.End then sb.Thumb.End:Hide() end
-                if sb.Thumb.Middle then sb.Thumb.Middle:Hide() end
-                if not sb.Thumb.customBg then
-                    local thumb = sb.Thumb:CreateTexture(nil, "ARTWORK")
-                    thumb:SetAllPoints()
-                    thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-                    sb.Thumb.customBg = thumb
-                end
-            end
-            
-            -- Make scrollbar slimmer
-            sb:SetWidth(10)
-            
-            -- Hide the buttons (up/down arrows) - match old addon
-            if sb.Back then sb.Back:Hide() sb.Back:SetSize(1, 1) end
-            if sb.Forward then sb.Forward:Hide() sb.Forward:SetSize(1, 1) end
-        end
-        
+        StyleScrollBar(page)
+
         local child = CreateFrame("Frame", nil, page)
         child:SetSize(content:GetWidth() - 30, 1)
         page:SetScrollChild(child)

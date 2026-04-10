@@ -192,10 +192,11 @@ local function CreateImportPopup()
     validLabel:SetText(L["Compatible Bindings"])
     validLabel:SetTextColor(POPUP_COLORS.green.r, POPUP_COLORS.green.g, POPUP_COLORS.green.b)
     
-    local validScroll = CreateFrame("ScrollFrame", nil, validPanel, "UIPanelScrollFrameTemplate")
+    local validScroll = CreateFrame("ScrollFrame", nil, validPanel, "ScrollFrameTemplate")
     validScroll:SetPoint("TOPLEFT", 8, -28)
     validScroll:SetPoint("BOTTOMRIGHT", -28, 8)
-    
+    DF.GUI.StyleScrollBar(validScroll)
+
     local validList = CreateFrame("Frame", nil, validScroll)
     validList:SetSize(200, 170)
     validScroll:SetScrollChild(validList)
@@ -226,10 +227,11 @@ local function CreateImportPopup()
     invalidLabel:SetText(L["Incompatible Bindings"])
     invalidLabel:SetTextColor(POPUP_COLORS.red.r, POPUP_COLORS.red.g, POPUP_COLORS.red.b)
     
-    local invalidScroll = CreateFrame("ScrollFrame", nil, invalidPanel, "UIPanelScrollFrameTemplate")
+    local invalidScroll = CreateFrame("ScrollFrame", nil, invalidPanel, "ScrollFrameTemplate")
     invalidScroll:SetPoint("TOPLEFT", 8, -28)
     invalidScroll:SetPoint("BOTTOMRIGHT", -28, 8)
-    
+    DF.GUI.StyleScrollBar(invalidScroll)
+
     local invalidList = CreateFrame("Frame", nil, invalidScroll)
     invalidList:SetSize(200, 170)
     invalidScroll:SetScrollChild(invalidList)
@@ -1292,10 +1294,11 @@ function CC:ShowMacroEditorDialog(existingMacro)
     charCount:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Body scroll frame
-    local bodyScroll = CreateFrame("ScrollFrame", nil, macroEditorDialog, "UIPanelScrollFrameTemplate")
+    local bodyScroll = CreateFrame("ScrollFrame", nil, macroEditorDialog, "ScrollFrameTemplate")
     bodyScroll:SetSize(370, 160)
     bodyScroll:SetPoint("TOPLEFT", bodyLabel, "BOTTOMLEFT", 0, -4)
-    
+    DF.GUI.StyleScrollBar(bodyScroll)
+
     local bodyBg = CreateFrame("Frame", nil, bodyScroll, "BackdropTemplate")
     bodyBg:SetAllPoints(bodyScroll)
     bodyBg:SetBackdrop({
@@ -1813,10 +1816,11 @@ function CC:ShowImportMacroDialog()
     scrollContainer:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 0.5)
     scrollContainer:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
     
-    local scrollFrame = CreateFrame("ScrollFrame", nil, scrollContainer, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, scrollContainer, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 4, -4)
     scrollFrame:SetPoint("BOTTOMRIGHT", -24, 4)
-    
+    DF.GUI.StyleScrollBar(scrollFrame)
+
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
     scrollContent:SetWidth(scrollFrame:GetWidth())
     scrollContent:SetHeight(1)

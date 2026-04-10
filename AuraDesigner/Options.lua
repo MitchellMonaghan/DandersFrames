@@ -5770,7 +5770,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     end)
 
     -- ── TAB CONTENT (scrollable) ──
-    tabScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
+    tabScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "ScrollFrameTemplate")
     tabScrollFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
     tabScrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
 
@@ -5782,18 +5782,12 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     tabContentFrame:SetWidth(max(1, (earlyW / 2) - 2 - 22))
     tabContentFrame:SetHeight(800)
     tabScrollFrame:SetScrollChild(tabContentFrame)
+    DF.GUI.StyleScrollBar(tabScrollFrame)
 
     -- Match scroll child width to scroll frame
     tabScrollFrame:SetScript("OnSizeChanged", function(self, w, h)
         tabContentFrame:SetWidth(w)
     end)
-
-    local scrollBar = tabScrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:ClearAllPoints()
-        scrollBar:SetPoint("TOPLEFT", tabScrollFrame, "TOPRIGHT", 2, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", tabScrollFrame, "BOTTOMRIGHT", 2, 16)
-    end
 
     -- Smooth scroll
     local SCROLL_STEP = 30
@@ -5853,7 +5847,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     pickerHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     -- Spell picker scroll frame for the grid
-    local pickerScroll = CreateFrame("ScrollFrame", nil, spellPickerView, "UIPanelScrollFrameTemplate")
+    local pickerScroll = CreateFrame("ScrollFrame", nil, spellPickerView, "ScrollFrameTemplate")
     pickerScroll:SetPoint("TOPLEFT", pickerHeader, "BOTTOMLEFT", 0, -24)
     pickerScroll:SetPoint("BOTTOMRIGHT", -22, 0)
 
@@ -5866,12 +5860,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
         spellPickerView.gridFrame:SetWidth(w)
     end)
 
-    local pickerScrollBar = pickerScroll.ScrollBar
-    if pickerScrollBar then
-        pickerScrollBar:ClearAllPoints()
-        pickerScrollBar:SetPoint("TOPLEFT", pickerScroll, "TOPRIGHT", 2, -16)
-        pickerScrollBar:SetPoint("BOTTOMLEFT", pickerScroll, "BOTTOMRIGHT", 2, 16)
-    end
+    DF.GUI.StyleScrollBar(pickerScroll)
 
     spellPickerView.scrollFrame = pickerScroll
 

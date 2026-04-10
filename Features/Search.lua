@@ -1119,10 +1119,11 @@ function Search:CreateResultsPanel(parent)
     noResults:Hide()
     panel.noResults = noResults
     
-    local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    local scroll = CreateFrame("ScrollFrame", nil, panel, "ScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 10, -45)
     scroll:SetPoint("BOTTOMRIGHT", -30, 10)
-    
+    DF.GUI.StyleScrollBar(scroll)
+
     local scrollChild = CreateFrame("Frame", nil, scroll)
     scrollChild:SetSize(scroll:GetWidth(), 1)
     scroll:SetScrollChild(scrollChild)

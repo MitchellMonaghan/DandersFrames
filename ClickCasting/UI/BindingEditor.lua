@@ -287,10 +287,11 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     yOffset = yOffset - 35
     
     -- Action list (Target/Menu + Spells)
-    local spellScrollFrame = CreateFrame("ScrollFrame", nil, addBindingDialog, "UIPanelScrollFrameTemplate")
+    local spellScrollFrame = CreateFrame("ScrollFrame", nil, addBindingDialog, "ScrollFrameTemplate")
     spellScrollFrame:SetPoint("TOPLEFT", 15, yOffset)
     spellScrollFrame:SetSize(375, 130)
-    
+    DF.GUI.StyleScrollBar(spellScrollFrame)
+
     local spellListContent = CreateFrame("Frame", nil, spellScrollFrame)
     spellListContent:SetSize(360, 1)
     spellScrollFrame:SetScrollChild(spellListContent)

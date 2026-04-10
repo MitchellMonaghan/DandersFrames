@@ -758,25 +758,12 @@ function CC:CreateClickCastUI(parent)
     CC.clearAllBtn = clearAllBtn
     
     -- Bindings scroll frame (full height)
-    local bindingsScroll = CreateFrame("ScrollFrame", nil, leftPanel, "UIPanelScrollFrameTemplate")
+    local bindingsScroll = CreateFrame("ScrollFrame", nil, leftPanel, "ScrollFrameTemplate")
     bindingsScroll:SetPoint("TOPLEFT", 5, -30)
     bindingsScroll:SetPoint("BOTTOMRIGHT", -25, 5)
     
-    -- Make scrollbar background transparent
-    local scrollBar = bindingsScroll.ScrollBar or _G[bindingsScroll:GetName() .. "ScrollBar"]
-    if scrollBar then
-        -- Hide the scrollbar track background
-        local trackBG = scrollBar.trackBG or scrollBar.Track and scrollBar.Track.Back
-        if trackBG then
-            trackBG:SetAlpha(0)
-        end
-        -- Also try the old-style backgrounds
-        local bg = scrollBar:GetChildren()
-        if bg and bg.SetAlpha then
-            bg:SetAlpha(0)
-        end
-    end
-    
+    DF.GUI.StyleScrollBar(bindingsScroll)
+
     local bindingsContent = CreateFrame("Frame", nil, bindingsScroll)
     bindingsContent:SetWidth(LEFT_PANEL_WIDTH - 35)
     bindingsContent:SetHeight(1)
@@ -1465,7 +1452,7 @@ function CC:CreateClickCastUI(parent)
     CC.gridContainer = gridContainer
     
     -- Scroll frame for spell grid
-    local scrollFrame = CreateFrame("ScrollFrame", nil, gridContainer, "UIPanelScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", nil, gridContainer, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 5, -5)
     scrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
     
@@ -1473,10 +1460,11 @@ function CC:CreateClickCastUI(parent)
     scrollContent:SetWidth(scrollFrame:GetWidth() - 10)
     scrollContent:SetHeight(1)
     scrollFrame:SetScrollChild(scrollContent)
-    
+    DF.GUI.StyleScrollBar(scrollFrame)
+
     CC.scrollContent = scrollContent
     CC.scrollFrame = scrollFrame
-    
+
     -- Mouse wheel scrolling with smaller step
     -- Override the template's default scroll behavior
     local SCROLL_STEP = 30 -- Smaller step for smoother feel

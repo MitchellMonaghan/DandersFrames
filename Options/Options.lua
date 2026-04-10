@@ -6817,18 +6817,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         listGroup:AddWidget(listContainer, listHeight + 5)
         
         -- Create scroll frame for the profile list
-        local profileScroll = CreateFrame("ScrollFrame", nil, listContainer, "UIPanelScrollFrameTemplate")
+        local profileScroll = CreateFrame("ScrollFrame", nil, listContainer, "ScrollFrameTemplate")
         profileScroll:SetPoint("TOPLEFT", 2, -2)
         profileScroll:SetPoint("BOTTOMRIGHT", -22, 2)
         
-        -- Style the scrollbar
-        local scrollBar = profileScroll.ScrollBar or _G[profileScroll:GetName() .. "ScrollBar"]
-        if scrollBar then
-            scrollBar:SetWidth(10)
-            if contentHeight <= maxListHeight then
-                scrollBar:Hide()
-                profileScroll:SetPoint("BOTTOMRIGHT", -4, 2)
-            end
+        GUI.StyleScrollBar(profileScroll)
+        if contentHeight <= maxListHeight and profileScroll.ScrollBar then
+            profileScroll.ScrollBar:Hide()
+            profileScroll:SetPoint("BOTTOMRIGHT", -4, 2)
         end
         
         -- Create scroll child to hold profile buttons
@@ -7263,9 +7259,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         exportScrollContainer:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
         exportScrollContainer:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
         
-        local exportScroll = CreateFrame("ScrollFrame", nil, exportScrollContainer, "UIPanelScrollFrameTemplate")
+        local exportScroll = CreateFrame("ScrollFrame", nil, exportScrollContainer, "ScrollFrameTemplate")
         exportScroll:SetPoint("TOPLEFT", 4, -4)
         exportScroll:SetPoint("BOTTOMRIGHT", -22, 4)
+        GUI.StyleScrollBar(exportScroll)
         
         local exportEditBox = CreateFrame("EditBox", nil, exportScroll)
         exportEditBox:SetMultiLine(true)
@@ -7313,9 +7310,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         importScrollContainer:SetBackdropColor(0.08, 0.08, 0.08, 0.9)
         importScrollContainer:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
         
-        local importScroll = CreateFrame("ScrollFrame", nil, importScrollContainer, "UIPanelScrollFrameTemplate")
+        local importScroll = CreateFrame("ScrollFrame", nil, importScrollContainer, "ScrollFrameTemplate")
         importScroll:SetPoint("TOPLEFT", 4, -4)
         importScroll:SetPoint("BOTTOMRIGHT", -22, 4)
+        GUI.StyleScrollBar(importScroll)
         
         local importEditBox = CreateFrame("EditBox", nil, importScroll)
         importEditBox:SetMultiLine(true)
@@ -7996,9 +7994,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             scrollContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
             scrollContainer:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
 
-            local scroll = CreateFrame("ScrollFrame", nil, scrollContainer, "UIPanelScrollFrameTemplate")
+            local scroll = CreateFrame("ScrollFrame", nil, scrollContainer, "ScrollFrameTemplate")
             scroll:SetPoint("TOPLEFT", 4, -4)
             scroll:SetPoint("BOTTOMRIGHT", -22, 4)
+            GUI.StyleScrollBar(scroll)
 
             local editBox = CreateFrame("EditBox", nil, scroll)
             editBox:SetMultiLine(true)
@@ -8034,9 +8033,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         logScrollContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
         logScrollContainer:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
 
-        local logScroll = CreateFrame("ScrollFrame", nil, logScrollContainer, "UIPanelScrollFrameTemplate")
+        local logScroll = CreateFrame("ScrollFrame", nil, logScrollContainer, "ScrollFrameTemplate")
         logScroll:SetPoint("TOPLEFT", 4, -4)
         logScroll:SetPoint("BOTTOMRIGHT", -22, 4)
+        GUI.StyleScrollBar(logScroll)
 
         local logEditBox = CreateFrame("EditBox", nil, logScroll)
         logEditBox:SetMultiLine(true)
@@ -8091,9 +8091,10 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         scriptScrollContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
         scriptScrollContainer:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
 
-        local scriptScroll = CreateFrame("ScrollFrame", nil, scriptScrollContainer, "UIPanelScrollFrameTemplate")
+        local scriptScroll = CreateFrame("ScrollFrame", nil, scriptScrollContainer, "ScrollFrameTemplate")
         scriptScroll:SetPoint("TOPLEFT", 4, -4)
         scriptScroll:SetPoint("BOTTOMRIGHT", -22, 4)
+        GUI.StyleScrollBar(scriptScroll)
 
         local scriptEditBox = CreateFrame("EditBox", nil, scriptScroll)
         scriptEditBox:SetMultiLine(true)

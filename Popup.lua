@@ -1042,32 +1042,12 @@ local function CreatePopupFrame()
     summaryScroll:Hide()
     f.SummaryScroll = summaryScroll
 
-    -- Style the scrollbar to match addon theme
-    local sb = summaryScroll.ScrollBar
-    if sb then
-        if sb.Background then sb.Background:Hide() end
-        if sb.Track then
-            if sb.Track.Begin then sb.Track.Begin:Hide() end
-            if sb.Track.End then sb.Track.End:Hide() end
-            if sb.Track.Middle then sb.Track.Middle:Hide() end
-        end
-        if sb.Thumb then
-            if sb.Thumb.Begin then sb.Thumb.Begin:Hide() end
-            if sb.Thumb.End then sb.Thumb.End:Hide() end
-            if sb.Thumb.Middle then sb.Thumb.Middle:Hide() end
-            if not sb.Thumb.customBg then
-                local thumb = sb.Thumb:CreateTexture(nil, "ARTWORK")
-                thumb:SetAllPoints()
-                thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-                sb.Thumb.customBg = thumb
-            end
-        end
-        sb:SetWidth(10)
-        sb:ClearAllPoints()
-        sb:SetPoint("TOPRIGHT", summaryScroll, "TOPRIGHT", 12, 0)
-        sb:SetPoint("BOTTOMRIGHT", summaryScroll, "BOTTOMRIGHT", 12, 0)
-        if sb.Back then sb.Back:Hide() sb.Back:SetSize(1, 1) end
-        if sb.Forward then sb.Forward:Hide() sb.Forward:SetSize(1, 1) end
+    DF.GUI.StyleScrollBar(summaryScroll)
+    -- Custom positioning for popup scrollbar
+    if summaryScroll.ScrollBar then
+        summaryScroll.ScrollBar:ClearAllPoints()
+        summaryScroll.ScrollBar:SetPoint("TOPRIGHT", summaryScroll, "TOPRIGHT", 12, 0)
+        summaryScroll.ScrollBar:SetPoint("BOTTOMRIGHT", summaryScroll, "BOTTOMRIGHT", 12, 0)
     end
 
     local summaryChild = CreateFrame("Frame", nil, summaryScroll)

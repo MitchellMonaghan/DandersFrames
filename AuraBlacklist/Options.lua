@@ -301,9 +301,10 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         listBg:SetBackdropBorderColor(0.20, 0.20, 0.20, 1)
 
         -- Scroll frame
-        local scrollFrame = CreateFrame("ScrollFrame", nil, listBg, "UIPanelScrollFrameTemplate")
+        local scrollFrame = CreateFrame("ScrollFrame", nil, listBg, "ScrollFrameTemplate")
         scrollFrame:SetPoint("TOPLEFT", 4, -4)
         scrollFrame:SetPoint("BOTTOMRIGHT", -24, 4)
+        DF.GUI.StyleScrollBar(scrollFrame)
 
         local scrollContent = CreateFrame("Frame", nil, scrollFrame)
         scrollContent:SetSize(LIST_WIDTH - 28, 1)
