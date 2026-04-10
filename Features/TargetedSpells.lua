@@ -3947,11 +3947,12 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     local active = activeTargetedListCasts[casterUnit]
     if not active then return end
 
-    -- Mark the record as fading instead of nil'ing it immediately.
-    -- The render pipeline keeps the bar alive with decreasing alpha
-    -- until the fade completes, then the fade ticker removes the
-    -- record and re-renders. A fade duration of 0 collapses to
-    -- instant release.
+    -- Store interrupter GUID for display. The GUID is secret-tainted
+    -- on nameplates but UnitNameFromGUID → SetText is a secret-safe
+    -- sink chain — we never inspect the value in Lua. For non-
+    -- interrupt events this is harmlessly nil.
+    local interrupterGuid = select(3, ...)
+
     local party = DF.db and DF.db.party
     local fadeDuration
     if wasInterrupted then
@@ -3964,6 +3965,7 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
         active.fadingStartedAt = TL_GetTime()
         active.fadingDuration  = fadeDuration
         active.wasInterrupted  = wasInterrupted
+        active.interrupterGuid = wasInterrupted and interrupterGuid or nil
         if TargetedList_StartFadeTicker then
             TargetedList_StartFadeTicker()
         end
@@ -4155,6 +4157,17 @@ local function TargetedList_BuildBar(parent)
     durationCooldown:SetHideCountdownNumbers(false)
     bar.duration = durationCooldown
 
+    -- Interrupter name FontString — shown during interrupted-flash
+    -- fade with the name of who kicked the cast. Overlays spell name
+    -- and target name (which are hidden during the flash).
+    local interruptText = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    interruptText:SetPoint("CENTER", progress, "CENTER", 0, 0)
+    interruptText:SetJustifyH("CENTER")
+    interruptText:SetJustifyV("MIDDLE")
+    interruptText:SetWordWrap(false)
+    interruptText:Hide()
+    bar.interruptText = interruptText
+
     -- Highlight frame for important-spell glow. Reuses the existing
     -- InitGlowBorder / UpdateGlowBorder infrastructure from the
     -- personal targeted spells icon system. Shown only for important
@@ -4311,6 +4324,9 @@ local function TargetedList_ApplyBarAppearance(bar, db)
     local targetNameFontSize = db.targetedListTargetNameFontSize or fontSize
     bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
     bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
+    if bar.interruptText then
+        bar.interruptText:SetFont(fontPath, fontSize, outline)
+    end
     -- NOTE: The duration Cooldown frame renders its countdown text
     -- via Blizzard's native cooldown system, which uses a built-in
     -- font object (NumberFontNormal-ish). Custom font paths can't
@@ -4342,6 +4358,10 @@ local function TargetedList_ResetBar(pool, bar)
     bar.icon:SetTexture(nil)
     if bar.highlightFrame then
         bar.highlightFrame:Hide()
+    end
+    if bar.interruptText then
+        bar.interruptText:SetText("")
+        bar.interruptText:Hide()
     end
 end
 
@@ -4546,21 +4566,45 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     end
 
     -- Fade-out / interrupted-flash visual state.
-    -- When a record has fadingStartedAt set, the cast has ended and
-    -- we're counting down the fade window. Compute a linear alpha
-    -- and tint the progress bar yellow if the stop was an interrupt.
     if activeRec.fadingStartedAt then
         local elapsed = TL_GetTime() - activeRec.fadingStartedAt
         local dur = activeRec.fadingDuration or 0.25
         local pct = 1 - math.min(1, math.max(0, elapsed / dur))
         bar:SetAlpha(pct)
         if activeRec.wasInterrupted then
-            -- Yellow flash tint overlaid on the progress bar for the
-            -- fade-out window. Full brightness at flash start, fades
-            -- with the bar alpha via the overall bar alpha we just set.
             bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
+            -- Show interrupter name. Test records store a clean
+            -- string; live records pipe the secret-tainted result of
+            -- UnitNameFromGUID through SetText (secret-safe sink).
+            if bar.interruptText then
+                bar.spellName:Hide()
+                bar.targetName:Hide()
+                if isTest and activeRec.testInterrupterName then
+                    bar.interruptText:SetText(activeRec.testInterrupterName)
+                elseif activeRec.interrupterGuid and TL_UnitNameFromGUID then
+                    bar.interruptText:SetText(TL_UnitNameFromGUID(activeRec.interrupterGuid) or "")
+                    -- Class-color the interrupter name
+                    if TL_UnitClassFromGUID and TL_C_ClassColor
+                       and TL_C_ClassColor.GetClassColor then
+                        local _, iClass = TL_UnitClassFromGUID(activeRec.interrupterGuid)
+                        if iClass then
+                            local col = TL_C_ClassColor.GetClassColor(iClass)
+                            if col then
+                                bar.interruptText:SetTextColor(col.r, col.g, col.b, 1)
+                            end
+                        end
+                    end
+                end
+                bar.interruptText:Show()
+            end
         end
     else
+        -- Not fading — ensure interruptText is hidden and normal text visible
+        if bar.interruptText then
+            bar.interruptText:Hide()
+        end
+        bar.spellName:SetShown(party and party.targetedListShowSpellName ~= false)
+        bar.targetName:SetShown(party and party.targetedListShowTargetName ~= false)
         -- Normal (non-fading) hide-own-casts filter. UnitIsUnit
         -- (nameplateTarget, "player") returns a secret-tainted
         -- boolean — SetAlphaFromBoolean is the secret-safe sink that
@@ -5059,6 +5103,8 @@ local function TargetedList_SpawnTestCast()
         testCastDuration = castDuration,
         testWillInterrupt = willInterrupt,
         testInterruptAt  = interruptAt,
+        -- Fake interrupter name for display during interrupted flash
+        testInterrupterName = willInterrupt and targetName or nil,
     }
 
     TargetedList_Render()
@@ -5070,13 +5116,17 @@ end
 local function TargetedList_UpdateTestProgress()
     local now = TL_GetTime()
     for _, bar in ipairs(activeBars) do
-        -- Find the matching record by casterUnit (which is the test key)
         local rec = bar.casterUnit and activeTargetedListCasts[bar.casterUnit]
-        if rec and rec.isTestCast and rec.testCastDuration and not rec.fadingStartedAt then
-            local elapsed = now - rec.startTime
-            local pct = math.min(1, math.max(0, elapsed / rec.testCastDuration))
-            bar.progress:SetMinMaxValues(0, 1)
-            bar.progress:SetValue(pct)
+        if rec and rec.isTestCast and rec.testCastDuration then
+            -- Skip fading bars — their fill should freeze at the
+            -- point where the cast was interrupted or completed.
+            if not rec.fadingStartedAt then
+                local cutoff = rec.testInterruptAt or rec.testCastDuration
+                local elapsed = now - rec.startTime
+                local pct = math.min(1, math.max(0, elapsed / cutoff))
+                bar.progress:SetMinMaxValues(0, 1)
+                bar.progress:SetValue(pct)
+            end
         end
     end
 end
@@ -5176,18 +5226,25 @@ function DF:ShowTestTargetedList()
             end)
         end
     else
-        -- Static mode: spawn maxBars at once with long durations.
-        -- No ticker, no animation. Users see the full bar layout for
-        -- customisation without distraction.
+        -- Static mode: spawn maxBars at once with normal durations
+        -- but with startTime set into the past so each bar shows a
+        -- varied frozen fill (20-80%). No ticker runs, so bars stay
+        -- at their initial fill point for easy customisation.
+        local now = TL_GetTime()
         for i = 1, maxBars do
             TargetedList_SpawnTestCast()
-            -- Give each bar a very long duration so they don't expire
             local key = "test-" .. (targetedListTestNextId - 1)
             local rec = activeTargetedListCasts[key]
             if rec then
-                rec.testCastDuration = 9999
+                local dur = rec.testCastDuration or 4
+                -- Freeze at 20-80% fill by shifting startTime into the past
+                local fillPct = 0.2 + ((i - 1) * 0.12) % 0.6
+                rec.startTime = now - (dur * fillPct)
                 rec.testInterruptAt = nil
                 rec.testWillInterrupt = false
+                -- Very long effective remaining time so the fade ticker
+                -- never picks these up
+                rec.testCastDuration = 99999
             end
         end
         TargetedList_Render()
