@@ -179,30 +179,41 @@ end
 -- closure scope and needs to share state with this hook).
 local WrapFrameOnUpdate
 
--- The hook itself. Runs after every Frame:SetScript call in the game.
-local frameMeta = getmetatable(CreateFrame("Frame")).__index
-hooksecurefunc(frameMeta, "SetScript", function(frame, scriptType, handler)
-    if installingOnUpdate then return end
-    if scriptType ~= "OnUpdate" then return end
-    if not IsDFFrame(frame) then return end  -- skip non-DF frames (taint safety)
+-- OnUpdate hook toggle. Stored in the global SavedVariables table so it
+-- persists across sessions and can be read at file-load time (before
+-- DF.db / profiles are initialized). The hook can only be installed at
+-- load time — toggling requires a /rl.
+local onUpdateHookEnabled = DandersFramesDB_v2
+    and DandersFramesDB_v2.profilerOnUpdateHook == true
+Profiler.onUpdateHookEnabled = onUpdateHookEnabled
 
-    if handler then
-        onUpdateRegistry[frame] = handler
-        ResolveFrameLabel(frame)
-        -- If profiler is currently recording, wrap the new handler
-        -- right now so this newly added OnUpdate is visible from its
-        -- first frame.
-        if Profiler.active and WrapFrameOnUpdate then
-            WrapFrameOnUpdate(frame, handler)
+-- The hook itself. Runs after every Frame:SetScript call in the game.
+-- Only installed when the user has opted in via /df profiler hook.
+if onUpdateHookEnabled then
+    local frameMeta = getmetatable(CreateFrame("Frame")).__index
+    hooksecurefunc(frameMeta, "SetScript", function(frame, scriptType, handler)
+        if installingOnUpdate then return end
+        if scriptType ~= "OnUpdate" then return end
+        if not IsDFFrame(frame) then return end  -- skip non-DF frames (taint safety)
+
+        if handler then
+            onUpdateRegistry[frame] = handler
+            ResolveFrameLabel(frame)
+            -- If profiler is currently recording, wrap the new handler
+            -- right now so this newly added OnUpdate is visible from its
+            -- first frame.
+            if Profiler.active and WrapFrameOnUpdate then
+                WrapFrameOnUpdate(frame, handler)
+            end
+        else
+            -- nil handler = OnUpdate removed; drop bookkeeping.
+            onUpdateRegistry[frame] = nil
+            if onUpdateWrapped[frame] then
+                onUpdateWrapped[frame] = nil
+            end
         end
-    else
-        -- nil handler = OnUpdate removed; drop bookkeeping.
-        onUpdateRegistry[frame] = nil
-        if onUpdateWrapped[frame] then
-            onUpdateWrapped[frame] = nil
-        end
-    end
-end)
+    end)
+end
 
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
@@ -1612,5 +1623,10 @@ function Profiler:ToggleUI()
         profilerFrame:Hide()
     else
         self:CreateUI()
+        -- Warn if OnUpdate hook is not active
+        if not self.onUpdateHookEnabled then
+            print("|cffff9900DandersFrames Profiler:|r OnUpdate tracking is |cffff0000disabled|r. The OnUpdate tab will be empty.")
+            print("|cffff9900DandersFrames Profiler:|r To enable, run |cffeda55f/df profiler hook|r then |cffeda55f/rl|r")
+        end
     end
 end

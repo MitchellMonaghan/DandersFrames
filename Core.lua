@@ -4320,6 +4320,16 @@ DF._MainEventDispatcher = function(self, event, arg1)
                 else
                     print("|cffff0000DandersFrames:|r Profiler not loaded")
                 end
+            elseif msg == "profiler hook" then
+                -- Toggle the OnUpdate hook (requires /rl)
+                if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
+                local newState = not DandersFramesDB_v2.profilerOnUpdateHook
+                DandersFramesDB_v2.profilerOnUpdateHook = newState
+                if newState then
+                    print("|cff00ff00DandersFrames:|r Profiler OnUpdate hook |cff00ff00ENABLED|r. Type |cffeda55f/rl|r to apply.")
+                else
+                    print("|cff00ff00DandersFrames:|r Profiler OnUpdate hook |cffff9900DISABLED|r. Type |cffeda55f/rl|r to apply.")
+                end
             elseif msg == "profile" or msg:match("^profile %d") then
                 -- Quick profile run: /df profile [seconds]
                 if DF.Profiler then
