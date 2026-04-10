@@ -4209,11 +4209,14 @@ end
 local function TargetedList_ApplyTextLayout(bar, db)
     if not bar or not db then return end
 
-    -- Progress bar width as the default text element width. Each text
-    -- element needs a width for SetJustifyH to work and for overflow
-    -- clipping. Per-element widthKey overrides this when > 0.
-    local progressW = bar.progress:GetWidth()
-    if progressW < 10 then progressW = (db.targetedListWidth or 240) - 4 end
+    -- Default text element width derived from the bar width setting.
+    -- We don't call bar.progress:GetWidth() because it returns a
+    -- secret-tainted number on nameplate-parented bars, and the
+    -- comparison (< 10) would error. The db value is always clean.
+    local barW = db.targetedListWidth or 240
+    local barH = db.targetedListHeight or 22
+    local showIcon = db.targetedListShowIcon ~= false
+    local progressW = showIcon and (barW - barH) or (barW - 2)
 
     local function applyTextElement(fs, anchorKey, alignKey, widthKey, xKey, yKey, defaultAnchor, defaultAlign)
         if not fs then return end
