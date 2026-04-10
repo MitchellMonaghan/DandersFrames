@@ -4389,44 +4389,60 @@ end
 
 local function TargetedList_ApplyBarContent(bar, activeRec)
     local casterUnit = activeRec.casterUnit
-    local spellId = activeRec.spellId  -- opaque; only ever fed into sinks
+    local spellId = activeRec.spellId
+    local isTest = activeRec.isTestCast
 
-    -- Spell name via C_Spell.GetSpellName -> FontString:SetText
-    if TL_C_Spell_GetSpellName then
+    -- Spell name: test records store a clean string; live records
+    -- pipe the (possibly secret) result through SetText.
+    if isTest and activeRec.testSpellName then
+        bar.spellName:SetText(activeRec.testSpellName)
+    elseif TL_C_Spell_GetSpellName then
         bar.spellName:SetText(TL_C_Spell_GetSpellName(spellId) or "")
     end
 
-    -- Spell texture via C_Spell.GetSpellTexture -> Texture:SetTexture
-    if TL_C_Spell_GetSpellTexture then
+    -- Spell texture: same pattern.
+    if isTest and activeRec.testSpellTexture then
+        bar.icon:SetTexture(activeRec.testSpellTexture)
+    elseif TL_C_Spell_GetSpellTexture then
         bar.icon:SetTexture(TL_C_Spell_GetSpellTexture(spellId))
     end
 
-    -- Target name via UnitSpellTargetName -> FontString:SetText.
-    -- The string is secret-tainted on nameplates; SetText accepts it.
-    -- If the arrow prefix is enabled, pipe through SetFormattedText
-    -- which also handles secret values at the C side (no Lua-level
-    -- concatenation, which would error).
-    local targetName = TL_UnitSpellTargetName(casterUnit)
-    if targetName then
+    -- Target name: test records store a clean string; live records
+    -- use UnitSpellTargetName (secret-tainted, fed to SetText sink).
+    local party = DF.db and DF.db.party
+    if isTest and activeRec.testTargetName then
+        local tname = activeRec.testTargetName
         if party and party.targetedListShowArrowPrefix then
-            bar.targetName:SetFormattedText("> %s", targetName)
+            bar.targetName:SetText("> " .. tname)
         else
-            bar.targetName:SetText(targetName)
+            bar.targetName:SetText(tname)
         end
     else
-        bar.targetName:SetText("")
+        local targetName = TL_UnitSpellTargetName(casterUnit)
+        if targetName then
+            if party and party.targetedListShowArrowPrefix then
+                bar.targetName:SetFormattedText("> %s", targetName)
+            else
+                bar.targetName:SetText(targetName)
+            end
+        else
+            bar.targetName:SetText("")
+        end
     end
 
-    -- Class color via UnitSpellTargetClass -> C_ClassColor.GetClassColor.
-    -- Both return values may be secret; the Blizzard helper handles it.
-    local party = DF.db and DF.db.party
+    -- Class color: test records store a clean class string; live
+    -- records use UnitSpellTargetClass (secret, through Blizzard sink).
     local useClassColor = party and party.targetedListTargetNameClassColor
     if useClassColor and TL_C_ClassColor and TL_C_ClassColor.GetClassColor then
-        local targetClass = TL_UnitSpellTargetClass(casterUnit)
+        local targetClass
+        if isTest then
+            targetClass = activeRec.testTargetClass
+        else
+            targetClass = TL_UnitSpellTargetClass(casterUnit)
+        end
         if targetClass then
             local color = TL_C_ClassColor.GetClassColor(targetClass)
             if color then
-                -- Color object's SetTextColor helper is secret-safe.
                 bar.targetName:SetTextColor(color.r, color.g, color.b, 1)
             end
         else
@@ -4436,42 +4452,49 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         bar.targetName:SetTextColor(1, 1, 1, 1)
     end
 
-    -- Progress fill: TimerDuration object fed into StatusBar's
-    -- secret-safe sink. Casts fill empty->full (ElapsedTime),
-    -- channels drain full->empty (RemainingTime).
-    if activeRec.duration and bar.progress.SetTimerDuration then
+    -- Progress fill + countdown text:
+    -- Test records have a clean numeric testCastDuration → use
+    -- SetMinMaxValues/SetValue for the bar and SetCooldown for the
+    -- countdown. Live records have an opaque TimerDuration object →
+    -- use SetTimerDuration and SetCooldownFromDurationObject.
+    if isTest and activeRec.testCastDuration then
+        local elapsed = TL_GetTime() - activeRec.startTime
+        local dur = activeRec.testCastDuration
+        local pct = math.min(1, math.max(0, elapsed / dur))
+        bar.progress:SetMinMaxValues(0, 1)
+        bar.progress:SetValue(pct)
+        if bar.duration and bar.duration.SetCooldown then
+            bar.duration:SetCooldown(activeRec.startTime, dur)
+        end
+    elseif activeRec.duration and bar.progress.SetTimerDuration then
         local direction = activeRec.isChannel
             and Enum.StatusBarTimerDirection.RemainingTime
             or Enum.StatusBarTimerDirection.ElapsedTime
         bar.progress:SetTimerDuration(activeRec.duration,
             Enum.StatusBarInterpolation.Immediate, direction)
-    end
-
-    -- Countdown text: hand the same duration object to the Cooldown
-    -- frame so it renders its native countdown. SetCooldownFromDurationObject
-    -- is secret-safe (accepts the opaque duration). Falls back to
-    -- SetCooldown for environments lacking the method.
-    if bar.duration and activeRec.duration then
-        if bar.duration.SetCooldownFromDurationObject then
-            bar.duration:SetCooldownFromDurationObject(activeRec.duration)
+        if bar.duration and activeRec.duration then
+            if bar.duration.SetCooldownFromDurationObject then
+                bar.duration:SetCooldownFromDurationObject(activeRec.duration)
+            end
         end
     end
 
-    -- Interruptible color via SetVertexColorFromBoolean. The
-    -- `uninterruptible` value from UnitCastingInfo is secret-tainted;
-    -- this is the secret-safe sink for that specific case.
+    -- Interruptible color: test records have a clean bool so we can
+    -- use plain SetStatusBarColor. Live records have a secret-tainted
+    -- bool → SetVertexColorFromBoolean.
     local interruptibleColor = party and party.targetedListInterruptibleColor
         or {r=1, g=0.2, b=0.2, a=1}
     local uninterruptibleColor = party and party.targetedListUninterruptibleColor
         or {r=0.5, g=0.5, b=0.5, a=1}
-    if activeRec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
+    if isTest then
+        local c = activeRec.uninterruptible and uninterruptibleColor or interruptibleColor
+        bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
+    elseif activeRec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
         local tex = bar.progress:GetStatusBarTexture()
         if tex and tex.SetVertexColorFromBoolean then
             tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
                 uninterruptibleColor, interruptibleColor)
         else
-            -- Fallback for real-casts before the sink is available:
-            -- render as interruptible (red).
             bar.progress:SetStatusBarColor(
                 interruptibleColor.r, interruptibleColor.g,
                 interruptibleColor.b, interruptibleColor.a)
@@ -4750,8 +4773,6 @@ end
 
 local function TargetedList_Render()
     if not TargetedList_IsGateOpen() then return end
-    -- Test mode owns its own render path via ShowTestTargetedList.
-    if targetedListTestActive then return end
 
     TargetedList_EnsureBarPool()
     TargetedList_ReleaseAllActiveBars()
@@ -4978,157 +4999,86 @@ local function TargetedList_GetTestTargetClass(index)
     return u and u.class or nil
 end
 
-local function TargetedList_ApplyTestBarContent(bar, index)
+-- ============================================================
+-- Test mode: fake event generator
+-- ============================================================
+-- Instead of pre-allocating bars and animating them in-place,
+-- test mode periodically spawns fake cast records into
+-- activeTargetedListCasts. The normal render pipeline handles
+-- everything — sorting, layout, bar acquisition, content, fade.
+-- This means test mode looks exactly like live play: bars appear,
+-- shift, sort, fade out, and flash on interrupt.
+
+local targetedListTestTicker = nil
+local targetedListTestNextId = 1  -- incrementing key for test records
+
+-- Spawn a new fake cast record. Called periodically by the ticker.
+local function TargetedList_SpawnTestCast()
     local db = DF.db and DF.db.party
     if not db then return end
 
-    local spec = TARGETED_LIST_TEST_SPELLS[((index - 1) % #TARGETED_LIST_TEST_SPELLS) + 1]
-    local spellId = spec.spellId
+    -- Pick a test spell and target
+    local idx = ((targetedListTestNextId - 1) % #TARGETED_LIST_TEST_SPELLS) + 1
+    local spec = TARGETED_LIST_TEST_SPELLS[idx]
+    local tIdx = ((targetedListTestNextId - 1) % 5) + 1
+    local targetName = TargetedList_GetTestTargetName(tIdx)
+    local targetClass = TargetedList_GetTestTargetClass(tIdx)
 
-    -- Spell name + icon
-    if TL_C_Spell_GetSpellName then
-        bar.spellName:SetText(TL_C_Spell_GetSpellName(spellId) or "Test Spell")
-    else
-        bar.spellName:SetText("Test Spell")
-    end
-    if TL_C_Spell_GetSpellTexture then
-        bar.icon:SetTexture(TL_C_Spell_GetSpellTexture(spellId))
-    end
+    -- Clean spell metadata
+    local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spec.spellId) or "Test Spell"
+    local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spec.spellId)
 
-    -- Target name — width clipping handles overflow the same way live
-    -- bars do for secret-tainted text, so test mode is visually accurate.
-    local targetName = TargetedList_GetTestTargetName(index)
-    if db.targetedListShowArrowPrefix then
-        bar.targetName:SetFormattedText("> %s", targetName)
-    else
-        bar.targetName:SetText(targetName)
-    end
-    if db.targetedListTargetNameClassColor then
-        local targetClass = TargetedList_GetTestTargetClass(index)
-        if targetClass and TL_C_ClassColor and TL_C_ClassColor.GetClassColor then
-            local color = TL_C_ClassColor.GetClassColor(targetClass)
-            if color then
-                bar.targetName:SetTextColor(color.r, color.g, color.b, 1)
-            end
-        else
-            bar.targetName:SetTextColor(1, 1, 1, 1)
-        end
-    else
-        bar.targetName:SetTextColor(1, 1, 1, 1)
-    end
+    local castDuration = 2 + (targetedListTestNextId % 5) * 1.0  -- 2-6s
+    local key = "test-" .. targetedListTestNextId
+    targetedListTestNextId = targetedListTestNextId + 1
 
-    -- Static progress fill to visualize cast state without animating.
-    -- Each bar shows a different progress point so the stack reads
-    -- visually as "alive" even without OnUpdate.
-    local pct = 0.15 + (((index - 1) * 0.17) % 0.8)
-    bar.progress:SetMinMaxValues(0, 1)
-    bar.progress:SetValue(pct)
+    activeTargetedListCasts[key] = {
+        isTestCast       = true,
+        spellId          = spec.spellId,
+        isChannel        = spec.isChannel or false,
+        startTime        = TL_GetTime(),
+        casterUnit       = key,  -- fake unit token
+        uninterruptible  = spec.uninterruptible or false,
+        -- Test-specific clean fields (bypasses secret-value APIs)
+        testSpellName    = spellName,
+        testSpellTexture = spellTexture,
+        testTargetName   = targetName,
+        testTargetClass  = targetClass,
+        testCastDuration = castDuration,
+        -- Flag for the test lifecycle ticker to transition to fading
+        testWillInterrupt = (targetedListTestNextId % 3 == 0),
+    }
 
-    -- Color based on spec.uninterruptible (clean bool — plain if/else ok)
-    local interruptibleColor = db.targetedListInterruptibleColor
-        or {r=1, g=0.2, b=0.2, a=1}
-    local uninterruptibleColor = db.targetedListUninterruptibleColor
-        or {r=0.5, g=0.5, b=0.5, a=1}
-    local c = spec.uninterruptible and uninterruptibleColor or interruptibleColor
-    bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a)
-
-    -- Fake cooldown for the duration display. Each bar gets a
-    -- different synthetic duration so the preview looks varied.
-    -- SetCooldown uses clean numbers (no secret values in test mode).
-    if bar.duration and bar.duration.SetCooldown then
-        local fakeDur = 2 + (index % 5) * 1.5  -- 2s, 3.5s, 5s, 6.5s, 8s, 2s, ...
-        bar.duration:SetCooldown(GetTime(), fakeDur)
-    end
-
-    -- Important-spell glow preview. In test mode IsSpellImportant
-    -- returns a clean bool so we can use it directly. Alternate
-    -- bars between important (glow visible) and not.
-    if bar.highlightFrame and db.targetedListHighlightImportant then
-        local hc = db.targetedListHighlightColor or {r=1, g=0.8, b=0}
-        if DF.InitGlowBorder then DF.InitGlowBorder(bar.highlightFrame) end
-        if DF.UpdateGlowBorder then
-            DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
-        end
-        -- Alternate: odd bars glow, even bars don't
-        local showGlow = (index % 2 == 1)
-        bar.highlightFrame:SetShown(showGlow)
-    elseif bar.highlightFrame then
-        bar.highlightFrame:Hide()
-    end
+    TargetedList_Render()
 end
 
--- Ticker for animated test bars. Each bar cycles through: cast →
--- fade-out (or interrupted flash) → reset. This lets users preview
--- how bars look during their full lifecycle without being in a dungeon.
-local targetedListTestTicker = nil
-
--- Per-bar animation state. Stored as bar.testAnim = { phase, startTime, ... }
--- Phases: "casting" → "fading" → back to "casting".
-local function TargetedList_UpdateTestAnimation()
+-- Check test casts and transition them to fading when their cast
+-- duration elapses. Called by the test ticker alongside spawning.
+local function TargetedList_UpdateTestCasts()
     local db = DF.db and DF.db.party
-    if not db or not targetedListTestActive then return end
-
-    local now = GetTime()
+    if not db then return end
+    local now = TL_GetTime()
     local fadeDuration = db.targetedListFadeOutDuration or 0.25
     local flashDuration = db.targetedListInterruptedFlashDuration or 1.0
+    local needsRender = false
 
-    for i, bar in ipairs(activeBars) do
-        local anim = bar.testAnim
-        if not anim then
-            -- Initialise: each bar starts at a staggered time so
-            -- they don't all animate in lockstep.
-            anim = {
-                phase = "casting",
-                castDuration = 2 + (i % 5) * 1.0,  -- 2s, 3s, 4s, 5s, 6s
-                startTime = now - ((i - 1) * 0.6),  -- stagger start
-                wasInterrupted = (i % 3 == 0),       -- every 3rd bar interrupted
-            }
-            bar.testAnim = anim
-        end
-
-        local elapsed = now - anim.startTime
-
-        if anim.phase == "casting" then
-            -- Progress fill: linearly from 0 to 1 over castDuration
-            local pct = math.min(1, elapsed / anim.castDuration)
-            bar.progress:SetMinMaxValues(0, 1)
-            bar.progress:SetValue(pct)
-            bar:SetAlpha(1)
-
-            -- Apply interruptible / uninterruptible color
-            local spec = TARGETED_LIST_TEST_SPELLS[((i - 1) % #TARGETED_LIST_TEST_SPELLS) + 1]
-            local interruptibleColor = db.targetedListInterruptibleColor
-                or {r=1, g=0.2, b=0.2, a=1}
-            local uninterruptibleColor = db.targetedListUninterruptibleColor
-                or {r=0.5, g=0.5, b=0.5, a=1}
-            local c = spec.uninterruptible and uninterruptibleColor or interruptibleColor
-            bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a)
-
-            if pct >= 1 then
-                -- Transition to fading
-                anim.phase = "fading"
-                anim.fadeStart = now
-                anim.fadeDur = anim.wasInterrupted and flashDuration or fadeDuration
-            end
-
-        elseif anim.phase == "fading" then
-            local fadeElapsed = now - anim.fadeStart
-            local fadeProgress = math.min(1, fadeElapsed / math.max(0.01, anim.fadeDur))
-            bar:SetAlpha(1 - fadeProgress)
-
-            if anim.wasInterrupted then
-                -- Yellow flash tint during interrupted fade
-                bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
-            end
-
-            if fadeProgress >= 1 then
-                -- Reset to casting with a new start time
-                anim.phase = "casting"
-                anim.startTime = now
-                anim.wasInterrupted = not anim.wasInterrupted  -- alternate
-                bar:SetAlpha(1)
+    for key, rec in pairs(activeTargetedListCasts) do
+        if rec.isTestCast and not rec.fadingStartedAt then
+            local elapsed = now - rec.startTime
+            if elapsed >= (rec.testCastDuration or 3) then
+                -- Cast finished — transition to fading
+                local wasInt = rec.testWillInterrupt
+                rec.fadingStartedAt = now
+                rec.fadingDuration = wasInt and flashDuration or fadeDuration
+                rec.wasInterrupted = wasInt
+                needsRender = true
+                TargetedList_StartFadeTicker()
             end
         end
+    end
+
+    if needsRender then
+        TargetedList_Render()
     end
 end
 
@@ -5137,30 +5087,29 @@ function DF:ShowTestTargetedList()
     targetedListTestActive = true
     TargetedList_EnsureContainer()
     TargetedList_EnsureBarPool()
-    TargetedList_ReleaseAllActiveBars()
 
+    -- Clear any existing test records
+    for key in pairs(activeTargetedListCasts) do
+        if type(key) == "string" and key:sub(1, 5) == "test-" then
+            activeTargetedListCasts[key] = nil
+        end
+    end
+    targetedListTestNextId = 1
+
+    -- Spawn initial batch of casts so the display isn't empty
     local db = DF.db and DF.db.party
-    if not db then return end
-    local maxBars = db.targetedListMaxBars or 6
-
-    for i = 1, maxBars do
-        local bar = targetedListBarPool:Acquire()
-        bar.testAnim = nil  -- reset animation state
-        activeBars[i] = bar
+    local maxBars = (db and db.targetedListMaxBars) or 6
+    local initialCount = math.min(maxBars, 4)  -- start with up to 4 bars
+    for i = 1, initialCount do
+        TargetedList_SpawnTestCast()
     end
 
-    targetedListContainer:Show()
-    TargetedList_LayoutBars()
-
-    -- Apply initial test content (spell name, icon, target name, etc.)
-    for i, bar in ipairs(activeBars) do
-        TargetedList_ApplyTestBarContent(bar, i)
-    end
-
-    -- Start the animation ticker (30 fps is smooth enough for
-    -- cast-bar fill and fade animations).
+    -- Start a ticker that spawns new casts and manages lifecycle.
+    -- Spawn interval is ~2s so casts overlap visually.
     if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
-        targetedListTestTicker = C_Timer.NewTicker(0.033, function()
+        local spawnInterval = 2.0
+        local spawnTimer = 0
+        targetedListTestTicker = C_Timer.NewTicker(0.1, function()
             if not targetedListTestActive then
                 if targetedListTestTicker then
                     targetedListTestTicker:Cancel()
@@ -5168,21 +5117,43 @@ function DF:ShowTestTargetedList()
                 end
                 return
             end
-            TargetedList_UpdateTestAnimation()
+
+            -- Manage existing test cast lifecycle and re-render for
+            -- smooth progress fill + countdown updates
+            TargetedList_UpdateTestCasts()
+            TargetedList_Render()
+
+            -- Periodically spawn new casts
+            spawnTimer = spawnTimer + 0.1
+            if spawnTimer >= spawnInterval then
+                spawnTimer = 0
+                -- Only spawn if under max bars
+                local count = 0
+                for _, rec in pairs(activeTargetedListCasts) do
+                    if rec.isTestCast and not rec.fadingStartedAt then
+                        count = count + 1
+                    end
+                end
+                if count < ((DF.db and DF.db.party and DF.db.party.targetedListMaxBars) or 6) then
+                    TargetedList_SpawnTestCast()
+                end
+            end
         end)
     end
 end
 
 function DF:HideTestTargetedList()
     targetedListTestActive = false
-    -- Cancel the animation ticker
+    -- Cancel the test ticker
     if targetedListTestTicker then
         targetedListTestTicker:Cancel()
         targetedListTestTicker = nil
     end
-    -- Clear animation state on all bars
-    for _, bar in ipairs(activeBars) do
-        bar.testAnim = nil
+    -- Remove all test records from the active table
+    for key in pairs(activeTargetedListCasts) do
+        if type(key) == "string" and key:sub(1, 5) == "test-" then
+            activeTargetedListCasts[key] = nil
+        end
     end
     TargetedList_ReleaseAllActiveBars()
     if targetedListContainer and not next(activeTargetedListCasts) then
@@ -5191,16 +5162,14 @@ function DF:HideTestTargetedList()
 end
 
 -- Called from ReleaseAllBars (the lifecycle path) so it also tears
--- down the visible bars. Test mode has its own Hide path.
+-- down the visible bars including any test records.
 local _TargetedList_ReleaseAllBars_Prev = TargetedList_ReleaseAllBars
 TargetedList_ReleaseAllBars = function()
     if not TargetedList_IsGateOpen() then return end
     _TargetedList_ReleaseAllBars_Prev()
-    if not targetedListTestActive then
-        TargetedList_ReleaseAllActiveBars()
-        if targetedListContainer then
-            targetedListContainer:Hide()
-        end
+    TargetedList_ReleaseAllActiveBars()
+    if targetedListContainer then
+        targetedListContainer:Hide()
     end
 end
 DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
@@ -5210,31 +5179,25 @@ DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
 -- ------------------------------------------------------------
 --
 -- DelayedPickup and OnCastStop already modify activeTargetedListCasts.
--- We re-wrap them with a post-modification render trigger, rather than
--- sprinkling render calls inside the lifecycle functions.
+-- We re-wrap them with a post-modification render trigger. Test mode
+-- and live casts both share the same render pipeline, so no guards.
 
 local _TargetedList_DelayedPickup_Prev = TargetedList_DelayedPickup
 TargetedList_DelayedPickup = function(...)
     _TargetedList_DelayedPickup_Prev(...)
-    if not targetedListTestActive then
-        TargetedList_Render()
-    end
+    TargetedList_Render()
 end
 
 local _TargetedList_OnCastStop_Prev = TargetedList_OnCastStop
 TargetedList_OnCastStop = function(...)
     _TargetedList_OnCastStop_Prev(...)
-    if not targetedListTestActive then
-        TargetedList_Render()
-    end
+    TargetedList_Render()
 end
 
 local _TargetedList_OnInterruptibility_Prev = TargetedList_OnInterruptibilityChange
 TargetedList_OnInterruptibilityChange = function(...)
     _TargetedList_OnInterruptibility_Prev(...)
-    if not targetedListTestActive then
-        TargetedList_Render()
-    end
+    TargetedList_Render()
 end
 
 DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
@@ -5259,13 +5222,9 @@ end
 function DF:UpdateTargetedListLayout()
     if not TargetedList_IsGateOpen() then return end
     targetedListLayoutVersion = targetedListLayoutVersion + 1
-    if targetedListTestActive then
-        -- Test mode: rebuild bars so changes to max bars / content
-        -- toggles take effect immediately.
-        DF:ShowTestTargetedList()
-    else
-        TargetedList_Render()
-    end
+    -- Single render path for both test and live records. Test records
+    -- live in the same activeTargetedListCasts table as live records.
+    TargetedList_Render()
     -- Also resize the mover if it's visible
     if targetedListMover and targetedListMover:IsShown() then
         local db = DF.db and DF.db.party
