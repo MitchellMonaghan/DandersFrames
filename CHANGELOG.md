@@ -2,6 +2,10 @@
 
 ## [4.2.9] - 2026-04-10
 
+### Improvements
+
+* (GUI) Modernised all scroll bars across the addon to use the new slim pill-style thumb instead of the default Blizzard scroll bars
+
 ### Bug Fixes
 
 * (Dispel Overlay) Fix "All Dispellable" mode not showing the dispel overlay when using the Blizzard aura data source
