@@ -4591,16 +4591,16 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         local tex = bar.progress:GetStatusBarTexture()
         if tex and tex.SetVertexColorFromBoolean then
             tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
-                uninterruptibleColor, effectiveInterColor)
+                uninterruptibleColor, interruptibleColor)
         else
             bar.progress:SetStatusBarColor(
-                effectiveInterColor.r, effectiveInterColor.g,
-                effectiveInterColor.b, effectiveInterColor.a)
+                interruptibleColor.r, interruptibleColor.g,
+                interruptibleColor.b, interruptibleColor.a)
         end
     else
         bar.progress:SetStatusBarColor(
-            effectiveInterColor.r, effectiveInterColor.g,
-            effectiveInterColor.b, effectiveInterColor.a)
+            interruptibleColor.r, interruptibleColor.g,
+            interruptibleColor.b, interruptibleColor.a)
     end
 
     -- Important-spells filter at render time. C_Spell.IsSpellImportant
