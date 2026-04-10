@@ -1,5 +1,22 @@
 # DandersFrames Changelog
 
+## [4.3.0] - 2026-04-10
+
+### New Features
+
+* **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only
+* (Targeted List) Draggable mover integrated with the existing Unlock Frames flow
+* (Targeted List) Position panel now switches context based on which mover you click: party, raid, Personal Targeted Spells, or Targeted List
+* (Targeted List) Four bar style presets (Default / Compact / Detailed / Minimal) plus independent per-text-element anchor and offset for fine-grained layout control
+* (Targeted List) Test mode support with demo bars driven from the Test Mode panel
+* (Targeted List) Fade-out animation on cast completion and a yellow interrupted-flash tint on interrupts, both with configurable durations
+* (Targeted List) Full appearance controls: icon, border, background alpha, textures, font, per-text-element show/hide, class-colored target names, arrow prefix, sort order, content-type filter, important-spells-only filter, hide-own-casts filter
+
+### Bug Fixes
+
+* (Personal Targeted Spells) Removed the white center-line overlays from the mover frame
+* (Targeted Spells) Added `UNIT_SPELLCAST_FAILED_QUIET` to the registered event list — some cancelled casts previously left dangling personal-display icons
+
 ## [4.2.9] - 2026-04-10
 
 ### Improvements
