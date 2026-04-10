@@ -5162,8 +5162,9 @@ local function TargetedList_SpawnTestCast()
         -- Fake interrupter name for display during interrupted flash
         testInterrupterName = willInterrupt and targetName or nil,
     }
-
-    TargetedList_Render()
+    -- NOTE: caller is responsible for calling TargetedList_Render()
+    -- after all spawns/modifications are done. This avoids premature
+    -- bar acquisition before static-mode record modifications.
 end
 
 -- Lightweight progress update for test bars. Only touches SetValue
@@ -5222,12 +5223,24 @@ end
 
 function DF:ShowTestTargetedList()
     if not TargetedList_IsGateOpen() then return end
+
+    -- FIRST: cancel any running ticker from a previous mode. This
+    -- prevents animated-mode tickers from interfering with static mode.
+    if targetedListTestTicker then
+        targetedListTestTicker:Cancel()
+        targetedListTestTicker = nil
+    end
+    -- Also cancel the fade ticker to prevent stale fade renders
+    if targetedListFadeTicker then
+        targetedListFadeTicker:Cancel()
+        targetedListFadeTicker = nil
+    end
+
     targetedListTestActive = true
     TargetedList_EnsureContainer()
     TargetedList_EnsureBarPool()
 
-    -- Clear any existing test records AND their bars from casterToBar
-    -- (prevents duplicates when toggling between animate/non-animate)
+    -- Clear ALL existing test records AND their bars from casterToBar
     for key in pairs(activeTargetedListCasts) do
         if type(key) == "string" and key:sub(1, 5) == "test-" then
             activeTargetedListCasts[key] = nil
@@ -5251,6 +5264,7 @@ function DF:ShowTestTargetedList()
         for i = 1, initialCount do
             TargetedList_SpawnTestCast()
         end
+        TargetedList_Render()
 
         -- Ticker spawns new casts and manages lifecycle.
         if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
@@ -5283,6 +5297,7 @@ function DF:ShowTestTargetedList()
                     end
                     if count < ((DF.db and DF.db.party and DF.db.party.targetedListMaxBars) or 6) then
                         TargetedList_SpawnTestCast()
+                        TargetedList_Render()
                     end
                 end
             end)
