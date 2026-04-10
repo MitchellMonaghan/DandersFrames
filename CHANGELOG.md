@@ -1,34 +1,5 @@
 # DandersFrames Changelog
 
-## [4.2.9] - 2026-04-09
-
-### New Features
-
-* **Targeted List** (alpha/beta only) — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that Blizzard's 2026-04-07 UnitIsUnit hotfix permanently broke. Party-mode only by design
-* (Targeted List) Draggable mover integrated with the existing Unlock Frames flow — click the mover and use the position panel's nudge buttons just like party/raid frames
-* (Targeted List) Position panel now switches context based on which mover you click: party, raid, Personal Targeted Spells, or Targeted List
-* (Targeted List) Four bar style presets (Default / Compact / Detailed / Minimal) plus independent per-text-element anchor + X/Y offset for fine-grained layout control
-* (Targeted List) Test mode support with demo bars driven from the Test Mode panel — replaces the old "Targeted Spell" checkbox (which drove the now-dead group-frame icon display)
-* (Targeted List) Fade-out animation on cast completion and a yellow interrupted-flash tint on interrupts, both with configurable durations
-* (Targeted List) Full appearance controls: icon show/position/zoom, border, background alpha, LibSharedMedia textures, font, font size, font outline, per-text-element show/hide, class-colored target names, arrow prefix, newest/oldest sort order, content-type filter, important-spells-only filter, hide-own-casts filter
-
-### Bug Fixes
-
-* (Personal Targeted Spells) Removed the white center-line overlays from the mover frame — they were visual noise that duplicated the snap-to-grid guides
-* (Targeted Spells) Added `UNIT_SPELLCAST_FAILED_QUIET` to the registered event list — some cancelled casts fire only this event, previously leaving dangling personal-display icons
-
-### Technical Notes
-
-For the curious — the Targeted List feature required working around extensive new secret-value restrictions on nameplate units introduced by the 2026-04-07 `UnitIsUnit` hotfix:
-
-* **Secret-tainted fields** confirmed on nameplate casts: `startMS` / `endMS` / `castID` from `UnitCastingInfo`, the `notInterruptible` flag, `UnitSpellTargetName`, `UnitSpellTargetClass`, and the `spellId` from `UNIT_SPELLCAST_START` event payloads
-* **Forbidden operations on secret values**: arithmetic, equality comparison with non-nil values, table-key lookup, truth-test boolean inspection, `string.format`
-* **Secret-safe sinks used throughout the render pipeline**: `FontString:SetText`, `Texture:SetTexture`, `Texture:SetVertexColorFromBoolean`, `Frame:SetAlphaFromBoolean`, `Frame:SetShownFromBoolean`, `StatusBar:SetTimerDuration`, `Cooldown:SetCooldownFromDurationObject`, `C_ClassColor.GetClassColor`, `FontString:SetFormattedText`
-* **Targeting filter** uses `UnitInParty("nameplateXtarget")` (the TS3 addon's approach), which the hotfix left functional despite the doc warnings suggesting otherwise
-* **0.2s delayed cast pickup** because `UNIT_SPELLCAST_START` fires before cast data is populated — tracked as gotcha #1 through #13 in the implementation-findings doc
-* **Three planned sort orders were dropped as architecturally impossible**: shortest-remaining, interruptible-first, and target-party-order all require inspecting secret-tainted values that Lua can't sort on. Newest-first and Oldest-first are the two working modes
-* **Click-to-target was dropped** because secure action buttons parented inside a container make the container's `:Hide()` protected during combat, which broke render-after-cast-stop
-
 ## [4.2.8] - 2026-04-08
 
 ### New Features
@@ -62,7 +33,7 @@ For the curious — measured in a 5m 38s raid boss fight (493,901 calls profiled
 * **Aura cache hit rate:** 99.6% (36,204 of 36,360 events skip the full scan)
 * **Dispel overlay CPU share:** 16.4% → 0.8% (**−95%**)
 * **Absorb update per call:** ~111 µs / ~80 B → 38.4 µs / 0 B (**−65% CPU, zero allocation**)
-* **Aura tracking:** Now uses the `UNIT_AURA updateInfo` payload (oUF/ElvUI-style incremental updates) with a shared `DF.AuraCache` keyed by aura instance ID. Both Aura Designer and Dispel overlay read from the same cache instead of re-querying `C_UnitAuras`
+* **Aura tracking:** Now uses the `UNIT_AURA updateInfo` payload with a shared `DF.AuraCache` keyed by aura instance ID. Both Aura Designer and Dispel overlay read from the same cache instead of re-querying `C_UnitAuras`
 * **Aura Designer indicator entries** are pooled (max 64 reused), and instance keys are cached in a two-level lookup table
 * **Dispel overlay** caches its layout state and short-circuits `ApplyOverlayLayout` when nothing relevant changed — same pattern was then applied to absorb shields
 * **Update.lua** caches `UnitHealth`, `UnitPower`, `InCombatLockdown` and 9 other Unit\* APIs as file-scope locals to skip global lookups in the hot path
