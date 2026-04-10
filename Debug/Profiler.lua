@@ -133,18 +133,19 @@ local function IsDFFrame(frame)
     local walker = frame
     local depth = 0  -- safety cap against pathological cycles
     while walker and depth < 32 do
-        if walker.GetName then
-            local name = walker:GetName()
-            if name then
-                local p2 = name:sub(1, 2)
-                local p7 = name:sub(1, 7)
-                if p7 == "Danders" or p2 == "DF" then
-                    onUpdateDFCheck[frame] = true
-                    return true
-                end
+        -- pcall because some Blizzard template frames (e.g. RadialWheel
+        -- wedge buttons) error on :GetName() with "bad self".
+        local ok, name = pcall(walker.GetName, walker)
+        if ok and name then
+            local p2 = name:sub(1, 2)
+            local p7 = name:sub(1, 7)
+            if p7 == "Danders" or p2 == "DF" then
+                onUpdateDFCheck[frame] = true
+                return true
             end
         end
-        walker = walker.GetParent and walker:GetParent() or nil
+        local ok2, parent = pcall(walker.GetParent, walker)
+        walker = (ok2 and parent) or nil
         depth = depth + 1
     end
 
