@@ -1566,7 +1566,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- ===== AFFECTED ELEMENTS GROUP (Column 2) =====
         local infoGroup = GUI:CreateSettingsGroup(self.child, 280)
         infoGroup:AddWidget(GUI:CreateHeader(self.child, L["Affected Elements"]), 40)
-        infoGroup:AddWidget(GUI:CreateLabel(self.child, L["• Name Text\n• Health Text\n• Status Text (Dead/Offline)\n• Party Number Text\n• Buff Stack & Duration\n• Debuff Stack & Duration\n• Pet Frame Text\n• Targeted Spell Duration\n• Defensive Icon Duration\n• Status Icon Text (Res, Summon, etc.)\n• Group Labels (Raid)", 250), 190)
+        infoGroup:AddWidget(GUI:CreateLabel(self.child, L["• Name Text\n• Health Text\n• Status Text (Dead/Offline)\n• Party Number Text\n• Buff Stack & Duration\n• Debuff Stack & Duration\n• Pet Frame Text\n• Targeted Spell Duration\n• Defensive Icon Duration\n• Status Icon Text (Res, Summon, etc.)\n• Group Labels (Raid)"], 250), 190)
         infoGroup:AddWidget(GUI:CreateLabel(self.child, L["Note: Font sizes are not changed. Adjust sizes in each element's page."], 250), 40)
         Add(infoGroup, nil, 2)
     end)
@@ -2560,7 +2560,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- ===== SORTING OPTIONS GROUP (Column 1) =====
         local sortOptionsGroup = GUI:CreateSettingsGroup(self.child, 280)
         sortOptionsGroup:AddWidget(GUI:CreateHeader(self.child, L["Unit Frame Sorting"]), 40)
-        sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, L["Sort party members by role (or keep Blizzard party/raid index order).\n\nWhen sorting by role the order is: Self Position > Role > Class > Name", 250), 60)
+        sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, L["Sort party members by role (or keep Blizzard party/raid index order).\n\nWhen sorting by role the order is: Self Position > Role > Class > Name"], 250), 60)
         
         local raidSortNote = sortOptionsGroup:AddWidget(GUI:CreateLabel(self.child, L["Raid: Group layout sorts within each group.\nFlat grid layout sorts all players together."], 250), 35)
         raidSortNote.hideOn = function() return GUI.SelectedMode ~= "raid" end
