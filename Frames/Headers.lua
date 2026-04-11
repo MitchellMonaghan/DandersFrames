@@ -8,6 +8,9 @@ local addonName, DF = ...
 -- Make addon accessible globally for XML OnLoad
 DandersFrames = DF
 
+-- Forward declaration (defined later, needed by ProcessRosterUpdate)
+local IteratePinnedFrames
+
 -- ============================================================
 -- FRAME-BASED THROTTLING
 -- Delays roster updates to next frame, automatically coalescing
@@ -18,6 +21,7 @@ DandersFrames = DF
 -- ============================================================
 local rosterThrottleFrame = CreateFrame("Frame")
 rosterThrottleFrame:Hide()
+DF._rosterThrottleFrame = rosterThrottleFrame
 local gruEventCount = 0        -- total GRU events since last PEW
 local gruBurstCount = 0        -- GRU events coalesced into current throttle batch
 rosterThrottleFrame:SetScript("OnUpdate", function(self)
@@ -642,6 +646,12 @@ function DF:InitializeHeaderChild(frame)
                 -- No event re-registration needed: global headerChildEventFrame
                 -- uses unitFrameMap[unit] for dispatch, which we just updated above.
 
+                -- Rebind private aura (boss debuff) anchors to new unit token
+                -- Containers stay on the same frame, only the monitored unit changes
+                if DF.ReanchorPrivateAuras then
+                    DF:ReanchorPrivateAuras(self)
+                end
+
                 return
             end
             
@@ -673,6 +683,10 @@ function DF:InitializeHeaderChild(frame)
             -- Clear stale range state - prevents new player inheriting old player's
             -- faded-out appearance until next range timer tick
             self.dfInRange = nil
+            -- Clear private aura unit tracking so next reanchor won't skip
+            if not actualUnit then
+                self.bossDebuffAnchoredUnit = nil
+            end
             -- Cache new unit's GUID
             if actualUnit then
                 -- Clear stale aura/range data that may belong to old occupant of this slot
@@ -703,6 +717,11 @@ function DF:InitializeHeaderChild(frame)
             
             -- Trigger a comprehensive update for the frame
             if actualUnit then
+                -- Rebind private aura (boss debuff) anchors to new unit token
+                if DF.ReanchorPrivateAuras then
+                    DF:ReanchorPrivateAuras(self)
+                end
+
                 C_Timer.After(0, function()
                     if self:IsVisible() and self.unit then
                         -- Use full frame refresh for complete update
@@ -3471,7 +3490,24 @@ function DF:UpdateRaidGroupOrderAttributes()
     local handler = DF.raidPositionHandler
     
     -- Get the base display order from settings
-    local displayOrder = db.raidGroupDisplayOrder or {1, 2, 3, 4, 5, 6, 7, 8}
+    local displayOrder = db.raidGroupDisplayOrder
+    -- Validate: must be a table with exactly 8 numeric entries covering groups 1-8
+    local isValid = type(displayOrder) == "table"
+    if isValid then
+        local seen = {}
+        for i = 1, 8 do
+            local v = displayOrder[i]
+            if type(v) ~= "number" or v < 1 or v > 8 or seen[v] then
+                isValid = false
+                break
+            end
+            seen[v] = true
+        end
+    end
+    if not isValid then
+        DF:DebugWarn("UpdateRaidGroupOrderAttributes: raidGroupDisplayOrder is invalid or missing, using default order")
+        displayOrder = {1, 2, 3, 4, 5, 6, 7, 8}
+    end
     
     -- Build effective order (possibly with player's group first)
     local effectiveOrder = {}
@@ -3496,7 +3532,11 @@ function DF:UpdateRaidGroupOrderAttributes()
     -- Set attributes for each display position (1-8)
     -- displayorder1 = which group number should be in position 1, etc.
     for displayPos = 1, 8 do
-        local groupNum = effectiveOrder[displayPos] or displayPos
+        local groupNum = effectiveOrder[displayPos]
+        if not groupNum then
+            DF:DebugWarn("UpdateRaidGroupOrderAttributes: effectiveOrder[%d] is nil, falling back", displayPos)
+            groupNum = displayPos
+        end
         handler:SetAttribute("displayorder" .. displayPos, groupNum)
     end
     
@@ -3508,7 +3548,7 @@ function DF:UpdateRaidGroupOrderAttributes()
     
     if DF.debugHeaders then
         local orderStr = table.concat(effectiveOrder, ",")
-        print("|cFF00FF00[DF Headers]|r Group display order: " .. orderStr)
+        DF:Debug("UpdateRaidGroupOrderAttributes: group display order: %s", orderStr)
     end
 end
 
@@ -3920,6 +3960,9 @@ function DF:ApplyRaidGroupSorting()
     local db = DF:GetRaidDB()
     if not db.raidUseGroups then return end
 
+    DF:Debug("RAIDPOS", "ApplyRaidGroupSorting ENTRY: members=%d anchor=(%.1f,%.1f)",
+        GetNumGroupMembers(), db.raidAnchorX or 0, db.raidAnchorY or 0)
+
     -- FrameSort integration: yield sorting to FrameSort when active
     if DF:IsFrameSortActive() then return end
 
@@ -4138,6 +4181,15 @@ function DF:ApplyRaidGroupSorting()
     -- were already off, each child OnShow would independently fire the position snippet,
     -- creating N redundant repositions. By keeping suppress on, those OnShow hooks
     -- are no-ops, and we fire ONE authoritative reposition after unsuppressing.
+    --
+    -- IMPORTANT: Force-clear the layout cache before updating attributes.
+    -- An auto-profile switch may have applied new frame dimensions (frameWidth,
+    -- frameHeight, groupSpacing, etc.) between the roster throttle firing and this
+    -- sort running. Without the cache clear, UpdateRaidHeaderLayoutAttributes skips
+    -- if horizontal/spacing appear unchanged, and the position snippet fires with
+    -- stale handler attributes — causing groups to overlap.
+    lastLayoutHorizontal = nil
+    lastLayoutSpacing = nil
     DF:UpdateRaidPositionAttributes()
 
     -- NOW unsuppress and fire the single authoritative reposition
@@ -4145,7 +4197,45 @@ function DF:ApplyRaidGroupSorting()
     if DF.raidPositionHandler then
         DF.raidPositionHandler:SetAttribute("suppressreposition", 0)
     end
+
+    -- Authoritative Lua-side recount: secure OnShow/OnHide hooks may have
+    -- set intermediate counts during the Hide/Show cycle above. Recount
+    -- from Lua to guarantee the position snippet sees final child state.
+    -- This is critical for CENTER alignment where all groups shift when
+    -- numPopulated changes — stale counts produce wrong centering offsets.
+    if DF.raidPositionHandler then
+        for i = 1, 8 do
+            local header = DF.raidSeparatedHeaders[i]
+            if header then
+                local count = 0
+                for ci = 1, 5 do
+                    local ch = header:GetAttribute("child" .. ci)
+                    if ch and ch:IsShown() then count = count + 1 end
+                end
+                DF.raidPositionHandler:SetAttribute("group" .. i .. "count", count)
+            end
+        end
+    end
+
     DF:TriggerRaidPosition()
+
+    -- Safety net: SecureGroupHeaderTemplate may defer child Show/Hide past
+    -- the synchronous reposition above. Re-trigger after a brief delay to
+    -- catch any stale group counts. (#571)
+    C_Timer.After(0.05, function()
+        if not InCombatLockdown() then
+            DF:TriggerRaidPosition()
+        end
+    end)
+
+    -- Re-anchor container after positionSnippet resizes it — the CENTER anchor
+    -- shifts when dimensions change, so reapply the saved position
+    C_Timer.After(0.1, function()
+        if not InCombatLockdown() and DF.UpdateRaidContainerPosition then
+            DF:Debug("ROSTER", "ApplyRaidGroupSorting: re-anchoring raidContainer after resize")
+            DF:UpdateRaidContainerPosition()
+        end
+    end)
 
     -- Log header positions after reposition for diagnosis
     if DF.raidSeparatedHeaders then
@@ -4169,9 +4259,14 @@ function DF:ApplyRaidGroupSorting()
     
     -- NOTE: Frame refresh is handled by OnAttributeChanged when units swap
     -- No need for explicit refresh here - it causes flicker due to double update
-    
+
     if DF.debugHeaders then
         print("|cFF00FF00[DF Headers]|r Raid group sorting applied")
+    end
+
+    -- Schedule private aura reanchor after all attribute changes settle
+    if DF.SchedulePrivateAuraReanchor then
+        DF:SchedulePrivateAuraReanchor()
     end
 end
 
@@ -5272,12 +5367,21 @@ function DF:UpdateRaidHeaderVisibility(skipReposition)
         DF:Debug("VISIBILITY", "  Raid mode: FLAT (FlatRaidFrames)")
         -- Combined mode (flat layout): use FlatRaidFrames
 
-        -- CRITICAL: Hide separated headers FIRST before enabling FlatRaidFrames
+        -- CRITICAL: Hide separated headers FIRST before enabling FlatRaidFrames.
+        -- Also neutralize their secure attributes so stale groupFilter/nameList/showRaid
+        -- values from the previous grouped layout can't bleed into the next switch.
         if DF.raidSeparatedHeaders then
             for i = 1, 8 do
-                if DF.raidSeparatedHeaders[i] then
-                    DF.raidSeparatedHeaders[i]:Hide()
-                    DF:SetHeaderChildrenEventsEnabled(DF.raidSeparatedHeaders[i], false)
+                local header = DF.raidSeparatedHeaders[i]
+                if header then
+                    header:SetAttribute("showRaid", false)
+                    header:SetAttribute("showParty", false)
+                    header:SetAttribute("showPlayer", false)
+                    header:SetAttribute("nameList", "")
+                    header:SetAttribute("sortMethod", "NAMELIST")
+                    header:SetAttribute("groupFilter", nil)
+                    header:Hide()
+                    DF:SetHeaderChildrenEventsEnabled(header, false)
                 end
             end
         end
@@ -5945,6 +6049,11 @@ function DF:ApplyPartyGroupSorting()
     
     -- NOTE: Frame refresh is handled by OnAttributeChanged when units swap
     -- No need for explicit refresh here - it causes flicker due to double update
+
+    -- Schedule private aura reanchor after all attribute changes settle
+    if DF.SchedulePrivateAuraReanchor then
+        DF:SchedulePrivateAuraReanchor()
+    end
 end
 
 -- ============================================================
@@ -6069,6 +6178,11 @@ function DF:ApplyArenaHeaderSorting()
         if DF.debugHeaders then
             print("|cFF00FF00[DF Headers]|r   Arena using nameList mode:", nameList)
         end
+    end
+
+    -- Schedule private aura reanchor after all attribute changes settle
+    if DF.SchedulePrivateAuraReanchor then
+        DF:SchedulePrivateAuraReanchor()
     end
 end
 
@@ -7032,8 +7146,8 @@ function DF:ApplyHeaderSettings()
     local raidHorizontal = (raidDb.growDirection == "HORIZONTAL")
 
     if raidDb.raidUseGroups then
-        -- Separated mode: use growthAnchor for groups
-        local raidGrowFrom = raidDb.growthAnchor or "START"
+        -- Separated mode: use raidGroupAnchor for groups
+        local raidGrowFrom = raidDb.raidGroupAnchor or "START"
         DF:SetRaidOrientation(false, raidGrowFrom)
     else
         -- Combined/flat mode: use raidFlatPlayerAnchor (different setting!)
@@ -7061,6 +7175,10 @@ function DF:ApplyHeaderSettings()
     -- Arena: skip raid sorting entirely (arena orientation was already applied above)
     local contentType = DF.GetContentType and DF:GetContentType()
     if contentType == "arena" then
+        -- Schedule private aura reanchor after attribute changes settle
+        if DF.SchedulePrivateAuraReanchor then
+            DF:SchedulePrivateAuraReanchor()
+        end
         return
     end
 
@@ -7128,7 +7246,13 @@ function DF:ApplyHeaderSettings()
     if DF.debugFlatLayout then
         print("|cFFFF00FF[DF Flat Debug]|r ==========================================")
     end
-    
+
+    -- Schedule private aura reanchor after ALL attribute changes settle.
+    -- This catches the showRaid false/true toggle above which can cause a second
+    -- round of unit reassignments after the sorting functions have already run.
+    if DF.SchedulePrivateAuraReanchor then
+        DF:SchedulePrivateAuraReanchor()
+    end
 end
 
 -- ============================================================
@@ -7879,6 +8003,19 @@ function DF:ProcessRosterUpdate()
     local inRaid = IsInRaid()
     DF:Debug("ROSTER", "ProcessRosterUpdate: %d members, inRaid=%s", numGroup, tostring(inRaid))
 
+    -- RAIDPOS diagnostic: capture container position state at the start of every
+    -- roster processing pass so we can correlate "frames jumped" reports with the
+    -- exact db values + auto-profile state at that moment.
+    if DF.raidContainer and DF.Debug then
+        local rdb = DF:GetRaidDB()
+        local activeAuto = (DF.AutoProfilesUI and DF.AutoProfilesUI.activeRuntimeProfile
+            and DF.AutoProfilesUI.activeRuntimeProfile.name) or "none"
+        DF:Debug("RAIDPOS", "ProcessRosterUpdate ENTRY: members=%d inRaid=%s anchor=(%.1f,%.1f) scale=%.3f autoProfile=%s",
+            numGroup, tostring(inRaid),
+            rdb and rdb.raidAnchorX or 0, rdb and rdb.raidAnchorY or 0,
+            rdb and rdb.frameScale or 1.0, activeAuto)
+    end
+
     -- Clear range cache so stale unit→range mappings are flushed
     -- (moved here from Range.lua's own GROUP_ROSTER_UPDATE handler)
     if DF.ClearRangeCache then
@@ -7969,10 +8106,24 @@ function DF:ProcessRosterUpdate()
         DF:UpdatePlayerGroupTracking()
     end
     
+    -- Detect flat→grouped transition: grouped headers may have zero children
+    -- after flat mode cleared their attributes. Force sorting to repopulate them.
+    local groupedHeadersEmpty = false
+    if IsInRaid() and raidDb and raidDb.raidUseGroups and DF.raidPositionHandler then
+        local totalCount = 0
+        for i = 1, 8 do
+            totalCount = totalCount + (DF.raidPositionHandler:GetAttribute("group" .. i .. "count") or 0)
+        end
+        if totalCount == 0 and GetNumGroupMembers() > 0 then
+            groupedHeadersEmpty = true
+            DF:Debug("ROSTER", "  Grouped headers empty despite active raid — forcing sort")
+        end
+    end
+
     -- Check if roster membership actually changed
     -- This prevents redundant sorting when GROUP_ROSTER_UPDATE fires multiple times
     -- with the same roster data
-    if not HasRosterMembershipChanged() then
+    if not groupedHeadersEmpty and not HasRosterMembershipChanged() then
         DF:Debug("ROSTER", "  Roster unchanged — skipping sorting, rebuilding unitFrameMap")
         -- Roster is identical - skip sorting
         -- Visibility update already handled above
@@ -7990,6 +8141,12 @@ function DF:ProcessRosterUpdate()
         -- children internally). TriggerRaidPosition is cheap and has a flat-mode guard.
         if IsInRaid() and raidDb and raidDb.raidUseGroups then
             DF:TriggerRaidPosition()
+            -- Safety net: deferred child visibility may cause stale counts (#571)
+            C_Timer.After(0.05, function()
+                if not InCombatLockdown() then
+                    DF:TriggerRaidPosition()
+                end
+            end)
         end
         return
     end
@@ -8063,6 +8220,12 @@ function DF:ProcessRosterUpdate()
     -- when leaving a group or entering an instance (M+ start, zone change)
     if DF.UpdateSummonIcon and DF.IterateAllFrames then
         DF:IterateAllFrames(function(frame)
+            if frame and frame.unit then
+                DF:UpdateSummonIcon(frame)
+            end
+        end)
+        -- Also refresh pinned frames (not covered by IterateAllFrames)
+        IteratePinnedFrames(function(frame)
             if frame and frame.unit then
                 DF:UpdateSummonIcon(frame)
             end
@@ -8158,7 +8321,6 @@ local headerChildEventFrame = CreateFrame("Frame")
 -- Core unit events (formerly per-frame RegisterUnitEvent)
 headerChildEventFrame:RegisterEvent("UNIT_HEALTH")
 headerChildEventFrame:RegisterEvent("UNIT_MAXHEALTH")
-headerChildEventFrame:RegisterEvent("UNIT_AURA")
 headerChildEventFrame:RegisterEvent("UNIT_NAME_UPDATE")
 headerChildEventFrame:RegisterEvent("UNIT_POWER_UPDATE")
 headerChildEventFrame:RegisterEvent("UNIT_MAXPOWER")
@@ -8185,8 +8347,8 @@ headerChildEventFrame:RegisterEvent("READY_CHECK_CONFIRM")
 headerChildEventFrame:RegisterEvent("READY_CHECK_FINISHED")
 headerChildEventFrame:RegisterEvent("PARTY_LEADER_CHANGED")
 
--- Helper to iterate pinned frame children
-local function IteratePinnedFrames(callback)
+-- Helper to iterate pinned frame children (forward-declared near file top)
+IteratePinnedFrames = function(callback)
     if not DF.PinnedFrames or not DF.PinnedFrames.initialized or not DF.PinnedFrames.headers then
         return
     end
@@ -8266,28 +8428,11 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
         return
     end
     
-    -- UNIT_AURA: Update external def icon
-    -- NOTE: UpdateAuras and UpdateDispelOverlay are driven by hooksecurefunc on
-    -- CompactUnitFrame_UpdateAuras (Auras.lua) to ensure fresh cache data
-    if event == "UNIT_AURA" then
-        local unit = arg1
-        if unit then
-            local frame = unitFrameMap[unit]
-            if frame and frame.dfEventsEnabled ~= false then
-                if DF.UpdateExternalDefIcon then
-                    DF:UpdateExternalDefIcon(frame)
-                end
-            end
-            local pinnedFrame = FindPinnedFrameForUnit(unit)
-            if pinnedFrame and pinnedFrame.dfEventsEnabled ~= false then
-                if DF.UpdateExternalDefIcon then
-                    DF:UpdateExternalDefIcon(pinnedFrame)
-                end
-            end
-        end
-        return
-    end
-    
+    -- NOTE: UNIT_AURA is no longer handled here — see externalDefSubscriber
+    -- below, which subscribes to the roster unit event dispatcher. UpdateAuras
+    -- and UpdateDispelOverlay are driven by hooksecurefunc on
+    -- CompactUnitFrame_UpdateAuras (Auras.lua) to ensure fresh cache data.
+
     -- UNIT_POWER_UPDATE / UNIT_MAXPOWER / UNIT_DISPLAYPOWER: Update power bar
     if event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
         local unit = arg1
@@ -8374,9 +8519,11 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
                     recheckFrame = unitFrameMap[unit]
                 end
                 if recheckFrame and recheckFrame.dfEventsEnabled ~= false then
-                    -- Stale state: connected+alive but still faded, or disconnected but not faded
-                    local stale = (isConnected and not isDead and recheckFrame.dfDeadFadeApplied)
-                                  or (not isConnected and not recheckFrame.dfDeadFadeApplied)
+                    -- Stale state: frame's tracked connection state doesn't match reality.
+                    -- Uses dfLastKnownConnected instead of dfDeadFadeApplied so it works
+                    -- even when fadeDeadFrames is disabled. (#570)
+                    local frameThinks = recheckFrame.dfLastKnownConnected
+                    local stale = (frameThinks == nil) or (isConnected ~= frameThinks)
                     if stale and DF.UpdateUnitFrame then
                         DF:UpdateUnitFrame(recheckFrame)
                     end
@@ -8384,8 +8531,8 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
                 -- Also re-check pinned frame
                 local recheckPinned = FindPinnedFrameForUnit(unit)
                 if recheckPinned and recheckPinned.dfEventsEnabled ~= false then
-                    local stale = (isConnected and not isDead and recheckPinned.dfDeadFadeApplied)
-                                  or (not isConnected and not recheckPinned.dfDeadFadeApplied)
+                    local frameThinks = recheckPinned.dfLastKnownConnected
+                    local stale = (frameThinks == nil) or (isConnected ~= frameThinks)
                     if stale and DF.UpdateUnitFrame then
                         DF:UpdateUnitFrame(recheckPinned)
                     end
@@ -8674,6 +8821,36 @@ headerChildEventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
+-- ========================================
+-- UNIT_AURA — routed through the roster unit event dispatcher
+-- ========================================
+-- The external defensive icon listens for UNIT_AURA on roster units only.
+-- The dispatcher (RosterEvents.lua) uses RegisterUnitEvent at the C++ level
+-- so this only fires for player/partyN/raidN — never nameplates, target,
+-- focus, mouseover, or any other unit token. UpdateAuras and
+-- UpdateDispelOverlay are still driven by hooksecurefunc on
+-- CompactUnitFrame_UpdateAuras (Auras.lua) for cache freshness, so this
+-- subscriber's only job is to drive UpdateExternalDefIcon.
+local externalDefSubscriber = {}
+function externalDefSubscriber:OnUnitAura(event, unit)
+    if not DF.headersInitialized then return end
+    if not unit then return end
+
+    local frame = unitFrameMap[unit]
+    if frame and frame.dfEventsEnabled ~= false then
+        if DF.UpdateExternalDefIcon then
+            DF:UpdateExternalDefIcon(frame)
+        end
+    end
+    local pinnedFrame = FindPinnedFrameForUnit(unit)
+    if pinnedFrame and pinnedFrame.dfEventsEnabled ~= false then
+        if DF.UpdateExternalDefIcon then
+            DF:UpdateExternalDefIcon(pinnedFrame)
+        end
+    end
+end
+DF:RegisterRosterUnitEvent(externalDefSubscriber, "UNIT_AURA", "OnUnitAura")
+
 -- Slash command for debug
 SLASH_DFHEADERS1 = "/dfheaders"
 SlashCmdList["DFHEADERS"] = function(msg)
@@ -8722,7 +8899,7 @@ SlashCmdList["DFHEADERS"] = function(msg)
         local growFrom = db.growthAnchor or "START"
         local selfPos = db.sortSelfPosition or "FIRST"
         -- Use correct anchor based on raid layout mode
-        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.growthAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
+        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.raidGroupAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
         DF:SetPartyOrientation(true, growFrom, selfPos)
         DF:SetRaidOrientation(true, raidGrowFrom)
     
@@ -8732,7 +8909,7 @@ SlashCmdList["DFHEADERS"] = function(msg)
         local growFrom = db.growthAnchor or "START"
         local selfPos = db.sortSelfPosition or "FIRST"
         -- Use correct anchor based on raid layout mode
-        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.growthAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
+        local raidGrowFrom = raidDb.raidUseGroups and (raidDb.raidGroupAnchor or "START") or (raidDb.raidFlatPlayerAnchor or "START")
         DF:SetPartyOrientation(false, growFrom, selfPos)
         DF:SetRaidOrientation(false, raidGrowFrom)
     

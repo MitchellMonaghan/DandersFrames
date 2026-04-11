@@ -16,6 +16,7 @@ local wipe = table.wipe
 local floor = math.floor
 local strsplit = strsplit
 local GetTime = GetTime
+local InCombatLockdown = InCombatLockdown
 
 -- Debug throttle: only log once per N seconds to avoid spam
 local debugLastLog = 0
@@ -25,6 +26,7 @@ local DEBUG_INTERVAL = 3  -- seconds between debug dumps
 local sanitizedSpecAuras = {}
 
 DF.AuraDesigner = DF.AuraDesigner or {}
+DF.adConfigVersion = 0
 
 local Engine = {}
 DF.AuraDesigner.Engine = Engine
@@ -135,6 +137,108 @@ local function prioritySort(a, b)
     return a.priority < b.priority  -- Lower number = higher priority (1 wins over 10)
 end
 
+-- Hoisted from an inline closure inside ResolveLayoutGroups' sort call.
+-- Module-level so table.sort doesn't allocate a fresh closure every
+-- Engine:UpdateFrame call.
+local function memberIdxSort(a, b)
+    return a.memberIdx < b.memberIdx
+end
+
+-- ============================================================
+-- INDICATOR ENTRY POOL
+-- ============================================================
+-- activeIndicators is a list of small tables, each describing one
+-- tracked-aura indicator for a single frame update. Old code did
+-- `tinsert(activeIndicators, { auraName=..., instanceKey=..., ... })`
+-- at 2-4 sites per Engine:UpdateFrame call, allocating a fresh 7-8
+-- field table per tinsert. For a Restoration Druid with ~15 tracked
+-- auras and a few active at any given time, that's 3-10 fresh tables
+-- per call at 1-5 calls/sec per unit in raid — a real contributor to
+-- the 10-15 KB/call observed in UpdateAuras_Enhanced's profile row
+-- after Fix A commit 4 landed.
+--
+-- Pool strategy: reuse entries across calls. At the start of each
+-- Engine:UpdateFrame, return all entries from the previous run to
+-- the pool before wiping activeIndicators. New entries come from
+-- AcquireIndicatorEntry which either pulls from the pool or
+-- allocates a single table.
+--
+-- Fields MUST be explicitly set by the caller — the acquire step
+-- does not clear them, and stale values from a previous use would
+-- leak if the caller relies on nil. The release step clears all
+-- known fields so the table is safe to reuse.
+local indicatorEntryPool = {}
+local INDICATOR_POOL_MAX = 64  -- generous cap for any realistic AD config
+
+local function AcquireIndicatorEntry()
+    local n = #indicatorEntryPool
+    if n > 0 then
+        local entry = indicatorEntryPool[n]
+        indicatorEntryPool[n] = nil
+        return entry
+    end
+    return {}
+end
+
+local function ReleaseIndicatorEntry(entry)
+    -- Clear all fields that any tinsert site sets — prevents stale
+    -- values leaking when the entry is reused for a different code
+    -- path (e.g. a placed-indicator entry being reused for a
+    -- frame-level-indicator entry that doesn't have instanceKey).
+    entry.auraName = nil
+    entry.instanceKey = nil
+    entry.typeKey = nil
+    entry.placed = nil
+    entry.config = nil
+    entry.auraData = nil
+    entry.isMissingAura = nil
+    entry.priority = nil
+    if #indicatorEntryPool < INDICATOR_POOL_MAX then
+        indicatorEntryPool[#indicatorEntryPool + 1] = entry
+    end
+    -- else: drop the entry, let GC collect it (only if pool is saturated)
+end
+
+-- Release all entries currently in the active list and wipe it.
+-- Called at the start of Engine:UpdateFrame before the new run
+-- rebuilds the list.
+local function ReleaseAndWipeActiveIndicators()
+    for i = 1, #activeIndicators do
+        ReleaseIndicatorEntry(activeIndicators[i])
+    end
+    wipe(activeIndicators)
+end
+
+-- ============================================================
+-- INSTANCE KEY CACHE
+-- ============================================================
+-- `instanceKey` is the string "auraName#indicatorID" used by
+-- Indicators:Configure/Apply for pool lookup and by the layout
+-- group system for member identification. The old code built this
+-- string fresh every call via concatenation — each concat allocates
+-- a new Lua string.
+--
+-- Cache the string per (auraName, indicatorID) pair. For a typical
+-- AD config the set of unique keys is small (one per indicator,
+-- ~15-50 total) and never grows during normal play. After warmup,
+-- GetInstanceKey is a pure two-level table lookup with zero
+-- allocation.
+local instanceKeyCache = {}  -- [auraName] = { [indicatorID] = "auraName#indicatorID" }
+
+local function GetInstanceKey(auraName, indicatorID)
+    local sub = instanceKeyCache[auraName]
+    if not sub then
+        sub = {}
+        instanceKeyCache[auraName] = sub
+    end
+    local key = sub[indicatorID]
+    if not key then
+        key = auraName .. "#" .. indicatorID
+        sub[indicatorID] = key
+    end
+    return key
+end
+
 -- ============================================================
 -- LAYOUT GROUP RESOLUTION
 -- Builds lookup tables for layout group membership and computes
@@ -172,7 +276,7 @@ local function ResolveLayoutGroups(adDB, activeInds, spec)
     -- Sort each group's active members by their member order
     for _, actives in pairs(groupActiveMembers) do
         if #actives > 1 then
-            sort(actives, function(a, b) return a.memberIdx < b.memberIdx end)
+            sort(actives, memberIdxSort)
         end
     end
 end
@@ -224,6 +328,10 @@ end
 
 function Engine:ResolveSpec(adDB)
     if adDB.spec == "auto" then
+        if not Adapter then
+            Adapter = DF.AuraDesigner.Adapter
+        end
+        if not Adapter then return nil end
         return Adapter:GetPlayerSpec()
     end
     return adDB.spec
@@ -355,8 +463,10 @@ function Engine:UpdateFrame(frame)
         end
     end
 
-    -- Gather configured auras that are currently active
-    wipe(activeIndicators)
+    -- Gather configured auras that are currently active.
+    -- Release entries from the previous run back to the pool before
+    -- wiping — they're small and reusable across every call.
+    ReleaseAndWipeActiveIndicators()
     local auras = specAuras
     if auras then
         for auraName, auraCfg in pairs(auras) do
@@ -390,26 +500,27 @@ function Engine:UpdateFrame(frame)
                         if isMissing then
                             effectiveAuraData = buildSyntheticAuraData(auraName, spec)
                         end
-                        tinsert(activeIndicators, {
-                            auraName    = auraName,
-                            instanceKey = auraName .. "#" .. indicator.id,
-                            typeKey     = indicator.type,
-                            placed      = true,
-                            config      = indicator,
-                            auraData    = effectiveAuraData,
-                            isMissingAura = isMissing,
-                            priority    = priority,
-                        })
+                        local entry = AcquireIndicatorEntry()
+                        entry.auraName      = auraName
+                        entry.instanceKey   = GetInstanceKey(auraName, indicator.id)
+                        entry.typeKey       = indicator.type
+                        entry.placed        = true
+                        entry.config        = indicator
+                        entry.auraData      = effectiveAuraData
+                        entry.isMissingAura = isMissing
+                        entry.priority      = priority
+                        tinsert(activeIndicators, entry)
                     elseif auraData then
-                        tinsert(activeIndicators, {
-                            auraName    = auraName,
-                            instanceKey = auraName .. "#" .. indicator.id,
-                            typeKey     = indicator.type,
-                            placed      = true,
-                            config      = indicator,
-                            auraData    = auraData,
-                            priority    = priority,
-                        })
+                        local entry = AcquireIndicatorEntry()
+                        entry.auraName    = auraName
+                        entry.instanceKey = GetInstanceKey(auraName, indicator.id)
+                        entry.typeKey     = indicator.type
+                        entry.placed      = true
+                        entry.config      = indicator
+                        entry.auraData    = auraData
+                        -- isMissingAura intentionally left nil (not a missing-aura entry)
+                        entry.priority    = priority
+                        tinsert(activeIndicators, entry)
                     end
                 end
             end
@@ -530,24 +641,27 @@ function Engine:UpdateFrame(frame)
                         if isTriggerMissing then
                             effectiveTrigger = buildSyntheticAuraData(auraName, spec)
                         end
-                        tinsert(activeIndicators, {
-                            auraName = auraName,
-                            typeKey  = typeDef.key,
-                            placed   = false,
-                            config   = typeCfg,
-                            auraData = effectiveTrigger,
-                            isMissingAura = isTriggerMissing,
-                            priority = priority,
-                        })
+                        local entry = AcquireIndicatorEntry()
+                        entry.auraName      = auraName
+                        -- instanceKey intentionally left nil (frame-level indicator)
+                        entry.typeKey       = typeDef.key
+                        entry.placed        = false
+                        entry.config        = typeCfg
+                        entry.auraData      = effectiveTrigger
+                        entry.isMissingAura = isTriggerMissing
+                        entry.priority      = priority
+                        tinsert(activeIndicators, entry)
                     elseif triggerAuraData then
-                        tinsert(activeIndicators, {
-                            auraName = auraName,
-                            typeKey  = typeDef.key,
-                            placed   = false,
-                            config   = typeCfg,
-                            auraData = triggerAuraData,
-                            priority = priority,
-                        })
+                        local entry = AcquireIndicatorEntry()
+                        entry.auraName    = auraName
+                        -- instanceKey intentionally left nil (frame-level indicator)
+                        entry.typeKey     = typeDef.key
+                        entry.placed      = false
+                        entry.config      = typeCfg
+                        entry.auraData    = triggerAuraData
+                        -- isMissingAura intentionally left nil
+                        entry.priority    = priority
+                        tinsert(activeIndicators, entry)
                     end
                 end
             end
@@ -662,6 +776,28 @@ function Engine:UpdateFrame(frame)
             end
         end
 
+        -- Configure-once: only reconfigure when AD settings have changed
+        if ind.typeKey == "icon" or ind.typeKey == "square" or ind.typeKey == "bar" then
+            local indicatorFrame = nil
+            if ind.typeKey == "icon" then
+                indicatorFrame = frame.dfAD_icons and frame.dfAD_icons[key]
+            elseif ind.typeKey == "square" then
+                indicatorFrame = frame.dfAD_squares and frame.dfAD_squares[key]
+            elseif ind.typeKey == "bar" then
+                indicatorFrame = frame.dfAD_bars and frame.dfAD_bars[key]
+            end
+            -- Configure if version is stale — but only outside combat since
+            -- SetPropagateMouseMotion/Clicks are protected functions.
+            -- Pre-warm (below) ensures frames are created and configured before combat.
+            -- If a brand-new aura appears mid-combat, it runs without Configure
+            -- and gets configured on PLAYER_REGEN_ENABLED via adConfigVersion mismatch.
+            if not InCombatLockdown() then
+                if not indicatorFrame or indicatorFrame.dfAD_configVersion ~= (DF.adConfigVersion or 0) then
+                    Indicators:Configure(frame, ind.typeKey, config, adDB.defaults, key, ind.priority)
+                end
+            end
+        end
+
         Indicators:Apply(frame, ind.typeKey, config, ind.auraData, adDB.defaults, key, ind.priority)
     end
 
@@ -744,7 +880,9 @@ function Engine:UpdateTestFrame(frame)
     local now = GetTime()
     local mockCounter = 99000
 
-    wipe(activeIndicators)
+    -- Release entries from the previous call back to the pool before
+    -- rebuilding. Same pattern as Engine:UpdateFrame.
+    ReleaseAndWipeActiveIndicators()
 
     for auraName, auraCfg in pairs(specAuras) do
       if type(auraCfg) == "table" then
@@ -807,26 +945,27 @@ function Engine:UpdateTestFrame(frame)
                     if isMissing then
                         effectiveAuraData = buildSyntheticAuraData(auraName, spec)
                     end
-                    tinsert(activeIndicators, {
-                        auraName    = auraName,
-                        instanceKey = auraName .. "#" .. indicator.id,
-                        typeKey     = indicator.type,
-                        placed      = true,
-                        config      = indicator,
-                        auraData    = effectiveAuraData,
-                        isMissingAura = isMissing,
-                        priority    = priority,
-                    })
+                    local entry = AcquireIndicatorEntry()
+                    entry.auraName      = auraName
+                    entry.instanceKey   = GetInstanceKey(auraName, indicator.id)
+                    entry.typeKey       = indicator.type
+                    entry.placed        = true
+                    entry.config        = indicator
+                    entry.auraData      = effectiveAuraData
+                    entry.isMissingAura = isMissing
+                    entry.priority      = priority
+                    tinsert(activeIndicators, entry)
                 elseif auraData then
-                    tinsert(activeIndicators, {
-                        auraName    = auraName,
-                        instanceKey = auraName .. "#" .. indicator.id,
-                        typeKey     = indicator.type,
-                        placed      = true,
-                        config      = indicator,
-                        auraData    = auraData,
-                        priority    = priority,
-                    })
+                    local entry = AcquireIndicatorEntry()
+                    entry.auraName    = auraName
+                    entry.instanceKey = GetInstanceKey(auraName, indicator.id)
+                    entry.typeKey     = indicator.type
+                    entry.placed      = true
+                    entry.config      = indicator
+                    entry.auraData    = auraData
+                    -- isMissingAura intentionally left nil
+                    entry.priority    = priority
+                    tinsert(activeIndicators, entry)
                 end
             end
         end
@@ -843,23 +982,28 @@ function Engine:UpdateTestFrame(frame)
                     if isMissing then
                         effectiveAuraData = buildSyntheticAuraData(auraName, spec)
                     end
-                    tinsert(activeIndicators, {
-                        auraName = auraName,
-                        typeKey  = typeDef.key,
-                        placed   = false,
-                        config   = typeCfg,
-                        auraData = effectiveAuraData,
-                        priority = priority,
-                    })
+                    local entry = AcquireIndicatorEntry()
+                    entry.auraName    = auraName
+                    -- instanceKey intentionally left nil (frame-level indicator)
+                    entry.typeKey     = typeDef.key
+                    entry.placed      = false
+                    entry.config      = typeCfg
+                    entry.auraData    = effectiveAuraData
+                    -- isMissingAura intentionally left nil (legacy test-mode behavior
+                    -- didn't set this — matches the pre-refactor state)
+                    entry.priority    = priority
+                    tinsert(activeIndicators, entry)
                 elseif auraData then
-                    tinsert(activeIndicators, {
-                        auraName = auraName,
-                        typeKey  = typeDef.key,
-                        placed   = false,
-                        config   = typeCfg,
-                        auraData = auraData,
-                        priority = priority,
-                    })
+                    local entry = AcquireIndicatorEntry()
+                    entry.auraName    = auraName
+                    -- instanceKey intentionally left nil (frame-level indicator)
+                    entry.typeKey     = typeDef.key
+                    entry.placed      = false
+                    entry.config      = typeCfg
+                    entry.auraData    = auraData
+                    -- isMissingAura intentionally left nil
+                    entry.priority    = priority
+                    tinsert(activeIndicators, entry)
                 end
             end
         end
@@ -913,12 +1057,87 @@ function Engine:UpdateTestFrame(frame)
 end
 
 -- ============================================================
+-- PRE-WARM INDICATOR FRAMES
+-- Pre-creates and configures all indicator frames defined in
+-- AD config so they are ready before combat. This ensures
+-- SetPropagateMouseMotion/Clicks (protected functions) are
+-- called outside combat, avoiding ADDON_ACTION_BLOCKED errors.
+-- ============================================================
+
+function Engine:PreWarmIndicators(frame)
+    if not Adapter then
+        Adapter = DF.AuraDesigner.Adapter
+    end
+    if not Adapter then return end
+    if not Indicators then
+        Indicators = DF.AuraDesigner.Indicators
+    end
+    if not Indicators then return end
+
+    local db = DF:GetFrameDB(frame)
+    if not db then return end
+    local adDB = db.auraDesigner
+    if not adDB then return end
+
+    -- Resolve spec
+    local spec = self:ResolveSpec(adDB)
+    if not spec then return end
+
+    local specAuras = adDB.auras and adDB.auras[spec]
+    if not specAuras then return end
+
+    -- Iterate all configured auras and their placed indicators
+    for auraName, auraCfg in pairs(specAuras) do
+        if type(auraCfg) == "table" and auraCfg.indicators then
+            for _, indicator in ipairs(auraCfg.indicators) do
+                local typeKey = indicator.type
+                if typeKey == "icon" or typeKey == "square" or typeKey == "bar" then
+                    local key = auraName .. "#" .. indicator.id
+                    Indicators:Configure(frame, typeKey, indicator, adDB.defaults, key, auraCfg.priority or 5)
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================
 -- FORCE REFRESH ALL AD-ENABLED FRAMES
 -- Re-runs UpdateFrame on every visible AD frame so changed
 -- global defaults (fonts, sizes, etc.) take effect immediately.
 -- ============================================================
 
 function Engine:ForceRefreshAllFrames()
+    -- Bump config version so all indicators reconfigure on next UpdateFrame
+    DF.adConfigVersion = (DF.adConfigVersion or 0) + 1
+
+    -- Pre-warm: create and configure all indicator frames outside combat
+    -- so SetPropagateMouseMotion/Clicks are set before combat starts
+    local function TryPreWarm(frame)
+        if frame and DF:IsAuraDesignerEnabled(frame) then
+            Engine:PreWarmIndicators(frame)
+        end
+    end
+
+    if not InCombatLockdown() then
+        if DF.IteratePartyFrames then
+            DF:IteratePartyFrames(TryPreWarm)
+        end
+        if DF.IterateRaidFrames then
+            DF:IterateRaidFrames(TryPreWarm)
+        end
+        if DF.PinnedFrames and DF.PinnedFrames.initialized and DF.PinnedFrames.headers then
+            for setIndex = 1, 2 do
+                local header = DF.PinnedFrames.headers[setIndex]
+                if header and header:IsShown() then
+                    for i = 1, 40 do
+                        local child = header:GetAttribute("child" .. i)
+                        if child then TryPreWarm(child) end
+                    end
+                end
+            end
+        end
+    end
+
     local function TryUpdate(frame)
         if frame and frame:IsVisible() and DF:IsAuraDesignerEnabled(frame) then
             Engine:UpdateFrame(frame)

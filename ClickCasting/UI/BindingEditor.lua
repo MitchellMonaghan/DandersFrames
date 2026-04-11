@@ -2,6 +2,8 @@ local addonName, DF = ...
 
 -- Get module namespace
 local CC = DF.ClickCast
+local L = DF.L
+local format = string.format
 
 -- Local aliases for shared constants (defined in Constants.lua)
 local DEFAULT_BINDING_SCOPE = CC.DEFAULT_BINDING_SCOPE
@@ -77,7 +79,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     -- Title
     local title = addBindingDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -12)
-    title:SetText(existingBinding and "Edit Binding" or "Add New Binding")
+    title:SetText(existingBinding and L["Edit Binding"] or L["Add New Binding"])
     title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     -- Close button
@@ -126,7 +128,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     -- STEP 1: Key Combination
     local step1Label = addBindingDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     step1Label:SetPoint("TOPLEFT", 15, yOffset)
-    step1Label:SetText("Step 1: Click here with desired key combo")
+    step1Label:SetText(L["Step 1: Click here with desired key combo"])
     step1Label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     yOffset = yOffset - 20
     
@@ -174,7 +176,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
         macWarning:SetPoint("TOPLEFT", keyCaptureBtn, "BOTTOMLEFT", 0, -2)
         macWarning:SetWidth(390)
         macWarning:SetJustifyH("LEFT")
-        macWarning:SetText("|cffff9900Note:|r Command + Left Click cannot be bound on Mac.")
+        macWarning:SetText("|cffff9900" .. L["Note: Cmd + Left Click unavailable on Mac"])
         macWarning:SetTextColor(0.9, 0.6, 0.2)
         yOffset = yOffset - 12  -- Extra space for the warning
     end
@@ -184,7 +186,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     -- STEP 2: Action Selection (spell list with Target/Menu at top)
     local step2Label = addBindingDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     step2Label:SetPoint("TOPLEFT", 15, yOffset)
-    step2Label:SetText("Step 2: Select Action")
+    step2Label:SetText(L["Step 2: Select Action"])
     step2Label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     yOffset = yOffset - 20
     
@@ -215,7 +217,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     -- Placeholder text
     local placeholder = spellBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     placeholder:SetPoint("LEFT", 24, 0)
-    placeholder:SetText("Search spells...")
+    placeholder:SetText(L["Search spells..."])
     placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     spellBox:SetScript("OnEditFocusGained", function() placeholder:Hide() end)
@@ -245,7 +247,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     
     local selectionText = selectionFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     selectionText:SetPoint("LEFT", selectionIcon, "RIGHT", 8, 0)
-    selectionText:SetText("No action selected")
+    selectionText:SetText(L["No action selected"])
     selectionText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Track if valid selection was made
@@ -258,10 +260,10 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
         
         if actionType == "target" then
             selectionIcon:SetTexture(132212) -- Target icon
-            selectionText:SetText("Target Unit")
+            selectionText:SetText(L["Target Unit"])
         elseif actionType == "menu" then
             selectionIcon:SetTexture(134331) -- Menu icon
-            selectionText:SetText("Open Unit Menu")
+            selectionText:SetText(L["Open Unit Menu"])
         else
             selectionIcon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             selectionText:SetText(spellName or "Unknown Spell")
@@ -285,10 +287,11 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     yOffset = yOffset - 35
     
     -- Action list (Target/Menu + Spells)
-    local spellScrollFrame = CreateFrame("ScrollFrame", nil, addBindingDialog, "UIPanelScrollFrameTemplate")
+    local spellScrollFrame = CreateFrame("ScrollFrame", nil, addBindingDialog, "ScrollFrameTemplate")
     spellScrollFrame:SetPoint("TOPLEFT", 15, yOffset)
     spellScrollFrame:SetSize(375, 130)
-    
+    DF.GUI.StyleScrollBar(spellScrollFrame)
+
     local spellListContent = CreateFrame("Frame", nil, spellScrollFrame)
     spellListContent:SetSize(360, 1)
     spellScrollFrame:SetScrollChild(spellListContent)
@@ -395,14 +398,14 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     -- STEP 3: Combat Condition
     local step3Label = addBindingDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     step3Label:SetPoint("TOPLEFT", 15, yOffset)
-    step3Label:SetText("Step 3: Combat Condition (optional)")
+    step3Label:SetText(L["Step 3: Combat Condition (optional)"])
     step3Label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     yOffset = yOffset - 20
     
     local combatOptions = {
-        {value = nil, label = "Always"},
-        {value = "combat", label = "In Combat"},
-        {value = "nocombat", label = "Out of Combat"},
+        {value = nil, label = L["Always"]},
+        {value = "combat", label = L["In Combat Only"]},
+        {value = "nocombat", label = L["Out of Combat Only"]},
     }
     
     local combatButtons = {}
@@ -470,7 +473,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     saveIcon:SetVertexColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     local saveLabel = saveBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     saveLabel:SetPoint("LEFT", saveIcon, "RIGHT", 4, 0)
-    saveLabel:SetText("Save")
+    saveLabel:SetText(L["Save"])
     saveLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
     saveBtn:SetScript("OnEnter", function()
@@ -505,12 +508,12 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
         if not validSelection then
             -- Flash the selection frame red
             selectionFrame:SetBackdropBorderColor(1, 0.3, 0.3, 1)
-            selectionText:SetText("Please select an action!")
+            selectionText:SetText(L["Please select an action!"])
             selectionText:SetTextColor(1, 0.4, 0.4)
             C_Timer.After(2, function()
                 if not validSelection then
                     selectionFrame:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-                    selectionText:SetText("No action selected")
+                    selectionText:SetText(L["No action selected"])
                     selectionText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 end
             end)
@@ -534,7 +537,7 @@ function CC:ShowAddBindingDialog(onComplete, existingBinding, existingIndex)
     
     local cancelLabel = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelLabel:SetPoint("CENTER")
-    cancelLabel:SetText("Cancel")
+    cancelLabel:SetText(L["Cancel"])
     cancelLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     cancelBtn:SetScript("OnEnter", function()
@@ -748,9 +751,9 @@ function CC:CreateBindingRow(parent, binding, index)
     
     -- Add combat state if not "always"
     if combatSetting == "incombat" then
-        table.insert(targetParts, "Combat only")
+        table.insert(targetParts, L["Combat Only"])
     elseif combatSetting == "outofcombat" then
-        table.insert(targetParts, "Out of combat")
+        table.insert(targetParts, L["Out of combat"])
     end
     
     if #targetParts > 0 then
@@ -773,26 +776,26 @@ function CC:CreateBindingRow(parent, binding, index)
         
         -- Show targeting info (not for macros - they handle their own targeting)
         if fallbackText and not isMacro then
-            GameTooltip:AddLine("Targeting: " .. fallbackText, C.textDim.r, C.textDim.g, C.textDim.b)
+            GameTooltip:AddLine(format(L["Targeting: %s"], fallbackText), C.textDim.r, C.textDim.g, C.textDim.b)
         end
         
         -- Show combat state
         if combatSetting == "incombat" then
-            GameTooltip:AddLine("Combat Only", C.combat.r, C.combat.g, C.combat.b)
+            GameTooltip:AddLine(L["Combat Only"], C.combat.r, C.combat.g, C.combat.b)
         elseif combatSetting == "outofcombat" then
-            GameTooltip:AddLine("Out of Combat Only", C.nocombat.r, C.nocombat.g, C.nocombat.b)
+            GameTooltip:AddLine(L["Out of Combat Only"], C.nocombat.r, C.nocombat.g, C.nocombat.b)
         end
         
         -- Show frames info
         local frames = binding.frames or { dandersFrames = true, otherFrames = true }
         local framesParts = {}
         if frames.dandersFrames then table.insert(framesParts, "DandersFrames") end
-        if frames.otherFrames then table.insert(framesParts, "Other Frames") end
-        local framesText = "Frames: " .. (#framesParts > 0 and table.concat(framesParts, ", ") or "None")
+        if frames.otherFrames then table.insert(framesParts, L["Other Frames"]) end
+        local framesText = format(L["Frames: %s"], #framesParts > 0 and table.concat(framesParts, ", ") or "None")
         GameTooltip:AddLine(framesText, 0.6, 0.6, 0.6)
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Click to edit", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Click to edit"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function(self)
@@ -898,7 +901,7 @@ function CC:CreateEditBindingPanel()
     
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("CENTER", titleBar, "CENTER", 0, 0)
-    title:SetText("Edit Binding")
+    title:SetText(L["Edit Binding"])
     title:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     panel.title = title
     
@@ -950,7 +953,7 @@ function CC:CreateEditBindingPanel()
     -- Binding section
     local bindLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     bindLabel:SetPoint("TOPLEFT", 12, -90)
-    bindLabel:SetText("Binding:")
+    bindLabel:SetText(L["Binding:"])
     bindLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local bindButton = CreateFrame("Button", nil, panel, "BackdropTemplate")
@@ -966,7 +969,7 @@ function CC:CreateEditBindingPanel()
     
     local bindText = bindButton:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     bindText:SetPoint("CENTER")
-    bindText:SetText("Click to bind...")
+    bindText:SetText(L["Click to bind..."])
     bindText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.bindText = bindText
     
@@ -1016,7 +1019,7 @@ function CC:CreateEditBindingPanel()
     clearIcon:SetVertexColor(0.8, 0.5, 0.5)
     local clearText = clearBindBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     clearText:SetPoint("LEFT", clearIcon, "RIGHT", 3, 0)
-    clearText:SetText("Clear")
+    clearText:SetText(L["Clear"])
     clearText:SetTextColor(0.8, 0.5, 0.5)
     clearBindBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(1, 0.4, 0.4, 1)
@@ -1029,7 +1032,7 @@ function CC:CreateEditBindingPanel()
         panel.pendingBinding.button = nil
         panel.pendingBinding.key = nil
         panel.pendingBinding.modifiers = ""
-        panel.bindText:SetText("Click to bind...")
+        panel.bindText:SetText(L["Click to bind..."])
         panel.bindText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     end)
     
@@ -1039,7 +1042,7 @@ function CC:CreateEditBindingPanel()
     macWarning:SetPoint("RIGHT", clearBindBtn, "RIGHT", 0, 0)
     macWarning:SetJustifyH("LEFT")
     macWarning:SetWordWrap(false)
-    macWarning:SetText("|cffff9900Mac:|r Cmd+LClick unavailable")
+    macWarning:SetText("|cffff9900" .. L["Note: Cmd + Left Click unavailable on Mac"])
     macWarning:SetTextColor(0.9, 0.6, 0.2)
     if IsMacClient and IsMacClient() then
         macWarning:Show()
@@ -1081,7 +1084,7 @@ function CC:CreateEditBindingPanel()
     -- Frames section (checkboxes)
     local framesLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     framesLabel:SetPoint("TOPLEFT", 12, -125)
-    framesLabel:SetText("Apply to Frames:")
+    framesLabel:SetText(L["Apply to Frames:"])
     framesLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Subtitle explaining what frames options are for
@@ -1090,7 +1093,7 @@ function CC:CreateEditBindingPanel()
     framesSubtitle:SetWidth(295)
     framesSubtitle:SetJustifyH("LEFT")
     framesSubtitle:SetWordWrap(true)
-    framesSubtitle:SetText("Works when hovering frames. Action bars work when not hovering.")
+    framesSubtitle:SetText(L["Works when hovering frames. Action bars work when not hovering."])
     framesSubtitle:SetTextColor(0.5, 0.5, 0.5)
     panel.framesSubtitle = framesSubtitle
     
@@ -1215,15 +1218,15 @@ function CC:CreateEditBindingPanel()
     -- Target Type section (moved up, was below Fallback)
     local targetLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     targetLabel:SetPoint("TOPLEFT", 12, -218)
-    targetLabel:SetText("Target Type:")
+    targetLabel:SetText(L["Target Type:"])
     targetLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.targetLabel = targetLabel
     
     local targetRadios = {}
     local targetOptions = {
-        {key = "all", text = "Any Target", desc = TARGET_INFO.all.desc},
-        {key = "friendly", text = "Friendly Only", desc = TARGET_INFO.friendly.desc},
-        {key = "hostile", text = "Hostile Only", desc = TARGET_INFO.hostile.desc},
+        {key = "all", text = L["Any Target"], desc = TARGET_INFO.all.desc},
+        {key = "friendly", text = L["Friendly Only"], desc = TARGET_INFO.friendly.desc},
+        {key = "hostile", text = L["Hostile Only"], desc = TARGET_INFO.hostile.desc},
     }
     
     for i, opt in ipairs(targetOptions) do
@@ -1254,15 +1257,15 @@ function CC:CreateEditBindingPanel()
     -- Combat/Active section (moved up, was below Target Type)
     local combatLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     combatLabel:SetPoint("TOPLEFT", 12, -302)
-    combatLabel:SetText("Active:")
+    combatLabel:SetText(L["Active:"])
     combatLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.combatLabel = combatLabel
     
     local combatRadios = {}
     local combatOptions = {
-        {key = "always", text = "Always", desc = COMBAT_INFO.always.desc},
-        {key = "incombat", text = "In Combat Only", desc = COMBAT_INFO.incombat.desc},
-        {key = "outofcombat", text = "Out of Combat Only", desc = COMBAT_INFO.outofcombat.desc},
+        {key = "always", text = L["Always"], desc = COMBAT_INFO.always.desc},
+        {key = "incombat", text = L["In Combat Only"], desc = COMBAT_INFO.incombat.desc},
+        {key = "outofcombat", text = L["Out of Combat Only"], desc = COMBAT_INFO.outofcombat.desc},
     }
     
     for i, opt in ipairs(combatOptions) do
@@ -1318,7 +1321,7 @@ function CC:CreateEditBindingPanel()
     
     local advancedText = advancedToggle:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     advancedText:SetPoint("LEFT", advancedArrow, "RIGHT", 4, 0)
-    advancedText:SetText("Advanced")
+    advancedText:SetText(L["Advanced"])
     advancedText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     advancedToggle:SetScript("OnEnter", function(self)
@@ -1342,7 +1345,7 @@ function CC:CreateEditBindingPanel()
     -- Fallback section (inside advanced content)
     local fallbackLabel = advancedContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fallbackLabel:SetPoint("TOPLEFT", 0, 0)
-    fallbackLabel:SetText("Targeting Fallback:")
+    fallbackLabel:SetText(L["Targeting Fallback:"])
     fallbackLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.fallbackLabel = fallbackLabel
     
@@ -1352,7 +1355,7 @@ function CC:CreateEditBindingPanel()
     fallbackSubtitle:SetWidth(280)
     fallbackSubtitle:SetJustifyH("LEFT")
     fallbackSubtitle:SetWordWrap(true)
-    fallbackSubtitle:SetText("For nameplates & world units. |cffff3333Does not work with action bar binds.|r")
+    fallbackSubtitle:SetText(format(L["For nameplates & world units. %sDoes not work with action bar binds.%s"], "|cffff3333", "|r"))
     fallbackSubtitle:SetTextColor(0.5, 0.5, 0.5)
     panel.fallbackSubtitle = fallbackSubtitle
     
@@ -1386,7 +1389,7 @@ function CC:CreateEditBindingPanel()
     -- Macro Options section header
     local macroOptionsLabel = advancedContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     macroOptionsLabel:SetPoint("TOPLEFT", 0, -108)
-    macroOptionsLabel:SetText("Macro Options:")
+    macroOptionsLabel:SetText(L["Macro Options:"])
     macroOptionsLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.macroOptionsLabel = macroOptionsLabel
 
@@ -1402,7 +1405,7 @@ function CC:CreateEditBindingPanel()
     -- Priority slider (inside advanced content)
     local priorityLabel = advancedContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     priorityLabel:SetPoint("TOPLEFT", 0, -158)
-    priorityLabel:SetText("Priority:")
+    priorityLabel:SetText(L["Priority:"])
     priorityLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     panel.priorityLabel = priorityLabel
     
@@ -1444,12 +1447,12 @@ function CC:CreateEditBindingPanel()
     -- Priority hint labels (10 = Low on left, 1 = High on right)
     local lowLabel = advancedContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lowLabel:SetPoint("TOPLEFT", prioritySlider, "BOTTOMLEFT", 0, -2)
-    lowLabel:SetText("10 = Low")
+    lowLabel:SetText(L["10 = Low"])
     lowLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     local highLabel = advancedContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     highLabel:SetPoint("TOPRIGHT", prioritySlider, "BOTTOMRIGHT", 0, -2)
-    highLabel:SetText("1 = High")
+    highLabel:SetText(L["1 = High"])
     highLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     panel.prioritySlider = prioritySlider
@@ -1461,7 +1464,7 @@ function CC:CreateEditBindingPanel()
     -- Global Keybind heading
     local globalBindLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     globalBindLabel:SetPoint("TOPLEFT", 12, -302)  -- Will be repositioned dynamically
-    globalBindLabel:SetText("Global Keybind:")
+    globalBindLabel:SetText(L["Global Keybind:"])
     globalBindLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     globalBindLabel:Hide()
     panel.globalBindLabel = globalBindLabel
@@ -1472,13 +1475,13 @@ function CC:CreateEditBindingPanel()
     globalBindDesc:SetWidth(280)
     globalBindDesc:SetJustifyH("LEFT")
     globalBindDesc:SetWordWrap(true)
-    globalBindDesc:SetText("For items/macros that need @cursor, @mouseover, etc. Consumes the keybind and prevents action bar use.")
+    globalBindDesc:SetText(L["For items/macros that need @cursor, @mouseover, etc. Consumes the keybind and prevents action bar use."])
     globalBindDesc:SetTextColor(0.5, 0.5, 0.5)
     globalBindDesc:Hide()
     panel.globalBindDesc = globalBindDesc
     
     -- Global Keybind checkbox (below description)
-    local globalBindCB = CreateCheckbox(panel, "Enable", "Makes this binding work everywhere, consuming the keybind.")
+    local globalBindCB = CreateCheckbox(panel, L["Enable"], L["Makes this binding work everywhere, consuming the keybind."])
     globalBindCB:SetPoint("TOPLEFT", 30, -350)  -- Will be repositioned dynamically
     globalBindCB:SetScript("OnClick", function(self)
         panel.pendingBinding.useGlobalBind = self:GetChecked()
@@ -1535,7 +1538,7 @@ function CC:CreateEditBindingPanel()
     saveIcon:SetVertexColor(1, 1, 1)
     local saveText = saveBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     saveText:SetPoint("LEFT", saveIcon, "RIGHT", 4, 0)
-    saveText:SetText("Save")
+    saveText:SetText(L["Save"])
     saveText:SetTextColor(1, 1, 1)
     saveBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(themeColor.r * 0.6, themeColor.g * 0.6, themeColor.b * 0.6, 1)
@@ -1546,7 +1549,7 @@ function CC:CreateEditBindingPanel()
     saveBtn:SetScript("OnClick", function()
         CC:SaveEditBindingPanel()
     end)
-    
+
     local cancelBtn = CreateFrame("Button", nil, panel, "BackdropTemplate")
     cancelBtn:SetSize(90, 28)
     cancelBtn:SetPoint("RIGHT", saveBtn, "LEFT", -8, 0)
@@ -1559,7 +1562,7 @@ function CC:CreateEditBindingPanel()
     cancelBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
     local cancelText = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cancelText:SetPoint("CENTER")
-    cancelText:SetText("Cancel")
+    cancelText:SetText(L["Cancel"])
     cancelText:SetTextColor(0.8, 0.8, 0.8)
     cancelBtn:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(0.8, 0.4, 0.4, 1)
@@ -1570,7 +1573,7 @@ function CC:CreateEditBindingPanel()
     cancelBtn:SetScript("OnClick", function()
         CC:HideEditBindingPanel()
     end)
-    
+
     -- Delete button (only shown when editing existing binding)
     local deleteBtn = CreateFrame("Button", nil, panel, "BackdropTemplate")
     deleteBtn:SetSize(80, 28)
@@ -1589,7 +1592,7 @@ function CC:CreateEditBindingPanel()
     deleteIcon:SetVertexColor(1, 0.5, 0.5)
     local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     deleteText:SetPoint("LEFT", deleteIcon, "RIGHT", 4, 0)
-    deleteText:SetText("Delete")
+    deleteText:SetText(L["Delete"])
     deleteText:SetTextColor(1, 0.5, 0.5)
     deleteBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(0.6, 0.15, 0.15, 1)
@@ -1651,7 +1654,7 @@ function CC:StartBindingCapture()
     panel:EnableKeyboard(true)
     panel:EnableMouseWheel(true)
     panel.bindButton:SetBackdropBorderColor(0.2, 0.8, 0.4, 1)
-    panel.bindText:SetText("Press key/click/scroll...")
+    panel.bindText:SetText(L["Press key/click/scroll..."])
     panel.bindText:SetTextColor(0.2, 0.8, 0.4)
     
     -- Update modifier display during capture
@@ -1665,7 +1668,7 @@ function CC:StartBindingCapture()
         if mods ~= "" then
             panel.bindText:SetText(mods .. "...")
         else
-            panel.bindText:SetText("Press key/click/scroll...")
+            panel.bindText:SetText(L["Press key/click/scroll..."])
         end
     end)
 end
@@ -1744,7 +1747,7 @@ function CC:UpdateBindingButtonText()
         panel.bindText:SetText(text)
         panel.bindText:SetTextColor(0.9, 0.9, 0.9)
     else
-        panel.bindText:SetText("Click to bind...")
+        panel.bindText:SetText(L["Click to bind..."])
         panel.bindText:SetTextColor(0.5, 0.5, 0.5)
     end
 end
@@ -1802,9 +1805,9 @@ function CC:ShowEditBindingPanel(spellData, existingBinding, existingIndex)
     
     -- Update title
     if panel.isEditing then
-        panel.title:SetText("Edit Binding")
+        panel.title:SetText(L["Edit Binding"])
     else
-        panel.title:SetText("New Binding")
+        panel.title:SetText(L["New Binding"])
     end
     
     -- Update spell info - handle icons for spells, macros, items, and actions
@@ -2557,11 +2560,11 @@ function CC:CreateSpellCell(parent, spellData, index)
             for _, b in ipairs(bindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     
@@ -3098,9 +3101,9 @@ function CC:RefreshMacroGrid(skipScrollReset)
         local emptyMsg = self.scrollContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         emptyMsg:SetPoint("CENTER", 0, 0)
         if #self:GetAllMacros() == 0 then
-            emptyMsg:SetText("No macros yet.\nClick '+ New' to create one or 'Import' to import from WoW.")
+            emptyMsg:SetText(L["No macros yet.\nClick '+ New' to create one or 'Import' to import from WoW."])
         else
-            emptyMsg:SetText("No macros match the current filter.")
+            emptyMsg:SetText(L["No macros match the current filter."])
         end
         emptyMsg:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
         table.insert(CC.spellCells, emptyMsg)
@@ -3470,7 +3473,7 @@ function CC:CreateItemCell(parent, itemData, index)
     if itemInfo and itemInfo.hasOnUse then
         local onUseBadge = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         onUseBadge:SetPoint("TOPLEFT", 4, -4)
-        onUseBadge:SetText("USE")
+        onUseBadge:SetText(L["USE"])
         onUseBadge:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     end
     
@@ -3492,7 +3495,7 @@ function CC:CreateItemCell(parent, itemData, index)
             GameTooltip:SetInventoryItem("player", itemData.slot)
         else
             GameTooltip:AddLine(itemData.slotName, 1, 1, 1)
-            GameTooltip:AddLine("No item equipped", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(L["No item equipped"], 0.5, 0.5, 0.5)
         end
         
         -- Show existing bindings in tooltip
@@ -3503,11 +3506,11 @@ function CC:CreateItemCell(parent, itemData, index)
             for _, b in ipairs(myBindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     cell:SetScript("OnLeave", function(self)
@@ -3604,7 +3607,7 @@ function CC:CreateItemListRow(parent, itemData, index)
             GameTooltip:SetInventoryItem("player", itemData.slot)
         else
             GameTooltip:AddLine(itemData.slotName, 1, 1, 1)
-            GameTooltip:AddLine("No item equipped", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(L["No item equipped"], 0.5, 0.5, 0.5)
         end
         
         -- Show existing bindings in tooltip
@@ -3615,11 +3618,11 @@ function CC:CreateItemListRow(parent, itemData, index)
             for _, b in ipairs(myBindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function(self)
@@ -3686,7 +3689,7 @@ function CC:CreateConsumableCell(parent, itemData, index)
     if itemInfo and itemInfo.name then
         nameText:SetText(itemInfo.name)
     else
-        nameText:SetText("Loading...")
+        nameText:SetText(L["Loading..."])
     end
     nameText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
@@ -3743,11 +3746,11 @@ function CC:CreateConsumableCell(parent, itemData, index)
             for _, b in ipairs(myBindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     cell:SetScript("OnLeave", function(self)
@@ -3806,7 +3809,7 @@ function CC:CreateConsumableListRow(parent, itemData, index)
     if itemInfo and itemInfo.name then
         nameText:SetText(itemInfo.name)
     else
-        nameText:SetText("Loading...")
+        nameText:SetText(L["Loading..."])
     end
     nameText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     
@@ -4038,11 +4041,11 @@ function CC:CreateMacroCell(parent, macroData, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(macroData.name, 1, 1, 1)
         if macroData.source == "global_import" then
-            GameTooltip:AddLine("General Import", 0.6, 0.8, 1)
+            GameTooltip:AddLine(L["General Import"], 0.6, 0.8, 1)
         elseif macroData.source == "char_import" then
-            GameTooltip:AddLine("Character Import", 0.8, 0.6, 1)
+            GameTooltip:AddLine(L["Character Import"], 0.8, 0.6, 1)
         else
-            GameTooltip:AddLine("Custom Macro", 0.6, 1, 0.6)
+            GameTooltip:AddLine(L["Custom Macro"], 0.6, 1, 0.6)
         end
         
         -- Show existing bindings in tooltip
@@ -4053,7 +4056,7 @@ function CC:CreateMacroCell(parent, macroData, index)
             for _, b in ipairs(myBindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
@@ -4064,8 +4067,8 @@ function CC:CreateMacroCell(parent, macroData, index)
         end
         GameTooltip:AddLine(bodyPreview, 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click: Bind", 0.5, 0.5, 0.5)
-        GameTooltip:AddLine("Right-click: Edit/View", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Left-click: Bind"], 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Right-click: Edit/View"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     
@@ -4171,11 +4174,11 @@ function CC:CreateMacroListRow(parent, macroData, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(macroData.name, 1, 1, 1)
         if macroData.source == "global_import" then
-            GameTooltip:AddLine("General Import", 0.6, 0.8, 1)
+            GameTooltip:AddLine(L["General Import"], 0.6, 0.8, 1)
         elseif macroData.source == "char_import" then
-            GameTooltip:AddLine("Character Import", 0.8, 0.6, 1)
+            GameTooltip:AddLine(L["Character Import"], 0.8, 0.6, 1)
         else
-            GameTooltip:AddLine("Custom Macro", 0.6, 1, 0.6)
+            GameTooltip:AddLine(L["Custom Macro"], 0.6, 1, 0.6)
         end
         
         -- Show existing bindings in tooltip
@@ -4186,7 +4189,7 @@ function CC:CreateMacroListRow(parent, macroData, index)
             for _, b in ipairs(myBindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), themeColor.r, themeColor.g, themeColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), themeColor.r, themeColor.g, themeColor.b)
         end
         
         GameTooltip:AddLine(" ")
@@ -4196,8 +4199,8 @@ function CC:CreateMacroListRow(parent, macroData, index)
         end
         GameTooltip:AddLine(bodyPreview, 0.7, 0.7, 0.7, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click: Bind", 0.5, 0.5, 0.5)
-        GameTooltip:AddLine("Right-click: Edit/View", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Left-click: Bind"], 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L["Right-click: Edit/View"], 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     
@@ -4353,11 +4356,11 @@ function CC:CreateSpellListRow(parent, spellData, index, isSpecialAction, action
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
             local bindColor = isSpecialAction and specialColor or themeColor
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), bindColor.r, bindColor.g, bindColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), bindColor.r, bindColor.g, bindColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     
@@ -4469,11 +4472,11 @@ function CC:CreateSpecialActionCell(parent, actionType, label, iconPath)
             for _, b in ipairs(bindings) do
                 table.insert(bindStrs, CC:GetBindingKeyText(b, true))
             end
-            GameTooltip:AddLine("Bound: " .. table.concat(bindStrs, ", "), specialColor.r, specialColor.g, specialColor.b)
+            GameTooltip:AddLine(format(L["Bound: %s"], table.concat(bindStrs, ", ")), specialColor.r, specialColor.g, specialColor.b)
         end
         
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to add/edit binding", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["Left-click to add/edit binding"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     

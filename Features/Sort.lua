@@ -1,4 +1,5 @@
 local addonName, DF = ...
+local L = DF.L
 
 -- ============================================================
 -- FRAME SORTING SYSTEM
@@ -449,10 +450,10 @@ SLASH_DFSORT1 = "/dfsort"
 SlashCmdList["DFSORT"] = function(msg)
     if msg == "refresh" or msg == "resort" then
         Sort:TriggerResort()
-        print("|cff00ff00DandersFrames:|r Re-sorted frames")
+        print("|cff00ff00DandersFrames:|r Re-sorted frames.")
     elseif msg == "clear" then
         Sort:ClearCache()
-        print("|cff00ff00DandersFrames:|r Cleared sort cache")
+        print("|cff00ff00DandersFrames:|r Cleared sort cache.")
     elseif msg == "debug" then
         print("|cff00ccffDandersFrames Sort Debug:|r")
         local db = DF:GetDB()

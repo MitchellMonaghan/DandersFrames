@@ -526,12 +526,15 @@ end
 
 function DF:GetSoundList()
     -- Returns a table of soundName -> soundName for dropdown compatibility
+    -- Excludes entries whose LSM fetch returns a non-string (e.g. "None" returns integer 1)
     local list = {}
     local LSM = GetLSM()
     if LSM then
         local sounds = LSM:List(LSM.MediaType.SOUND)
         for _, name in ipairs(sounds) do
-            list[name] = name
+            if type(LSM:Fetch(LSM.MediaType.SOUND, name)) == "string" then
+                list[name] = name
+            end
         end
     end
     return list
@@ -545,7 +548,11 @@ function DF:GetSoundPath(soundName)
     end
     local LSM = GetLSM()
     if LSM then
-        return LSM:Fetch(LSM.MediaType.SOUND, soundName)
+        local path = LSM:Fetch(LSM.MediaType.SOUND, soundName)
+        if type(path) == "string" and path ~= "" then
+            return path
+        end
+        return nil
     end
     return nil
 end
@@ -611,51 +618,58 @@ function DF:SafeSetFont(fontString, fontNameOrPath, fontSize, outline)
     local fontFamilyName = GetOrCreateFontFamily(fontPath, actualOutline, useShadow)
 
     if fontFamilyName and _G[fontFamilyName] then
-        -- IMPORTANT: First reset to a font object to clear any direct SetFont() state
-        -- This makes the fontString receptive to SetFontObject() changes
-        -- (fontStrings created with SetFont() don't respond well to SetFontObject() otherwise)
-        fontString:SetFontObject(GameFontNormal)
-        
-        -- Now apply our font family
-        fontString:SetFontObject(_G[fontFamilyName])
-        
-        -- Use SetTextScale to achieve desired size (font family uses BASE_FONT_SIZE)
-        local scale = fontSize / BASE_FONT_SIZE
-        fontString:SetTextScale(scale)
-        
-        -- Force WoW to re-render the text with new font properties
-        -- This is needed because switching between font families with different outline flags
-        -- may not immediately update the rendered text without a text refresh
-        -- Note: Some fontStrings have "secret" text that cannot be read or compared,
-        -- so we wrap this in pcall to handle those cases safely
-        pcall(function()
-            local text = fontString:GetText()
-            if text and text ~= "" then
-                fontString:SetText("")
-                fontString:SetText(text)
-            end
+        -- Validate the font family object is usable before calling SetFontObject.
+        -- During early login, CreateFontFamily can succeed but the internal C++ font
+        -- data may not be initialized yet, causing an ACCESS_VIOLATION crash when
+        -- SetFontObject tries to read it.  Wrap in pcall to fall through to the
+        -- direct SetFont() path if the object is broken.
+        local ok = pcall(function()
+            fontString:SetFontObject(GameFontNormal)
+            fontString:SetFontObject(_G[fontFamilyName])
         end)
-        
-        -- Apply shadow directly to fontString (font family shadow is on the font object,
-        -- but we need to apply to each fontString for proper settings)
-        if useShadow then
-            local db
-            if DF.GetDB then
-                db = DF:GetDB()
-            elseif DF.db then
-                local mode = (DF.GUI and DF.GUI.SelectedMode) or "party"
-                db = DF.db[mode]
-            end
-            local shadowX = db and db.fontShadowOffsetX or 1
-            local shadowY = db and db.fontShadowOffsetY or -1
-            local shadowColor = db and db.fontShadowColor or {r = 0, g = 0, b = 0, a = 1}
-            fontString:SetShadowOffset(shadowX, shadowY)
-            fontString:SetShadowColor(shadowColor.r or 0, shadowColor.g or 0, shadowColor.b or 0, shadowColor.a or 1)
+        if not ok then
+            -- Evict the broken cache entry so it gets recreated later
+            local key = (fontPath or "default"):lower() .. "|" .. (actualOutline or "") .. "|" .. (useShadow and "shadow" or "noshadow")
+            fontFamilies[key] = nil
         else
-            fontString:SetShadowOffset(0, 0)
+            -- Use SetTextScale to achieve desired size (font family uses BASE_FONT_SIZE)
+            local scale = fontSize / BASE_FONT_SIZE
+            fontString:SetTextScale(scale)
+
+            -- Force WoW to re-render the text with new font properties
+            -- This is needed because switching between font families with different outline flags
+            -- may not immediately update the rendered text without a text refresh
+            -- Note: Some fontStrings have "secret" text that cannot be read or compared,
+            -- so we wrap this in pcall to handle those cases safely
+            pcall(function()
+                local text = fontString:GetText()
+                if text and text ~= "" then
+                    fontString:SetText("")
+                    fontString:SetText(text)
+                end
+            end)
+
+            -- Apply shadow directly to fontString (font family shadow is on the font object,
+            -- but we need to apply to each fontString for proper settings)
+            if useShadow then
+                local db
+                if DF.GetDB then
+                    db = DF:GetDB()
+                elseif DF.db then
+                    local mode = (DF.GUI and DF.GUI.SelectedMode) or "party"
+                    db = DF.db[mode]
+                end
+                local shadowX = db and db.fontShadowOffsetX or 1
+                local shadowY = db and db.fontShadowOffsetY or -1
+                local shadowColor = db and db.fontShadowColor or {r = 0, g = 0, b = 0, a = 1}
+                fontString:SetShadowOffset(shadowX, shadowY)
+                fontString:SetShadowColor(shadowColor.r or 0, shadowColor.g or 0, shadowColor.b or 0, shadowColor.a or 1)
+            else
+                fontString:SetShadowOffset(0, 0)
+            end
+
+            return true
         end
-        
-        return true
     end
     
     -- Fallback: Direct SetFont (no multi-alphabet support, or older WoW version)
@@ -821,24 +835,25 @@ DF.PartyDefaults = {
     bossDebuffScale = 1.2,
     bossDebuffsAnchor = "TOPLEFT",
     bossDebuffsBorderScale = 1,
-    bossDebuffsClickCastingEnabled = true,
     bossDebuffsEnabled = true,
     bossDebuffsFrameLevel = 35,
     bossDebuffsGrowth = "RIGHT",
+    bossDebuffsHideTooltip = false,
     bossDebuffsIconHeight = 20,
     bossDebuffsIconWidth = 20,
     bossDebuffsMax = 4,
     bossDebuffsOffsetX = 3,
     bossDebuffsOffsetY = -13,
-    bossDebuffsScale = 1,
-    bossDebuffsScaleText = true,
     bossDebuffsShowCountdown = true,
-    bossDebuffsShowDebugOverlay = true,
     bossDebuffsShowNumbers = true,
     bossDebuffsSpacing = 5,
-    bossDebuffsTextScale = 1,
-    bossDebuffsTextOffsetX = 0,
-    bossDebuffsTextOffsetY = 0,
+    bossDebuffsTextScale = 1.0,
+    bossDebuffsOverlayClipBorder = false,
+    bossDebuffsOverlayEnabled = false,
+    bossDebuffsOverlayFrameLevel = 14,
+    bossDebuffsOverlayIconRatio = 2.6,
+    bossDebuffsOverlayMaxSlots = 3,
+    bossDebuffsOverlayScale = 1.05,
 
     -- Buff settings
     buffAlpha = 1,
@@ -882,7 +897,7 @@ DF.PartyDefaults = {
     buffFilterRaid = false,
 
     -- Aura Source Mode
-    auraSourceMode = "BLIZZARD",              -- "BLIZZARD" or "DIRECT"
+    auraSourceMode = "DIRECT",                -- "BLIZZARD" or "DIRECT"
 
     -- Direct Mode: Buff Filters
     directBuffShowAll = false,                -- Show all buffs (ignores sub-filters)
@@ -891,18 +906,20 @@ DF.PartyDefaults = {
     directBuffFilterRaidInCombat = true,      -- RAID_IN_COMBAT filter
     directBuffFilterCancelable = false,       -- CANCELABLE filter
     directBuffFilterNotCancelable = false,    -- NOT_CANCELABLE filter
-    directBuffFilterImportant = false,        -- IMPORTANT filter (12.0.1)
+    directBuffFilterImportant = true,         -- IMPORTANT filter (12.0.1)
     directBuffFilterBigDefensive = true,      -- BIG_DEFENSIVE filter (12.0.1)
     directBuffFilterExternalDefensive = true, -- EXTERNAL_DEFENSIVE filter (12.0.0)
-    directBuffSortOrder = "DEFAULT",          -- "DEFAULT" / "TIME" / "NAME"
+    directBuffSortOrder = "TIME",             -- "DEFAULT" / "TIME" / "NAME"
 
     -- Direct Mode: Debuff Filters
-    directDebuffShowAll = false,              -- Show all debuffs (ignores sub-filters)
+    directDebuffShowAll = true,               -- Show all debuffs (ignores sub-filters)
     directDebuffFilterRaid = true,            -- RAID filter
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffSortOrder = "DEFAULT",        -- "DEFAULT" / "TIME" / "NAME"
+    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
+    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
     buffHideSwipe = false,
@@ -1156,6 +1173,7 @@ DF.PartyDefaults = {
     permanentMoverWidth = 15,
     pixelPerfect = true,
     snapToGrid = true,
+    hideDragOverlay = false,
 
     -- Group Labels
     groupLabelColor = {r = 1, g = 1, b = 1, a = 1},
@@ -1550,6 +1568,7 @@ DF.PartyDefaults = {
         WARLOCK = true,
         WARRIOR = true,
     },
+    resourceBarClassColor = false,
     resourceBarEnabled = true,
     resourceBarFrameLevel = 20,
     resourceBarHeight = 4,
@@ -1739,7 +1758,84 @@ DF.PartyDefaults = {
     targetedSpellX = 0,
     targetedSpellY = -28,
 
+    -- Targeted List (alpha/beta only — gated by DF.RELEASE_CHANNEL ~= "release")
+    -- Stacked cast-bar display showing enemy casts targeting party members.
+    -- User-facing name ("Targeted List") is intentionally decoupled from the
+    -- internal `targetedList*` db prefix so the feature can be renamed later
+    -- by editing locale strings only. Party-mode only by design.
+    -- Position uses an absolute mover (targetedListX/Y), not an anchor point.
+    targetedListBackgroundAlpha = 0.6,
+    targetedListBorderColor = {r = 0, g = 0, b = 0, a = 1},
+    targetedListEnabled = false,
+    targetedListFadeOutDuration = 0.25,
+    targetedListFont = "Friz Quadrata TT",
+    targetedListFontOutline = "OUTLINE",
+    targetedListFontSize = 12,
+    targetedListSpellNameFontSize = 12,
+    targetedListTargetNameFontSize = 12,
+    targetedListGrowth = "DOWN",
+    targetedListHeight = 22,
+    targetedListHideOwnCasts = false,
+    targetedListHighlightImportant = true,
+    targetedListHighlightColor = {r = 1, g = 0.8, b = 0},
+    targetedListIconPosition = "LEFT",
+    targetedListImportantOnly = true,
+    targetedListInArena = true,
+    targetedListInBattlegrounds = true,
+    targetedListInDungeons = true,
+    targetedListInOpenWorld = true,
+    targetedListInRaids = false,
+    targetedListInterruptedFlashDuration = 1.0,
+    targetedListInterruptibleColor = {r = 1, g = 0.2, b = 0.2, a = 1},
+    targetedListMaxBars = 6,
+    targetedListShowArrowPrefix = true,
+    targetedListShowBorder = true,
+    targetedListShowUntargeted = false,
+    targetedListShowDuration = true,
+    targetedListShowIcon = true,
+    targetedListShowSpellName = true,
+    targetedListShowTargetName = true,
+    targetedListSortOrder = "NEWEST",
+    targetedListSpacing = 2,
+    targetedListStylePreset = "DEFAULT",
+    targetedListTargetNameClassColor = true,
+    targetedListTexture = "Interface\\TargetingFrame\\UI-StatusBar",
+    targetedListUninterruptibleColor = {r = 0.5, g = 0.5, b = 0.5, a = 1},
+    targetedListWidth = 240,
+    targetedListX = 0,
+    targetedListY = -10,
+    targetedListZoomIcon = true,
+    -- Per-text-element anchor + offset. Anchor is a point name
+    -- (LEFT / CENTER / RIGHT) applied within the bar's progress
+    -- region. X / Y are pixel offsets from that anchor.
+    targetedListSpellNameAnchor = "LEFT",
+    targetedListSpellNameAlign = "LEFT",
+    targetedListSpellNameWidth = 0,
+    targetedListSpellNameX = 4,
+    targetedListSpellNameY = 0,
+    targetedListTargetNameAnchor = "RIGHT",
+    targetedListTargetNameAlign = "RIGHT",
+    targetedListTargetNameWidth = 0,
+    targetedListTargetNameX = -4,
+    targetedListTargetNameY = 0,
+    targetedListDurationAnchor = "RIGHT",
+    targetedListDurationAlign = "RIGHT",
+    targetedListDurationX = -4,
+    targetedListDurationY = 0,
+    targetedListInterruptTextAnchor = "CENTER",
+    targetedListInterruptTextAlign = "CENTER",
+    targetedListInterruptTextFontSize = 12,
+    targetedListInterruptTextWidth = 0,
+    targetedListInterruptTextX = 0,
+    targetedListInterruptTextY = 0,
+
     -- Test Mode
+    -- testShowTargetedList drives the Targeted List demo bars in party
+    -- test mode (alpha/beta only — the feature is gated by
+    -- DF.RELEASE_CHANNEL). There is no raid-mode equivalent because the
+    -- Targeted List itself is party-only.
+    testShowTargetedList = false,
+    testAnimateTargetedList = true,
     testAnimateHealth = false,
     testBossDebuffCount = 1,
     testBuffCount = 2,
@@ -1786,6 +1882,7 @@ DF.PartyDefaults = {
     tooltipDefensiveAnchorPos = "BOTTOMRIGHT",
     tooltipDefensiveDisableInCombat = false,
     tooltipDefensiveEnabled = true,
+    tooltipResurrectionEnabled = false,
     tooltipDefensiveX = 0,
     tooltipDefensiveY = 0,
     tooltipBindingAnchor = "FRAME",
@@ -2049,24 +2146,25 @@ DF.RaidDefaults = {
     bossDebuffScale = 1.2,
     bossDebuffsAnchor = "TOPLEFT",
     bossDebuffsBorderScale = 1,
-    bossDebuffsClickCastingEnabled = true,
     bossDebuffsEnabled = true,
     bossDebuffsFrameLevel = 35,
     bossDebuffsGrowth = "RIGHT",
+    bossDebuffsHideTooltip = false,
     bossDebuffsIconHeight = 20,
     bossDebuffsIconWidth = 20,
     bossDebuffsMax = 4,
     bossDebuffsOffsetX = 3,
     bossDebuffsOffsetY = -13,
-    bossDebuffsScale = 1,
-    bossDebuffsScaleText = true,
     bossDebuffsShowCountdown = true,
-    bossDebuffsShowDebugOverlay = true,
     bossDebuffsShowNumbers = true,
     bossDebuffsSpacing = 5,
-    bossDebuffsTextScale = 1,
-    bossDebuffsTextOffsetX = 0,
-    bossDebuffsTextOffsetY = 0,
+    bossDebuffsTextScale = 1.0,
+    bossDebuffsOverlayClipBorder = false,
+    bossDebuffsOverlayEnabled = false,
+    bossDebuffsOverlayFrameLevel = 14,
+    bossDebuffsOverlayIconRatio = 2.6,
+    bossDebuffsOverlayMaxSlots = 3,
+    bossDebuffsOverlayScale = 1.05,
 
     -- Buff settings
     buffAlpha = 1,
@@ -2110,7 +2208,7 @@ DF.RaidDefaults = {
     buffFilterRaid = false,
 
     -- Aura Source Mode
-    auraSourceMode = "BLIZZARD",              -- "BLIZZARD" or "DIRECT"
+    auraSourceMode = "DIRECT",                -- "BLIZZARD" or "DIRECT"
 
     -- Direct Mode: Buff Filters
     directBuffShowAll = false,                -- Show all buffs (ignores sub-filters)
@@ -2119,18 +2217,20 @@ DF.RaidDefaults = {
     directBuffFilterRaidInCombat = true,      -- RAID_IN_COMBAT filter
     directBuffFilterCancelable = false,       -- CANCELABLE filter
     directBuffFilterNotCancelable = false,    -- NOT_CANCELABLE filter
-    directBuffFilterImportant = false,        -- IMPORTANT filter (12.0.1)
+    directBuffFilterImportant = true,         -- IMPORTANT filter (12.0.1)
     directBuffFilterBigDefensive = true,      -- BIG_DEFENSIVE filter (12.0.1)
     directBuffFilterExternalDefensive = true, -- EXTERNAL_DEFENSIVE filter (12.0.0)
-    directBuffSortOrder = "DEFAULT",          -- "DEFAULT" / "TIME" / "NAME"
+    directBuffSortOrder = "TIME",             -- "DEFAULT" / "TIME" / "NAME"
 
     -- Direct Mode: Debuff Filters
-    directDebuffShowAll = false,              -- Show all debuffs (ignores sub-filters)
+    directDebuffShowAll = true,               -- Show all debuffs (ignores sub-filters)
     directDebuffFilterRaid = true,            -- RAID filter
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffSortOrder = "DEFAULT",        -- "DEFAULT" / "TIME" / "NAME"
+    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
+    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
     buffHideSwipe = false,
@@ -2384,6 +2484,7 @@ DF.RaidDefaults = {
     permanentMoverWidth = 15,
     pixelPerfect = true,
     snapToGrid = true,
+    hideDragOverlay = false,
 
     -- Group Labels
     groupLabelColor = {r = 1, g = 1, b = 1, a = 1},
@@ -2778,6 +2879,7 @@ DF.RaidDefaults = {
         WARLOCK = true,
         WARRIOR = true,
     },
+    resourceBarClassColor = false,
     resourceBarEnabled = true,
     resourceBarFrameLevel = 20,
     resourceBarHeight = 4,
@@ -3014,6 +3116,7 @@ DF.RaidDefaults = {
     tooltipDefensiveAnchorPos = "BOTTOMRIGHT",
     tooltipDefensiveDisableInCombat = false,
     tooltipDefensiveEnabled = true,
+    tooltipResurrectionEnabled = false,
     tooltipDefensiveX = 0,
     tooltipDefensiveY = 0,
     tooltipBindingAnchor = "FRAME",

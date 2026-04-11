@@ -35,6 +35,41 @@ local C_CVar = C_CVar
 -- Using unit token (e.g. "nameplate7") as key instead of GUID because GUIDs are secret values
 local activeCasters = {}
 
+-- ============================================================
+-- API COMPATIBILITY: Group-frame targeted spells (PERMANENTLY DISABLED)
+-- ------------------------------------------------------------
+-- Blizzard hotfixed UnitIsUnit on 2026-04-07 so that comparing a
+-- compound token like "nameplateXtarget" against a party/raid
+-- token now returns nil. That kills our per-frame "is this enemy
+-- targeting THIS party member" detection.
+--
+-- There is no in-addon workaround:
+--   * UnitGUID/UnitName on nameplate units become secret in
+--     instance combat, so we can't compare those either.
+--   * The new PlayerIsSpellTarget API only answers for the player,
+--     not for arbitrary group members.
+--
+-- The change is now live on retail. Group-frame Targeted Spells is
+-- force-disabled unconditionally at addon load. The personal-display
+-- path (compares against "player") still works and is unaffected,
+-- since "player" is in the always-allowed list of UnitIsUnit args.
+--
+-- A "Targeted List" feature is being designed as a replacement for
+-- the per-frame icon use case (see _Reference/targeted-list-mockup.html).
+-- ============================================================
+
+-- Permanent in-memory flag — not persisted, not detected, just on.
+DF.GroupTargetedSpellsAPIBlocked = true
+
+-- Force-disables the group-frame targetedSpellEnabled setting on both
+-- party and raid profiles for the current profile. Called from Init,
+-- so the GUI reflects the disabled state on every load.
+local function ForceDisableGroupTargetedSpellSettings()
+    if not DF.db then return end
+    if DF.db.party then DF.db.party.targetedSpellEnabled = false end
+    if DF.db.raid then DF.db.raid.targetedSpellEnabled = false end
+end
+
 -- Personal display variables (declared early for HandleTargetChange access)
 local personalContainer = nil
 local personalIcons = {}
@@ -772,8 +807,31 @@ local function EnsureIconPool(frame, count)
     end
     
     count = count or 5  -- Default pool size
-    
-    for i = #frame.targetedSpellIcons + 1, count do
+
+    local existing = #frame.targetedSpellIcons
+    if existing >= count then return end
+
+    -- Raid frames: create only 1 icon now, stagger the rest to avoid
+    -- "script ran too long" when 40 frames each create 5 icons simultaneously
+    if frame.isRaidFrame and existing == 0 then
+        frame.targetedSpellIcons[1] = CreateSingleIcon(frame.targetedSpellContainer, 1)
+        frame.targetedSpellIcons[1].unitFrame = frame
+        -- Schedule remaining icons one-per-timer-tick
+        if not frame.dfIconPoolStaggered then
+            frame.dfIconPoolStaggered = true
+            for i = 2, count do
+                C_Timer.After(0.05 * (i - 1), function()
+                    if not frame.targetedSpellIcons then return end
+                    if #frame.targetedSpellIcons >= i then return end
+                    frame.targetedSpellIcons[i] = CreateSingleIcon(frame.targetedSpellContainer, i)
+                    frame.targetedSpellIcons[i].unitFrame = frame
+                end)
+            end
+        end
+        return
+    end
+
+    for i = existing + 1, count do
         -- Parent icons to the OOR container, not directly to frame
         frame.targetedSpellIcons[i] = CreateSingleIcon(frame.targetedSpellContainer, i)
         frame.targetedSpellIcons[i].unitFrame = frame
@@ -1446,29 +1504,11 @@ local function ProcessCastInternal(casterUnit, isChannel)
     -- Check content type for raid frames
     local showOnRaidFrames = ShouldShowRaidTargetedSpells(raidDb)
     
-    for _, targetUnit in ipairs(groupUnits) do
-        local frame = GetFrameForUnit(targetUnit)
-        if frame then
-            -- Check if this frame type should show targeted spells in current content
-            local shouldShow = frame.isRaidFrame and showOnRaidFrames or showOnPartyFrames
-            
-            if shouldShow then
-                -- Show icon (creates/reuses icon for this caster on this frame)
-                local icon = DF:ShowTargetedSpellIcon(frame, casterUnit, casterUnit, texture, name, durationObject, isChannel, spellID, startTime)
-                
-                -- Control visibility: show if enemy is targeting this unit
-                -- Using UnitIsUnit for broader detection (catches AoE and target-focused casts)
-                if icon then
-                    local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
-                    icon:SetAlphaFromBoolean(isTargeted, 1, 0)
-                end
-                
-                -- Position icons (all at same spot - invisible ones don't matter)
-                PositionIcons(frame)
-            end
-        end
-    end
-    
+    -- Group-frame icon loop removed: Blizzard's UnitIsUnit hotfix on
+    -- 2026-04-07 made it impossible to detect which party member an enemy
+    -- is targeting from inside an addon. The "Targeted List" feature is
+    -- planned as a replacement. See _Reference/targeted-list-mockup.html.
+
     -- Create personal display icon (always, for every cast - use SetAlphaFromBoolean for visibility)
     if ShouldShowPersonalTargetedSpells(db) then
         -- Always show icon, let SetAlphaFromBoolean control visibility based on targeting
@@ -1490,16 +1530,16 @@ local function ProcessCastInternal(casterUnit, isChannel)
         isImportant = nil,
     }
     
-    -- Store player targeting (raw secret value)
+    -- Store player targeting (raw secret value). The "player" comparison
+    -- is still permitted under the new UnitIsUnit rules.
     secrets.targets["player"] = UnitIsUnit(casterUnit .. "target", "player")
-    
-    -- Store party member targeting (raw secret values)
-    for i = 1, 4 do
-        local unit = "party" .. i
-        if UnitExists(unit) then
-            secrets.targets[unit] = UnitIsUnit(casterUnit .. "target", unit)
-        end
-    end
+
+    -- Per-party-member targeting is no longer recoverable after Blizzard's
+    -- 2026-04-07 UnitIsUnit hotfix — UnitIsUnit returns nil for
+    -- nameplateXtarget vs partyN. We deliberately don't store nil here
+    -- because the cast history UI feeds these values to SetAlphaFromBoolean,
+    -- which errors on nil. The history will simply show "N/A" for party
+    -- member targeting columns.
     
     -- Store isImportant secret
     if C_Spell and C_Spell.IsSpellImportant and spellID then
@@ -1577,24 +1617,11 @@ local function HandleTargetChange(casterUnit)
     if not activeCasters[casterUnit] then return end
     
     local db = DF:GetDB()
-    
-    -- Update visibility for all group members (unit frame icons)
-    local groupUnits = GetGroupUnits()
-    
-    for _, targetUnit in ipairs(groupUnits) do
-        local frame = GetFrameForUnit(targetUnit)
-        if frame and frame.dfActiveTargetedSpells then
-            local iconIndex = frame.dfActiveTargetedSpells[casterUnit]
-            if iconIndex then
-                local icon = frame.targetedSpellIcons and frame.targetedSpellIcons[iconIndex]
-                if icon and icon.isActive and not icon.isInterrupted then
-                    local isTargeted = UnitIsUnit(casterUnit .. "target", targetUnit)
-                    icon:SetAlphaFromBoolean(isTargeted, 1, 0)
-                end
-            end
-        end
-    end
-    
+
+    -- Group-frame visibility update removed: see ProcessCastInternal note.
+    -- We only update the personal display now (which uses "player" comparisons,
+    -- still permitted by the new UnitIsUnit rules).
+
     -- Update personal display visibility using SetAlphaFromBoolean
     if db.personalTargetedSpellEnabled then
         local iconIndex = personalActiveSpells[casterUnit]
@@ -1702,13 +1729,17 @@ end
 -- ============================================================
 
 local function OnEvent(self, event, unit, ...)
+    -- ============================================================
+    -- Personal / group-frame Targeted Spells branch (existing)
+    -- ============================================================
     if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_EMPOWER_START" then
         ProcessCast(unit, false)
     elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
         ProcessCast(unit, true)
     elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
         HandleCastStop(unit, true)  -- Was interrupted
-    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or 
+    elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED" or
+           event == "UNIT_SPELLCAST_FAILED_QUIET" or
            event == "UNIT_SPELLCAST_SUCCEEDED" or
            event == "UNIT_SPELLCAST_CHANNEL_STOP" or event == "UNIT_SPELLCAST_EMPOWER_STOP" then
         HandleCastStop(unit, false)  -- Normal end
@@ -1730,6 +1761,83 @@ local function OnEvent(self, event, unit, ...)
         HandleCastStop(unit, false)
     elseif event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
         ScanAllEnemyCasts()
+    end
+
+    -- ============================================================
+    -- Targeted List branch (alpha/beta only, stubs until commit #4)
+    -- ============================================================
+    -- Routing through DF._TargetedList* shims so the handlers defined
+    -- in the Targeted List section at the bottom of this file don't
+    -- need to be forward-declared. Each handler is gated internally —
+    -- calls are effectively free on stable builds.
+    --
+    -- The full event-to-handler wiring (castId unpacking, empower
+    -- spellId offset, varargs forwarding, mob-death guards) is
+    -- implemented in commit #4. This scaffold only needs to invoke
+    -- the stubs so the file loads and the gating plumbing is exercised.
+    if event == "UNIT_SPELLCAST_START"
+       or event == "UNIT_SPELLCAST_CHANNEL_START"
+       or event == "UNIT_SPELLCAST_EMPOWER_START" then
+        if DF._TargetedListProcessCastStart then
+            DF._TargetedListProcessCastStart(unit, event, ...)
+        end
+    elseif event == "UNIT_SPELLCAST_STOP"
+           or event == "UNIT_SPELLCAST_FAILED"
+           or event == "UNIT_SPELLCAST_FAILED_QUIET"
+           or event == "UNIT_SPELLCAST_SUCCEEDED"
+           or event == "UNIT_SPELLCAST_INTERRUPTED"
+           or event == "UNIT_SPELLCAST_CHANNEL_STOP"
+           or event == "UNIT_SPELLCAST_EMPOWER_STOP"
+           or event == "NAME_PLATE_UNIT_REMOVED" then
+        if DF._TargetedListOnCastStop then
+            DF._TargetedListOnCastStop(unit, event, ...)
+        end
+    elseif event == "UNIT_SPELLCAST_DELAYED"
+           or event == "UNIT_SPELLCAST_CHANNEL_UPDATE"
+           or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
+        -- Mid-cast update: the cast duration or progress changed
+        -- (pushback, channel extension, empower stage). Re-read
+        -- the duration object and re-apply bar content so the fill
+        -- and countdown stay in sync with the actual cast.
+        if DF._TargetedListOnCastUpdate then
+            DF._TargetedListOnCastUpdate(unit, event, ...)
+        end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
+        if DF._TargetedListOnInterruptibilityChange then
+            DF._TargetedListOnInterruptibilityChange(unit, true)
+        end
+    elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        if DF._TargetedListOnInterruptibilityChange then
+            DF._TargetedListOnInterruptibilityChange(unit, false)
+        end
+    elseif event == "UNIT_TARGET" then
+        -- Enemy changed target mid-cast. If we're tracking this
+        -- caster, verify the new target is still a party member.
+        -- If not, drop the bar. We can't pick up NEW casts from
+        -- UNIT_TARGET (no spellId in payload), but we can drop
+        -- existing ones that are no longer relevant.
+        if DF._TargetedListOnTargetChange then
+            DF._TargetedListOnTargetChange(unit)
+        end
+    elseif event == "LOADING_SCREEN_DISABLED"
+           or event == "ZONE_CHANGED_NEW_AREA"
+           or event == "UPDATE_INSTANCE_INFO" then
+        -- Zone transition or loading screen: validate all tracked
+        -- bars and remove any that are stale.
+        if DF._TargetedListValidateAll then
+            DF._TargetedListValidateAll()
+        end
+    elseif event == "CVAR_UPDATE" then
+        -- If enemy nameplates are disabled, all bars should go.
+        local cvar = ...
+        if cvar == "nameplateShowEnemies" then
+            local val = C_CVar and C_CVar.GetCVar and C_CVar.GetCVar("nameplateShowEnemies")
+            if val == "0" then
+                if DF._TargetedListReleaseAllBars then
+                    DF._TargetedListReleaseAllBars()
+                end
+            end
+        end
     end
 end
 
@@ -1756,46 +1864,111 @@ end
 -- ENABLE/DISABLE
 -- ============================================================
 
-function DF:EnableTargetedSpells()
-    -- Register events
+-- Internal: register the cast-tracking events on eventFrame.
+-- Used by both the group-frame Enable path and the personal-only path
+-- (when group is API-blocked but personal display is on).
+local function RegisterTargetedSpellEvents()
     eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_START")
     eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_STOP")
+    -- Mid-cast update events: pushback, channel duration change, empower
+    -- stage progression. Without these the bar desynchs from the actual
+    -- cast when the enemy gets interrupted-but-not-stopped, pushed back,
+    -- or an empower stage changes.
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_EMPOWER_UPDATE")
+    -- Interruptibility toggles mid-cast (M+ phase changes).
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTIBLE")
+    eventFrame:RegisterEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE")
     eventFrame:RegisterEvent("UNIT_TARGET")
     eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
     eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
     eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    -- Cleanup + zone transition events.
+    eventFrame:RegisterEvent("LOADING_SCREEN_DISABLED")
+    eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    eventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
+    -- CVAR changes that affect nameplate visibility.
+    eventFrame:RegisterEvent("CVAR_UPDATE")
     eventFrame:Show()
-    
+end
+
+-- Returns true if any consumer of the shared cast-event stream needs it
+-- registered right now. Consumers: personal Targeted Spells display, the
+-- (permanently-disabled) group-frame display, and the new Targeted List.
+-- Checks both party and raid mode profiles because the addon may switch
+-- modes based on group composition without us re-running this check.
+local function NeedsCastEvents()
+    if not DF.db then return false end
+    local function modeNeeds(modeDb)
+        if not modeDb then return false end
+        local groupOn = (not DF.GroupTargetedSpellsAPIBlocked) and modeDb.targetedSpellEnabled
+        local personalOn = modeDb.personalTargetedSpellEnabled
+        return groupOn or personalOn
+    end
+    if modeNeeds(DF.db.party) or modeNeeds(DF.db.raid) then return true end
+    -- Targeted List is alpha/beta-only and party-only; the call is
+    -- gated by DF.RELEASE_CHANNEL inside the helper.
+    if DF.TargetedListNeedsCastEvents and DF:TargetedListNeedsCastEvents() then
+        return true
+    end
+    return false
+end
+
+-- Public: re-evaluate whether eventFrame should be registered. Call this
+-- whenever any of the gating settings change (group toggle, personal toggle,
+-- API block trip).
+function DF:UpdateTargetedSpellEventRegistration()
+    if NeedsCastEvents() then
+        RegisterTargetedSpellEvents()
+    else
+        eventFrame:UnregisterAllEvents()
+        eventFrame:Hide()
+        wipe(activeCasters)
+    end
+end
+
+function DF:EnableTargetedSpells()
+    -- If the API has blocked group-frame targeted spells, do not enable the
+    -- group side at all. Personal display registration is handled separately.
+    if DF.GroupTargetedSpellsAPIBlocked then
+        ForceDisableGroupTargetedSpellSettings()
+        DF:UpdateTargetedSpellEventRegistration()
+        return
+    end
+
+    RegisterTargetedSpellEvents()
+
     -- Track enabled state for unified handler
     DF.targetedSpellsEnabled = true
-    
+
     -- Initial scan
     ScanAllEnemyCasts()
 end
 
 function DF:DisableTargetedSpells()
-    eventFrame:UnregisterAllEvents()
-    eventFrame:Hide()
-    
     -- Track enabled state
     DF.targetedSpellsEnabled = false
-    
-    -- Hide all icons
+
+    -- Hide all group-frame icons
     DF:IterateAllFrames(function(frame)
         if frame then
             DF:HideAllTargetedSpells(frame)
         end
     end)
-    
-    wipe(activeCasters)
+
+    -- Re-evaluate whether events still need to be registered for personal display.
+    -- If personal display is off too, this unregisters everything.
+    DF:UpdateTargetedSpellEventRegistration()
 end
 
 -- Export scan function for unified roster handler
@@ -2577,23 +2750,22 @@ function DF:CreatePersonalTargetedSpellsMover()
     label:SetText("Personal\nTargeted Spells")
     label:SetTextColor(1, 1, 1, 1)
     mover.label = label
-    
-    -- Add center snap lines (visual guides)
-    local centerLineH = mover:CreateTexture(nil, "OVERLAY")
-    centerLineH:SetColorTexture(1, 1, 1, 0.5)
-    centerLineH:SetSize(2000, 1)
-    centerLineH:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineH = centerLineH
-    
-    local centerLineV = mover:CreateTexture(nil, "OVERLAY")
-    centerLineV:SetColorTexture(1, 1, 1, 0.5)
-    centerLineV:SetSize(1, 2000)
-    centerLineV:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    mover.centerLineV = centerLineV
-    
+
+    -- Left-click switches the shared position panel to our mode.
+    mover:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("personal")
+        end
+    end)
+
     mover:SetScript("OnDragStart", function(self)
+        -- Switch the position panel to personal mode so nudge
+        -- buttons affect us, not the party container.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("personal")
+        end
         self:StartMoving()
-        
+
         local db = DF:GetDB()
         self:SetScript("OnUpdate", function()
             -- Update icons to follow mover during drag
@@ -2808,6 +2980,9 @@ function DF:TogglePersonalTargetedSpells(enabled)
     else
         DF:HideAllPersonalTargetedSpells()
     end
+    -- Re-evaluate event registration: personal display can keep events alive
+    -- even when the group-frame side is off or API-blocked.
+    DF:UpdateTargetedSpellEventRegistration()
 end
 
 -- ============================================================
@@ -3376,9 +3551,12 @@ function DF:RefreshCastHistoryUI()
                     local hasName = entry.targetNames[unit]
                     local targetSecret = secrets.targets[unit]
                     local indicator = row.targetIndicators[idx]
-                    
-                    -- Can't test targetSecret (it's a secret), just check if hasName and indicator exist
-                    if hasName and indicator then
+
+                    -- We can compare to nil (type check, doesn't propagate secret
+                    -- taint). After Blizzard's 2026-04-07 UnitIsUnit hotfix the
+                    -- per-party-member targeting result is nil, so anything other
+                    -- than the player will fall through to the N/A branch.
+                    if hasName and indicator and targetSecret ~= nil then
                         -- Use SetAlphaFromBoolean for secret display
                         indicator.yesFrame:SetAlphaFromBoolean(targetSecret, 1, 0)
                         indicator.noFrame:SetAlphaFromBoolean(targetSecret, 0, 1)
@@ -3432,22 +3610,2242 @@ function DF:ShowCastHistory()
 end
 
 -- ============================================================
+-- TARGETED LIST
+-- ============================================================
+-- Stacked cast-bar display showing enemy casts targeting party
+-- members. Anchored to the party frame container. Replaces the
+-- group-frame Targeted Spells icons that Blizzard's 2026-04-07
+-- UnitIsUnit hotfix permanently broke.
+--
+-- Gated by DF.RELEASE_CHANNEL — feature is fully inert on stable
+-- releases. Alpha and beta builds run normally. The matching
+-- settings sub-tab in Options.lua is also gated so stable users
+-- never see it.
+--
+-- Party-mode only by design. We will not add raid support.
+--
+-- Implementation is split across commits:
+--   * commit #3 (this one): scaffold — state tables, frame pool,
+--     roster name cache, event hookup, empty lifecycle stubs
+--   * commit #4: cast lifecycle (0.2s delay + all 13 gotchas from
+--     the TS3 cross-reference in _Reference/targeted-spells-findings.md)
+--   * commit #5: render pipeline + layout (bar build, LayoutBars,
+--     Dispel-style skip-rebuild in the apply path)
+--   * commit #6: settings sub-tab in Options.lua
+--
+-- The user-facing name "Targeted List" is intentionally decoupled
+-- from the internal `targetedList*` db prefix. Renaming the feature
+-- is a locale-only change; no code touches the string.
+-- ============================================================
+
+-- File-scope cached APIs (project convention, commit 1a5603d).
+-- These are used by the cast lifecycle and render pipeline in later
+-- commits; caching them here keeps the hot path zero-lookup.
+local TL_UnitSpellTargetName = UnitSpellTargetName
+local TL_UnitSpellTargetClass = UnitSpellTargetClass
+local TL_UnitCastingInfo = UnitCastingInfo
+local TL_UnitChannelInfo = UnitChannelInfo
+local TL_UnitCastingDuration = UnitCastingDuration
+local TL_UnitChannelDuration = UnitChannelDuration
+local TL_UnitNameFromGUID = UnitNameFromGUID
+local TL_UnitClassFromGUID = UnitClassFromGUID
+local TL_UnitInParty = UnitInParty
+local TL_UnitCanAttack = UnitCanAttack
+local TL_UnitExists = UnitExists
+local TL_UnitName = UnitName
+local TL_UnitClass = UnitClass
+local TL_IsInGroup = IsInGroup
+local TL_IsInRaid = IsInRaid
+local TL_GetTime = GetTime
+local TL_C_Timer_After = C_Timer and C_Timer.After
+
+-- ------------------------------------------------------------
+-- State
+-- ------------------------------------------------------------
+
+-- activeTargetedListCasts[casterUnit] = {
+--     spellId         = number,       -- clean (from event payload)
+--     isChannel       = bool,         -- clean
+--     startTime       = number,       -- clean local GetTime() approximation
+--     duration        = TimerDuration, -- opaque object, fed to SetTimerDuration
+--     uninterruptible = secret-bool,  -- only fed to SetVertexColorFromBoolean
+--     casterUnit      = string,       -- clean (we generated it)
+-- }
+local activeTargetedListCasts = {}
+
+-- Container frame that anchors the bar list in screen space. Created
+-- on first enable. All children use the mover-driven position; there
+-- is no party-frame anchor mode.
+local targetedListContainer = nil
+
+-- Frame pool + active bar array are declared further down in the
+-- render pipeline section, close to the functions that use them.
+
+-- Forward declaration: TargetedList_OnCastStop (below) calls
+-- TargetedList_StartFadeTicker to kick off the fade-out re-render
+-- ticker. The actual assignment happens in the render section far
+-- below, because the ticker needs to call TargetedList_Render which
+-- isn't defined until then. The file-local binding is hoisted here
+-- so OnCastStop's reference resolves to the eventual assignment
+-- rather than creating a stray global.
+local TargetedList_StartFadeTicker
+
+-- ------------------------------------------------------------
+-- Runtime gate
+-- ------------------------------------------------------------
+
+-- Single source of truth for "is this feature allowed to run at all".
+-- Every public entry point calls this; any time it returns false, the
+-- caller must be a no-op. This is the stable-release kill switch.
+local function TargetedList_IsGateOpen()
+    if DF.RELEASE_CHANNEL == "release" then return false end
+    return true
+end
+
+-- Map the current content type (from the shared GetContentType
+-- helper above in this file) to the corresponding db toggle key.
+local TARGETEDLIST_CONTENT_TYPE_KEY = {
+    openworld   = "targetedListInOpenWorld",
+    dungeon     = "targetedListInDungeons",
+    raid        = "targetedListInRaids",
+    arena       = "targetedListInArena",
+    battleground = "targetedListInBattlegrounds",
+}
+
+-- Returns true if the user has enabled the feature for the current
+-- content type. Gates the lifecycle so we don't pick up casts in
+-- zones the user doesn't care about (e.g. disabling in open world).
+local function TargetedList_ContentTypeAllowed(party)
+    if not party then return false end
+    local contentType = GetContentType()
+    local key = TARGETEDLIST_CONTENT_TYPE_KEY[contentType]
+    if not key then return true end  -- unknown → allow
+    return party[key] ~= false
+end
+
+-- Secondary check: is the feature currently enabled by the user AND
+-- are we in a party (not raid, not solo)? Used by the cast lifecycle
+-- to decide whether to process incoming cast events.
+--
+-- NOTE: the content-type filter is deliberately NOT checked here.
+-- It's checked separately at pickup time only (TargetedList_ShouldPickup)
+-- so that stop events still clear tracked state even if the user
+-- toggles content-type checkboxes mid-cast. Otherwise stale bars
+-- would get stuck on screen until the next reload.
+local function TargetedList_IsActive()
+    if not TargetedList_IsGateOpen() then return false end
+    if not DF.db then return false end
+    local party = DF.db.party
+    if not party or not party.targetedListEnabled then return false end
+    if not TL_IsInGroup() then return false end
+    if TL_IsInRaid() then return false end
+    return true
+end
+
+-- Pickup-time gate: IsActive + content-type filter. Only applied
+-- when deciding whether to START tracking a new cast. Cast-stop and
+-- interruptibility-change handlers use IsActive alone so they can
+-- clean up existing state regardless of content-type settings.
+local function TargetedList_ShouldPickup()
+    if not TargetedList_IsActive() then return false end
+    local party = DF.db.party
+    return TargetedList_ContentTypeAllowed(party)
+end
+
+-- Exposed for NeedsCastEvents below, so the shared event frame stays
+-- registered when the Targeted List is the only active consumer.
+function DF:TargetedListNeedsCastEvents()
+    if not TargetedList_IsGateOpen() then return false end
+    if not DF.db then return false end
+    -- Party-only feature, but the raid profile may also toggle it on
+    -- even though it won't actually render. Still register events so
+    -- the user can see the toggle behave consistently in both modes.
+    local p = DF.db.party
+    return p and p.targetedListEnabled == true
+end
+
+-- ------------------------------------------------------------
+-- Cast-targeting filter
+-- ------------------------------------------------------------
+
+-- Returns true if the caster's current cast target is a party member.
+--
+-- Why this shape: the "name-matching" approach the findings doc
+-- originally proposed is dead because UnitSpellTargetName returns a
+-- secret-tainted string on nameplates — it can't be used as a table
+-- key or compared to anything. Instead we use TS3's filter
+-- (Driver.lua:317): UnitInParty("nameplateXtarget"). This is a
+-- compound-vs-party-token comparison that the findings doc warned
+-- might be blocked by the 2026-04-07 hotfix. Empirically (and per
+-- TS3's working implementation) it is NOT blocked — it returns a
+-- usable boolean for this specific shape.
+--
+-- We don't return WHICH party member is targeted — we don't need to.
+-- The render pipeline (commit #5) will fetch the target name via
+-- UnitSpellTargetName and feed it directly into a FontString:SetText
+-- secret-safe sink, which doesn't require comparing or indexing.
+local function TargetedList_CastTargetIsPartyMember(casterUnit)
+    local target = casterUnit .. "target"
+    if not TL_UnitExists(target) then return false end
+    -- Reject mob-targeting-mob casts (we'd never care about those)
+    if TL_UnitCanAttack("player", target) then return false end
+    -- The actual filter: is the targeted unit a party member?
+    -- TS3 uses this exact compound-vs-party check post-hotfix.
+    if TL_IsInGroup() and not TL_UnitInParty(target) then return false end
+    return true
+end
+
+-- ------------------------------------------------------------
+-- Cast lifecycle
+-- ------------------------------------------------------------
+-- Implements the 13 correctness gotchas captured in
+-- _Reference/targeted-spells-findings.md §"Implementation gotchas".
+-- Each gotcha is tagged inline as (gotcha #N).
+
+-- Delay before we read cast data after UNIT_SPELLCAST_START. At the
+-- instant the event fires, UnitSpellTargetName / UnitCastingDuration /
+-- UnitChannelDuration all return nil — the engine populates them a
+-- few frames later. TS3 uses 0.2s; match that. (gotcha #1)
+local TARGETEDLIST_PICKUP_DELAY = 0.2
+
+-- Is this unit a nameplate we're willing to look at? Filters out
+-- friendly nameplates, party-member nameplates (wargames/mercenary),
+-- and anything that isn't a valid enemy unit token.
+local function TargetedList_IsRelevantCaster(casterUnit)
+    if type(casterUnit) ~= "string" then return false end
+    if string.sub(casterUnit, 1, 9) ~= "nameplate" then return false end
+    if not TL_UnitExists(casterUnit) then return false end
+    if not TL_UnitCanAttack("player", casterUnit) then return false end
+    -- Exclude own party members that have nameplates (rare but real)
+    if TL_UnitInParty(casterUnit) then return false end
+    return true
+end
+
+-- File-scope cached duration APIs (added for the secret-taint fix)
+local TL_UnitCastingDuration_API = UnitCastingDuration
+local TL_UnitChannelDuration_API = UnitChannelDuration
+local TL_C_Spell_GetSpellName = C_Spell and C_Spell.GetSpellName
+local TL_C_Spell_GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
+local TL_C_Spell_IsSpellImportant = C_Spell and C_Spell.IsSpellImportant
+
+-- IMPORTANT — secret-taint workaround (gotcha #0).
+--
+-- On nameplate units in instance combat, UnitCastingInfo and
+-- UnitChannelInfo return SECRET-TAINTED values for the time fields
+-- (startMS, endMS). Lua refuses arithmetic on secret values, so any
+-- code that does (endMS - startMS) / 1000 raises:
+--   "attempt to perform arithmetic on a secret number value"
+--
+-- The mitigation here mirrors TS3's approach (Driver.lua lines
+-- 391-407):
+--   * Don't extract time fields from Unit{Casting,Channel}Info — only
+--     pull spellId (and castID for casts) via positional discard.
+--   * Get spellId from the EVENT payload when possible — it's clean.
+--   * Use UnitCastingDuration / UnitChannelDuration for duration.
+--     The return value may itself be secret-tainted; treat it as
+--     opaque and only feed it to secret-safe sinks at render time.
+--   * GetTime() at pickup as a clean local approximation of start.
+--   * C_Spell.GetSpellName / GetSpellTexture for clean metadata.
+
+-- Delayed pickup: called 0.2s after START via C_Timer. Verifies the
+-- cast is still active and targeting a party member, then records
+-- minimal state. Cast-ID matching has been REMOVED (gotcha #0):
+-- equality compare on a secret-tainted castID errors. We accept rare
+-- flicker on rapid same-spell restart in exchange for not crashing.
+local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
+    if not TargetedList_ShouldPickup() then return end
+    if not TargetedList_IsRelevantCaster(casterUnit) then return end
+
+    -- Targeting filter: check if the cast targets a party member.
+    -- If "Show Untargeted" is on, also accept casts that have no
+    -- target at all (ground AoEs, self-buffs, untargeted channels).
+    local party = DF.db and DF.db.party
+    local showUntargeted = party and party.targetedListShowUntargeted
+    local target = casterUnit .. "target"
+    local hasTarget = TL_UnitExists(target)
+
+    if hasTarget then
+        -- Has a target — check if it's a party member
+        if not TargetedList_CastTargetIsPartyMember(casterUnit) then
+            return
+        end
+    elseif not showUntargeted then
+        -- No target and untargeted display is off — skip
+        return
+    end
+    -- If hasTarget is false and showUntargeted is true, we fall through
+    -- and show the bar with no target name.
+
+    -- IMPORTANT — gotcha #0 update: spellId from the event payload is
+    -- ALSO secret-tainted on nameplates. We can pass it through
+    -- secret-safe sinks (SetText after C_Spell.GetSpellName, SetTexture
+    -- after C_Spell.GetSpellTexture, SetShownFromBoolean after
+    -- C_Spell.IsSpellImportant) but we cannot truth-test, compare,
+    -- string.format, or otherwise inspect it in Lua.
+    --
+    -- Practical consequences:
+    --   * Important-spells filter is DROPPED here. The render pipeline
+    --     in commit #5 will implement it via SetShownFromBoolean using
+    --     the secret-tainted IsSpellImportant return.
+    --   * Spell name / texture are NOT read here. The render pipeline
+    --     will fetch them at render time and feed them straight into
+    --     SetText / SetTexture sinks.
+    --   * The debug log can only print clean values (casterUnit, the
+    --     channel flag, the event name). No spell name.
+    local spellId = eventSpellId
+    if spellId == nil then return end
+
+    -- Pull notInterruptible only — everything else from these APIs is
+    -- secret. notInterruptible itself is also secret, but only ever
+    -- fed to SetVertexColorFromBoolean (a secret-safe sink) at render.
+    local notInterruptible
+    if isChannel then
+        -- UnitChannelInfo positional 7: notInterruptible
+        notInterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+    else
+        -- UnitCastingInfo positional 8: notInterruptible
+        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    end
+
+    -- Duration: TimerDuration object (NOT a number), opaque, fed to
+    -- StatusBar:SetTimerDuration at render. Never arithmetic.
+    local duration
+    if isChannel then
+        duration = TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit)
+    else
+        duration = TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit)
+    end
+
+    activeTargetedListCasts[casterUnit] = {
+        spellId         = spellId,           -- secret; only feed to C_Spell.* + sinks
+        isChannel       = isChannel,         -- clean
+        startTime       = TL_GetTime(),      -- clean local approximation
+        duration        = duration,          -- opaque TimerDuration object
+        uninterruptible = notInterruptible,  -- secret; SetVertexColorFromBoolean only
+        casterUnit      = casterUnit,        -- clean (we generated it)
+        -- spellName / spellTexture / targetName / targetClass / targetUnit
+        -- intentionally NOT stored. All fetched at render time via the
+        -- secret-tainted APIs and piped directly into secret-safe sinks
+        -- (SetText, SetTexture, SetTextColor via C_ClassColor).
+    }
+
+    -- Safety timer: if the cast stop event never fires (CC, LOS,
+    -- mob death, etc.), force-remove the record after a generous
+    -- timeout. TS3 uses OnCooldownDone for this but that requires a
+    -- Cooldown frame per bar — our simpler approach uses C_Timer.
+    -- 15 seconds covers the longest enemy casts in WoW.
+    -- Safety timer: force-remove the record if no stop event fires
+    -- within 15 seconds. Uses DF._TargetedListRender to trigger a
+    -- render pass which handles the cleanup (bar release + slot free)
+    -- through the normal expiry path by marking as fading with 0 dur.
+    -- Safety timer: periodically check if the unit is still casting.
+    -- If not, force-remove the record. This catches cases where the
+    -- cast stop event doesn't fire (CC, LOS, mob death, etc.).
+    -- Unlike the previous fixed-timeout approach, this reschedules
+    -- as long as the unit is still casting — so long channels (20s+)
+    -- aren't prematurely removed.
+    local SAFETY_CHECK_INTERVAL = 5
+    if TL_C_Timer_After then
+        local function safetyCheck()
+            local rec = activeTargetedListCasts[casterUnit]
+            if not rec or rec.fadingStartedAt or rec.isTestCast then
+                return  -- already handled or test record
+            end
+            -- Check if the unit is still actually casting/channeling
+            local stillCasting = TL_UnitExists(casterUnit)
+                and (TL_UnitCastingInfo(casterUnit) ~= nil
+                     or TL_UnitChannelInfo(casterUnit) ~= nil)
+            if stillCasting then
+                -- Still casting — reschedule another check
+                TL_C_Timer_After(SAFETY_CHECK_INTERVAL, safetyCheck)
+            else
+                -- Not casting anymore — force-remove
+                rec.fadingStartedAt = TL_GetTime()
+                rec.fadingDuration = 0
+                if DF._TargetedListRender then
+                    DF._TargetedListRender()
+                end
+            end
+        end
+        TL_C_Timer_After(SAFETY_CHECK_INTERVAL, safetyCheck)
+    end
+
+    -- Debug log: only clean values. spellId / spellName / texture are
+    -- all secret-tainted and can't be formatted.
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "+cast %s%s",
+            casterUnit,
+            isChannel and " [channel]" or "")
+    end
+end
+
+-- Called for UNIT_SPELLCAST_START / CHANNEL_START / EMPOWER_START.
+-- Schedules the 0.2s delayed pickup — cast data isn't available yet
+-- when the START event fires (gotcha #1).
+--
+-- Note: NAME_PLATE_UNIT_ADDED and UNIT_TARGET re-pickup paths are
+-- intentionally NOT routed here. They don't carry spellId in their
+-- event payloads, so we'd have to read it from the API — but the
+-- secret-taint workaround (gotcha #0) makes that path fragile. The
+-- visible cost is missing a bar when a nameplate enters range while
+-- the mob is mid-cast (gap bounded by the cast remaining duration).
+local function TargetedList_ProcessCastStart(casterUnit, event, ...)
+    if not TargetedList_ShouldPickup() then return end
+    if not TargetedList_IsRelevantCaster(casterUnit) then return end
+    if not TL_C_Timer_After then return end
+
+    local isChannel
+    if event == "UNIT_SPELLCAST_CHANNEL_START" then
+        isChannel = true
+    else  -- UNIT_SPELLCAST_START / UNIT_SPELLCAST_EMPOWER_START
+        isChannel = false
+    end
+
+    -- Event payload (after `unit` consumed by OnEvent): (castGuid, spellId).
+    -- We only need spellId — castGuid was used for cast-ID matching, which
+    -- we've removed because secret-string equality compare errors.
+    local _, eventSpellId = ...
+
+    TL_C_Timer_After(TARGETEDLIST_PICKUP_DELAY, function()
+        TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
+    end)
+end
+
+-- Called for every "cast stopped" shaped event. Handles cast-ID
+-- matching, SUCCEEDED-during-channel suppression, mob-death guards,
+-- and interrupter lookup.
+local function TargetedList_OnCastStop(casterUnit, event, ...)
+    if not TargetedList_IsActive() then return end
+
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
+
+    -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
+    -- emit SUCCEEDED once per tick while still channeling. Ignore.
+    -- We pull only the spellId via positional discard to avoid
+    -- truth-testing the (possibly secret) first return value.
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        local _, _, _, _, _, _, _, channelSpellId = TL_UnitChannelInfo(casterUnit)
+        if channelSpellId ~= nil then return end
+    end
+
+    -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
+    -- the findings doc. Equality compare on a secret-tainted castID
+    -- errors. Without the match, rapid same-spell restarts may briefly
+    -- show stale state. Acceptable for v1.
+
+    local wasInterrupted = (event == "UNIT_SPELLCAST_INTERRUPTED")
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
+
+    -- Store interrupter GUID for display. The GUID is secret-tainted
+    -- on nameplates but UnitNameFromGUID → SetText is a secret-safe
+    -- sink chain — we never inspect the value in Lua. For non-
+    -- interrupt events this is harmlessly nil.
+    local interrupterGuid = select(3, ...)
+
+    local party = DF.db and DF.db.party
+    local fadeDuration
+    if wasInterrupted then
+        fadeDuration = (party and party.targetedListInterruptedFlashDuration) or 1.0
+    else
+        fadeDuration = (party and party.targetedListFadeOutDuration) or 0.25
+    end
+
+    if fadeDuration and fadeDuration > 0 then
+        active.fadingStartedAt = TL_GetTime()
+        active.fadingDuration  = fadeDuration
+        active.wasInterrupted  = wasInterrupted
+        active.interrupterGuid = wasInterrupted and interrupterGuid or nil
+        if TargetedList_StartFadeTicker then
+            TargetedList_StartFadeTicker()
+        end
+    else
+        activeTargetedListCasts[casterUnit] = nil
+    end
+
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "-cast %s: %s%s",
+            casterUnit, event,
+            wasInterrupted and " [interrupted]" or "")
+    end
+end
+
+-- Gotcha #9: mob interruptibility toggles mid-cast. The clean boolean
+-- from the event replaces the (possibly secret-tainted) value from
+-- UnitCastingInfo so future bar redraws can branch on it cleanly.
+local function TargetedList_OnInterruptibilityChange(casterUnit, isInterruptible)
+    if not TargetedList_IsActive() then return end
+    local active = activeTargetedListCasts[casterUnit]
+    if not active then return end
+    -- The stored field is "uninterruptible" (matches the WoW API name).
+    -- Clean booleans are always safe to feed into SetVertexColorFromBoolean.
+    active.uninterruptible = not isInterruptible
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "~cast %s: interruptible=%s",
+            casterUnit, tostring(isInterruptible))
+    end
+    -- Commit #5: apply to the bar via SetVertexColorFromBoolean.
+end
+
+-- Mid-cast update handler: UNIT_SPELLCAST_DELAYED, CHANNEL_UPDATE,
+-- EMPOWER_UPDATE. The cast duration may have changed (pushback,
+-- channel extension, empower stage). Re-read the duration object and
+-- re-apply content so the bar fill stays in sync.
+local function TargetedList_OnCastUpdate(casterUnit, event, ...)
+    if not TargetedList_IsActive() then return end
+    local rec = activeTargetedListCasts[casterUnit]
+    if not rec or rec.fadingStartedAt then return end
+
+    -- Re-read the duration object (may have changed).
+    local isChannel = rec.isChannel
+    local newDuration
+    if isChannel then
+        newDuration = TL_UnitChannelDuration and TL_UnitChannelDuration(casterUnit)
+    else
+        newDuration = TL_UnitCastingDuration and TL_UnitCastingDuration(casterUnit)
+    end
+    if newDuration then
+        rec.duration = newDuration
+    end
+
+    -- Re-read notInterruptible (may have changed with pushback).
+    if isChannel then
+        rec.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+    else
+        rec.uninterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    end
+
+    -- Re-apply content to the existing bar to update fill + countdown.
+    local bar = casterToBar and casterToBar[casterUnit]
+    if bar then
+        TargetedList_ApplyBarContent(bar, rec)
+    end
+end
+
+-- Mid-cast target change handler: the enemy swapped target while
+-- casting. If we're already tracking this caster, verify the new
+-- target is still a party member. If not, drop the bar. We can't
+-- pick up NEW casts from UNIT_TARGET (no spellId in the payload)
+-- but we CAN drop existing bars that are no longer relevant.
+local function TargetedList_OnTargetChange(casterUnit)
+    if not TargetedList_IsActive() then return end
+    local rec = activeTargetedListCasts[casterUnit]
+    if not rec or rec.fadingStartedAt or rec.isTestCast then return end
+
+    -- Check if the caster's new target is still a party member
+    -- (or no target at all, which we might want to keep if
+    -- showUntargeted is on).
+    local target = casterUnit .. "target"
+    local hasTarget = TL_UnitExists(target)
+    local party = DF.db and DF.db.party
+
+    if hasTarget then
+        if not TargetedList_CastTargetIsPartyMember(casterUnit) then
+            -- New target isn't a party member — drop the bar
+            activeTargetedListCasts[casterUnit] = nil
+            if DF._TargetedListRender then DF._TargetedListRender() end
+        end
+    elseif not (party and party.targetedListShowUntargeted) then
+        -- No target and untargeted display is off — drop
+        activeTargetedListCasts[casterUnit] = nil
+        if DF._TargetedListRender then DF._TargetedListRender() end
+    end
+end
+
+-- Stale-bar validation: iterate all tracked bars and verify each
+-- one is still valid (nameplate exists, unit is casting/channeling).
+-- Remove any that are stale. Called on zone transitions and loading
+-- screen exit to catch bars that weren't cleaned up by normal events
+-- (e.g. missed NAME_PLATE_UNIT_REMOVED during heavy nameplate
+-- recycling, or zone changes that don't fire proper stop events).
+local function TargetedList_ValidateTrackedBars()
+    if not TargetedList_IsGateOpen() then return end
+    local anyRemoved = false
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if not rec.isTestCast and not rec.fadingStartedAt then
+            -- Check: does the nameplate still exist?
+            if not TL_UnitExists(unit) then
+                activeTargetedListCasts[unit] = nil
+                anyRemoved = true
+            -- Check: is the unit still casting/channeling?
+            elseif TL_UnitCastingInfo(unit) == nil
+               and TL_UnitChannelInfo(unit) == nil then
+                activeTargetedListCasts[unit] = nil
+                anyRemoved = true
+            end
+        end
+    end
+    if anyRemoved and DF._TargetedListRender then
+        DF._TargetedListRender()
+    end
+end
+
+-- Gotcha #11: nameplate removal events don't reliably fire on zone
+-- transitions. Also used on feature disable and on explicit cleanup.
+local function TargetedList_ReleaseAllBars()
+    if not TargetedList_IsGateOpen() then return end
+    wipe(activeTargetedListCasts)
+    -- Commit #5: release every pooled bar back to the framepool.
+    if DF.Debug then
+        DF:Debug("TARGETEDLIST", "release all bars")
+    end
+end
+
+-- Expose internal hooks for the shared OnEvent dispatcher above.
+DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
+DF._TargetedListOnCastStop = TargetedList_OnCastStop
+DF._TargetedListOnCastUpdate = TargetedList_OnCastUpdate
+DF._TargetedListOnInterruptibilityChange = TargetedList_OnInterruptibilityChange
+DF._TargetedListOnTargetChange = TargetedList_OnTargetChange
+DF._TargetedListValidateAll = TargetedList_ValidateTrackedBars
+DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
+
+-- ------------------------------------------------------------
+-- Public entry points
+-- ------------------------------------------------------------
+
+-- ------------------------------------------------------------
+-- Render pipeline
+-- ------------------------------------------------------------
+-- All user-facing rendering flows through secret-safe sinks so that
+-- values from UnitCastingInfo / UnitSpellTargetName / etc. — which
+-- are secret-tainted on nameplates — can be displayed without ever
+-- being inspected in Lua.
+--
+-- Safe sinks used below:
+--   FontString:SetText(secretString)
+--   Texture:SetTexture(secretTextureId)
+--   StatusBar:SetTimerDuration(secretDurationObj, interp, direction)
+--   Texture:SetVertexColorFromBoolean(secretBool, cA, cB)
+--   Frame:SetShownFromBoolean(secretBool, true, false)
+--   Frame:SetAlphaFromBoolean(secretBool, aOn, aOff)
+--   C_ClassColor.GetClassColor(secretClassString) -> secret-safe color
+--
+-- Unsafe operations (never applied to secret values):
+--   arithmetic, concatenation, equality compare with non-nil, truth
+--   tests, table keys, string.format, tostring, print.
+
+local TL_C_ClassColor = C_ClassColor
+
+-- Lazy-created render state. All nil until the feature is first
+-- enabled. On stable releases these stay nil forever (gate blocks).
+-- (The bar pool itself is declared later, next to its helpers.)
+local activeBars = {}  -- ordered list of currently-displayed bars
+
+-- Per-caster bar map: casterToBar[casterUnit] = bar frame.
+-- This is the incremental tracking table — bars persist until their
+-- cast record is removed, avoiding the teardown-all/rebuild-all
+-- pattern that caused performance issues.
+local casterToBar = {}
+
+-- Slot tracking for STATIC sort order. Each record gets a fixed slot
+-- index at acquisition time. The slot persists until the record is
+-- removed. When a record is removed its slot becomes available for
+-- the next new record.
+local casterToSlot = {}   -- [casterUnit] = slotIndex
+local nextFreeSlot = 1    -- next slot to assign
+
+-- Active test mode — when true, the container is populated from
+-- synthetic data instead of live casts.
+local targetedListTestActive = false
+
+-- Layout version stamp, used for the Dispel-style skip-rebuild guard.
+-- Incremented whenever a layout-affecting setting changes.
+local targetedListLayoutVersion = 0
+
+-- ------------------------------------------------------------
+-- Container + bar creation
+-- ------------------------------------------------------------
+
+-- Compute the maximum container footprint: barWidth x
+-- (barHeight*maxBars + spacing*(maxBars-1))
+local function TargetedList_ComputeContainerSize(db)
+    local w = db.targetedListWidth or 240
+    local h = db.targetedListHeight or 22
+    local spacing = db.targetedListSpacing or 2
+    local max = db.targetedListMaxBars or 6
+    if max < 1 then max = 1 end
+    local height = (h * max) + (spacing * (max - 1))
+    return w, height
+end
+
+local function TargetedList_EnsureContainer()
+    if targetedListContainer then return targetedListContainer end
+    local c = CreateFrame("Frame", "DandersFramesTargetedListContainer", UIParent)
+    c:SetFrameStrata("MEDIUM")
+    c:Hide()
+    targetedListContainer = c
+    return c
+end
+
+-- Build a single bar frame from scratch. Called by the pool's
+-- acquire path on a cold fetch.
+--
+-- IMPORTANT: bars are plain Frames, NOT Buttons with
+-- SecureActionButtonTemplate. A previous version used the secure
+-- template so click-to-target could set a "unit" attribute, but the
+-- container then became "parent of a secure child" and :Hide() on
+-- it was protected during combat — triggering ADDON_ACTION_BLOCKED
+-- every time the last active cast stopped mid-pull. Click-to-target
+-- is deferred until we have a combat-safe mechanism for it.
+--
+-- Structure:
+--   Frame
+--     Background texture
+--     Border
+--     Icon texture (left-aligned by default)
+--     StatusBar (progress fill)
+--       Spell name FontString
+--       Target name FontString
+local function TargetedList_BuildBar(parent)
+    local bar = CreateFrame("Frame", nil, parent)
+    bar:Hide()
+    bar:SetFrameStrata("MEDIUM")
+
+    -- Background (solid color behind everything). Color + alpha
+    -- applied by TargetedList_ApplyBarAppearance on every render.
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(bar)
+    bg:SetColorTexture(0, 0, 0, 0.6)
+    bar.bg = bg
+
+    -- Border (backdrop-template frame). Visibility + color applied
+    -- by TargetedList_ApplyBarAppearance.
+    local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+    border:SetAllPoints(bar)
+    border:SetBackdrop({
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    border:SetBackdropBorderColor(0, 0, 0, 1)
+    bar.border = border
+
+    -- Icon — anchored dynamically by ApplyBarAppearance so its
+    -- position (LEFT/RIGHT) and zoom state can change at runtime.
+    local icon = bar:CreateTexture(nil, "ARTWORK")
+    bar.icon = icon
+
+    -- Progress StatusBar. Anchors are set by ApplyBarAppearance to
+    -- leave room for the icon depending on its position.
+    local progress = CreateFrame("StatusBar", nil, bar)
+    progress:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    progress:SetMinMaxValues(0, 1)
+    progress:SetValue(0)
+    bar.progress = progress
+
+    -- Text overlays on the progress bar. Anchor / offset / font are
+    -- applied by ApplyBarAppearance and ApplyTextLayout per render.
+    local spellName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    spellName:SetJustifyV("MIDDLE")
+    spellName:SetWordWrap(false)
+    bar.spellName = spellName
+
+    local targetName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    targetName:SetJustifyV("MIDDLE")
+    targetName:SetWordWrap(false)
+    bar.targetName = targetName
+
+    -- Duration countdown: a Cooldown frame that handles native
+    -- secret-safe countdown rendering via SetCooldownFromDurationObject.
+    -- The swirl / edge are hidden; we only use it for the countdown
+    -- number text. Positioned and sized by ApplyBarAppearance.
+    local durationCooldown = CreateFrame("Cooldown", nil, progress, "CooldownFrameTemplate")
+    durationCooldown:SetDrawEdge(false)
+    durationCooldown:SetDrawSwipe(false)
+    durationCooldown:SetDrawBling(false)
+    durationCooldown:SetHideCountdownNumbers(false)
+    bar.duration = durationCooldown
+
+    -- Interrupter name FontString — shown during interrupted-flash
+    -- fade with the name of who kicked the cast. Overlays spell name
+    -- and target name (which are hidden during the flash).
+    local interruptText = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    interruptText:SetPoint("CENTER", progress, "CENTER", 0, 0)
+    interruptText:SetJustifyH("CENTER")
+    interruptText:SetJustifyV("MIDDLE")
+    interruptText:SetWordWrap(false)
+    interruptText:Hide()
+    bar.interruptText = interruptText
+
+    -- Highlight frame for important-spell glow. Reuses the existing
+    -- InitGlowBorder / UpdateGlowBorder infrastructure from the
+    -- personal targeted spells icon system. Shown only for important
+    -- spells via SetAlphaFromBoolean (secret-safe).
+    local highlight = CreateFrame("Frame", nil, bar)
+    highlight:SetAllPoints(bar)
+    highlight:SetFrameLevel(bar:GetFrameLevel() + 5)
+    highlight:Hide()
+    bar.highlightFrame = highlight
+
+    return bar
+end
+
+-- Helper: resolve an anchor-name string to a WoW SetPoint argument.
+local function TargetedList_ResolveAnchorPoint(anchorName)
+    if anchorName == "CENTER" then return "CENTER" end
+    if anchorName == "RIGHT" then return "RIGHT" end
+    return "LEFT"
+end
+
+-- Apply anchor/offset/alignment settings to a bar's text elements.
+-- Anchor controls WHERE the element is placed on the bar. Alignment
+-- controls how text WITHIN the element is justified — independently
+-- of anchor, so users can e.g. anchor target name to RIGHT but
+-- left-justify the text within it.
+local function TargetedList_ApplyTextLayout(bar, db)
+    if not bar or not db then return end
+
+    -- Default text element width derived from the bar width setting.
+    -- We don't call bar.progress:GetWidth() because it returns a
+    -- secret-tainted number on nameplate-parented bars, and the
+    -- comparison (< 10) would error. The db value is always clean.
+    local barW = db.targetedListWidth or 240
+    local barH = db.targetedListHeight or 22
+    local showIcon = db.targetedListShowIcon ~= false
+    local progressW = showIcon and (barW - barH) or (barW - 2)
+
+    local function applyTextElement(fs, anchorKey, alignKey, widthKey, xKey, yKey, defaultAnchor, defaultAlign)
+        if not fs then return end
+        local point = TargetedList_ResolveAnchorPoint(db[anchorKey] or defaultAnchor)
+        local align = db[alignKey] or defaultAlign or point
+        local w = (widthKey and db[widthKey] or 0) or 0
+        if w <= 0 then w = progressW end
+        fs:ClearAllPoints()
+        fs:SetPoint(point, bar.progress, point,
+            db[xKey] or 0, db[yKey] or 0)
+        fs:SetWidth(w)
+        fs:SetJustifyH(align)
+    end
+
+    applyTextElement(bar.spellName,
+        "targetedListSpellNameAnchor", "targetedListSpellNameAlign",
+        "targetedListSpellNameWidth",
+        "targetedListSpellNameX", "targetedListSpellNameY", "LEFT", "LEFT")
+    applyTextElement(bar.targetName,
+        "targetedListTargetNameAnchor", "targetedListTargetNameAlign",
+        "targetedListTargetNameWidth",
+        "targetedListTargetNameX", "targetedListTargetNameY", "RIGHT", "RIGHT")
+
+    -- Interrupt text — normally hidden, shown during interrupted flash
+    applyTextElement(bar.interruptText,
+        "targetedListInterruptTextAnchor", "targetedListInterruptTextAlign",
+        "targetedListInterruptTextWidth",
+        "targetedListInterruptTextX", "targetedListInterruptTextY", "CENTER", "CENTER")
+
+    -- Duration: the Cooldown frame renders its own countdown text at
+    -- its center. We position the frame itself (as a narrow box) at
+    -- the configured anchor, and the text appears centered inside.
+    if bar.duration then
+        local point = TargetedList_ResolveAnchorPoint(db.targetedListDurationAnchor or "RIGHT")
+        local fontSize = db.targetedListFontSize or 12
+        local cdW = math.max(40, fontSize * 3)
+        local cdH = math.max(14, fontSize + 4)
+        bar.duration:ClearAllPoints()
+        bar.duration:SetSize(cdW, cdH)
+        bar.duration:SetPoint(point, bar.progress, point,
+            db.targetedListDurationX or 0, db.targetedListDurationY or 0)
+    end
+end
+
+-- Apply static appearance settings to a bar. "Static" here means the
+-- configuration doesn't depend on the active cast — it's settings
+-- that come straight from db: icon position/zoom/show, border color
+-- and visibility, background alpha, statusbar texture, font, show/
+-- hide toggles for all text elements.
+--
+-- Called per bar during render (both real and test paths), and again
+-- from UpdateTargetedListLayout when settings change. The function
+-- runs at drag-tick rate during slider interaction so keep it cheap.
+local function TargetedList_ApplyBarAppearance(bar, db)
+    if not bar or not db then return end
+    local barH = db.targetedListHeight or 22
+    local showIcon = db.targetedListShowIcon ~= false
+    local iconPos = db.targetedListIconPosition or "LEFT"
+
+    -- ----- Icon: show/hide, position, zoom -----
+    bar.icon:ClearAllPoints()
+    if showIcon then
+        bar.icon:Show()
+        bar.icon:SetHeight(barH - 2)
+        bar.icon:SetWidth(barH - 2)
+        if iconPos == "RIGHT" then
+            bar.icon:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -1, -1)
+            bar.icon:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+        else
+            bar.icon:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+            bar.icon:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 1, 1)
+        end
+        if db.targetedListZoomIcon ~= false then
+            bar.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        else
+            bar.icon:SetTexCoord(0, 1, 0, 1)
+        end
+    else
+        bar.icon:Hide()
+    end
+
+    -- ----- Progress StatusBar: anchors leave room for the icon -----
+    bar.progress:ClearAllPoints()
+    if showIcon and iconPos == "RIGHT" then
+        bar.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar.icon, "BOTTOMLEFT", -1, 0)
+    elseif showIcon then
+        bar.progress:SetPoint("TOPLEFT", bar.icon, "TOPRIGHT", 1, 0)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+    else
+        bar.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+        bar.progress:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+    end
+
+    -- ----- StatusBar texture -----
+    -- Only call SetStatusBarTexture if the path changed — calling it
+    -- unconditionally resets the StatusBar's internal value/fill state,
+    -- which clobbers the progress fill set by ApplyBarContent.
+    local texturePath = db.targetedListTexture or "Interface\\TargetingFrame\\UI-StatusBar"
+    if bar._lastTexturePath ~= texturePath then
+        bar.progress:SetStatusBarTexture(texturePath)
+        bar._lastTexturePath = texturePath
+    end
+
+    -- ----- Background alpha -----
+    local bgAlpha = db.targetedListBackgroundAlpha or 0.6
+    bar.bg:SetColorTexture(0, 0, 0, bgAlpha)
+
+    -- ----- Border show/hide + color -----
+    local showBorder = db.targetedListShowBorder ~= false
+    if showBorder then
+        bar.border:Show()
+        local bc = db.targetedListBorderColor or {r=0, g=0, b=0, a=1}
+        bar.border:SetBackdropBorderColor(bc.r or 0, bc.g or 0, bc.b or 0, bc.a or 1)
+    else
+        bar.border:Hide()
+    end
+
+    -- ----- Font (all three text elements share one font setting) -----
+    local fontPath = "Fonts\\FRIZQT__.TTF"
+    if DF.GetFontPath then
+        local resolved = DF:GetFontPath(db.targetedListFont or "Friz Quadrata TT")
+        if type(resolved) == "string" then fontPath = resolved end
+    end
+    local fontSize = db.targetedListFontSize or 12
+    local outline = db.targetedListFontOutline
+    if outline == "NONE" then outline = "" end
+
+    -- Per-element font sizes fall back to the global targetedListFontSize
+    local spellNameFontSize = db.targetedListSpellNameFontSize or fontSize
+    local targetNameFontSize = db.targetedListTargetNameFontSize or fontSize
+    bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
+    bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
+    if bar.interruptText then
+        local intFontSize = db.targetedListInterruptTextFontSize or fontSize
+        bar.interruptText:SetFont(fontPath, intFontSize, outline)
+    end
+    -- NOTE: The duration Cooldown frame renders its countdown text
+    -- via Blizzard's native cooldown system, which uses a built-in
+    -- font object (NumberFontNormal-ish). Custom font paths can't
+    -- be applied — SetCountdownFont takes a font object name string,
+    -- not a (path, size, outline) triple.
+
+    -- ----- Per-element show/hide toggles -----
+    -- NOTE: spell name and target name visibility is handled in
+    -- ApplyBarContent because it depends on the fading/interrupt
+    -- state (hidden during interrupted flash to make room for the
+    -- interrupter name). Only duration is toggled here.
+    bar.duration:SetShown(db.targetedListShowDuration ~= false)
+end
+
+-- Release callback for the pool.
+local function TargetedList_ResetBar(pool, bar)
+    bar:Hide()
+    bar:SetAlpha(1)
+    bar:ClearAllPoints()
+    bar.casterUnit = nil
+    bar.spellId = nil
+    bar.isChannel = nil
+    bar.testAnim = nil
+    bar.progress:SetValue(0)
+    bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
+    bar.spellName:SetText("")
+    bar.targetName:SetText("")
+    if bar.duration and bar.duration.Clear then
+        bar.duration:Clear()
+    end
+    bar.icon:SetTexture(nil)
+    bar._lastTexturePath = nil
+    if bar.highlightFrame then
+        bar.highlightFrame:Hide()
+    end
+    if bar.interruptText then
+        bar.interruptText:SetText("")
+        bar.interruptText:Hide()
+    end
+end
+
+-- Manual pool — CreateFramePool requires an XML template, which we
+-- don't have (bars are built programmatically). Simple array of
+-- available bars + array of currently-used bars. Acquire pops from
+-- available (or builds a new one); Release wipes and pushes back.
+local targetedListBarPoolAvailable = {}
+
+local function TargetedList_AcquireBar()
+    local parent = TargetedList_EnsureContainer()
+    local bar = table.remove(targetedListBarPoolAvailable)
+    if bar then
+        return bar
+    end
+    return TargetedList_BuildBar(parent)
+end
+
+local function TargetedList_ReleaseBar(bar)
+    TargetedList_ResetBar(nil, bar)
+    table.insert(targetedListBarPoolAvailable, bar)
+end
+
+-- Legacy shim so existing call sites using targetedListBarPool still
+-- function. The pool object exposes Acquire() and Release(bar).
+local targetedListBarPool = {
+    Acquire = function(self) return TargetedList_AcquireBar() end,
+    Release = function(self, bar) return TargetedList_ReleaseBar(bar) end,
+}
+
+local function TargetedList_EnsureBarPool()
+    TargetedList_EnsureContainer()
+    return targetedListBarPool
+end
+
+-- ------------------------------------------------------------
+-- Bar content application (the secret-safe sink boundary)
+-- ------------------------------------------------------------
+--
+-- This is the ONE function that touches secret-tainted values. It
+-- reads them fresh from the API and pipes them directly into
+-- Blizzard widget sinks. No values are stored, compared, formatted,
+-- or inspected in Lua. If you need to add a new rendered field, do
+-- it here and make sure every call goes through a sink.
+
+local function TargetedList_ApplyBarContent(bar, activeRec)
+    local casterUnit = activeRec.casterUnit
+    local spellId = activeRec.spellId
+    local isTest = activeRec.isTestCast
+
+    -- Store casterUnit on the bar for lightweight progress lookups
+    -- (the test ticker reads this to find the matching record).
+    bar.casterUnit = casterUnit
+
+    -- Spell name: test records store a clean string; live records
+    -- pipe the (possibly secret) result through SetText.
+    if isTest and activeRec.testSpellName then
+        bar.spellName:SetText(activeRec.testSpellName)
+    elseif TL_C_Spell_GetSpellName then
+        bar.spellName:SetText(TL_C_Spell_GetSpellName(spellId) or "")
+    end
+
+    -- Spell texture: same pattern.
+    if isTest and activeRec.testSpellTexture then
+        bar.icon:SetTexture(activeRec.testSpellTexture)
+    elseif TL_C_Spell_GetSpellTexture then
+        bar.icon:SetTexture(TL_C_Spell_GetSpellTexture(spellId))
+    end
+
+    -- Target name: test records store a clean string; live records
+    -- use UnitSpellTargetName (secret-tainted, fed to SetText sink).
+    local party = DF.db and DF.db.party
+    if isTest and activeRec.testTargetName then
+        local tname = activeRec.testTargetName
+        if party and party.targetedListShowArrowPrefix then
+            bar.targetName:SetText("> " .. tname)
+        else
+            bar.targetName:SetText(tname)
+        end
+    else
+        local targetName = TL_UnitSpellTargetName(casterUnit)
+        if targetName then
+            if party and party.targetedListShowArrowPrefix then
+                bar.targetName:SetFormattedText("> %s", targetName)
+            else
+                bar.targetName:SetText(targetName)
+            end
+        else
+            bar.targetName:SetText("")
+        end
+    end
+
+    -- Class color: test records store a clean class string; live
+    -- records use UnitSpellTargetClass (secret, through Blizzard sink).
+    local useClassColor = party and party.targetedListTargetNameClassColor
+    if useClassColor and TL_C_ClassColor and TL_C_ClassColor.GetClassColor then
+        local targetClass
+        if isTest then
+            targetClass = activeRec.testTargetClass
+        else
+            targetClass = TL_UnitSpellTargetClass(casterUnit)
+        end
+        if targetClass then
+            local color = TL_C_ClassColor.GetClassColor(targetClass)
+            if color then
+                bar.targetName:SetTextColor(color.r, color.g, color.b, 1)
+            end
+        else
+            bar.targetName:SetTextColor(1, 1, 1, 1)
+        end
+    else
+        bar.targetName:SetTextColor(1, 1, 1, 1)
+    end
+
+    -- Progress fill + countdown text:
+    -- testFrozenFill provides a direct fill value for static test bars.
+    -- Fading records skip fill updates (stays where cast stopped).
+    if activeRec.testFrozenFill then
+        bar.progress:SetMinMaxValues(0, 1)
+        bar.progress:SetValue(activeRec.testFrozenFill)
+    elseif activeRec.fadingStartedAt then
+        -- Don't update progress. The fill stays where it was.
+    elseif isTest and activeRec.testCastDuration then
+        local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
+        local elapsed = TL_GetTime() - activeRec.startTime
+        local pct = math.min(1, math.max(0, elapsed / cutoff))
+        bar.progress:SetMinMaxValues(0, 1)
+        bar.progress:SetValue(pct)
+        if bar.duration and bar.duration.SetCooldown then
+            bar.duration:SetCooldown(activeRec.startTime, cutoff)
+        end
+    elseif activeRec.duration and bar.progress.SetTimerDuration then
+        local direction = activeRec.isChannel
+            and Enum.StatusBarTimerDirection.RemainingTime
+            or Enum.StatusBarTimerDirection.ElapsedTime
+        bar.progress:SetTimerDuration(activeRec.duration,
+            Enum.StatusBarInterpolation.Immediate, direction)
+        if bar.duration and activeRec.duration then
+            if bar.duration.SetCooldownFromDurationObject then
+                bar.duration:SetCooldownFromDurationObject(activeRec.duration)
+            end
+        end
+    end
+
+    -- Interruptible color: test records have a clean bool so we can
+    -- use plain SetStatusBarColor. Live records have a secret-tainted
+    -- bool → SetVertexColorFromBoolean.
+    local interruptibleColor = party and party.targetedListInterruptibleColor
+        or {r=1, g=0.2, b=0.2, a=1}
+    local uninterruptibleColor = party and party.targetedListUninterruptibleColor
+        or {r=0.5, g=0.5, b=0.5, a=1}
+    if isTest then
+        local c = activeRec.uninterruptible and uninterruptibleColor or interruptibleColor
+        bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
+    elseif activeRec.uninterruptible ~= nil and bar.progress.GetStatusBarTexture then
+        local tex = bar.progress:GetStatusBarTexture()
+        if tex and tex.SetVertexColorFromBoolean then
+            tex:SetVertexColorFromBoolean(activeRec.uninterruptible,
+                uninterruptibleColor, interruptibleColor)
+        else
+            bar.progress:SetStatusBarColor(
+                interruptibleColor.r, interruptibleColor.g,
+                interruptibleColor.b, interruptibleColor.a)
+        end
+    else
+        bar.progress:SetStatusBarColor(
+            interruptibleColor.r, interruptibleColor.g,
+            interruptibleColor.b, interruptibleColor.a)
+    end
+
+    -- Important-spells filter at render time. C_Spell.IsSpellImportant
+    -- returns a secret-tainted boolean when given a secret spellId,
+    -- so we pipe it through SetShownFromBoolean — the secret-safe
+    -- sink that accepts a secret bool and toggles shown state.
+    -- When the filter is off we just make sure the bar is shown.
+    if party and party.targetedListImportantOnly
+       and TL_C_Spell_IsSpellImportant
+       and bar.SetShownFromBoolean then
+        local isImportant = TL_C_Spell_IsSpellImportant(spellId)
+        bar:SetShownFromBoolean(isImportant, true, false)
+    else
+        if bar.SetShownFromBoolean then
+            bar:SetShownFromBoolean(true, true, false)
+        end
+    end
+
+    -- Important-spell glow: reuses the existing InitGlowBorder /
+    -- UpdateGlowBorder infrastructure. For test bars we use a stored
+    -- testIsImportant flag (since our test spell IDs aren't actually
+    -- flagged as important by Blizzard). For live bars we use
+    -- SetAlphaFromBoolean with the secret-tainted IsSpellImportant result.
+    if bar.highlightFrame then
+        if party and party.targetedListHighlightImportant then
+            local hc = party.targetedListHighlightColor or {r=1, g=0.8, b=0}
+            if DF.InitGlowBorder then DF.InitGlowBorder(bar.highlightFrame) end
+            if DF.UpdateGlowBorder then
+                DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
+            end
+            bar.highlightFrame:Show()
+            if isTest and activeRec.testIsImportant ~= nil then
+                -- Clean bool — use SetShown directly
+                bar.highlightFrame:SetShown(activeRec.testIsImportant)
+            elseif TL_C_Spell_IsSpellImportant then
+                local isImportant = TL_C_Spell_IsSpellImportant(spellId)
+                bar.highlightFrame:SetAlphaFromBoolean(isImportant)
+            else
+                bar.highlightFrame:Hide()
+            end
+        else
+            bar.highlightFrame:Hide()
+        end
+    end
+
+    -- Text visibility (normal, non-fading state). Fading bars have
+    -- their text managed by Step 3 of the incremental Render.
+    if not activeRec.fadingStartedAt then
+        if bar.interruptText then bar.interruptText:Hide() end
+        bar.spellName:SetShown(party and party.targetedListShowSpellName ~= false)
+        bar.targetName:SetShown(party and party.targetedListShowTargetName ~= false)
+    end
+
+    -- Hide-own-casts filter (non-fading path only).
+    if not activeRec.fadingStartedAt then
+        if party and party.targetedListHideOwnCasts
+           and bar.SetAlphaFromBoolean then
+            local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
+            bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
+        else
+            bar:SetAlpha(1)
+        end
+    end
+end
+
+-- ------------------------------------------------------------
+-- Layout
+-- ------------------------------------------------------------
+
+-- Applies the container size, bar dimensions, and stack positioning.
+-- Called on every render pass (cheap; just a few SetSize/SetPoint calls).
+local function TargetedList_LayoutBars()
+    if not targetedListContainer then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+
+    local cw, ch = TargetedList_ComputeContainerSize(db)
+    local x = db.targetedListX or 0
+    local y = db.targetedListY or -10
+    targetedListContainer:ClearAllPoints()
+    targetedListContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    targetedListContainer:SetSize(cw, ch)
+
+    local barW = db.targetedListWidth or 240
+    local barH = db.targetedListHeight or 22
+    local spacing = db.targetedListSpacing or 2
+    local growth = db.targetedListGrowth or "DOWN"
+
+    -- Position each active bar by index. For STATIC sort mode,
+    -- activeBars may have nil gaps (released slots) — we use a
+    -- numeric for loop and skip nils so bars stay at their
+    -- assigned position. The slot index IS the position index.
+    local maxBarsLocal = db.targetedListMaxBars or 6
+    local maxSlot = #activeBars
+    -- For STATIC, the highest slot might exceed #activeBars since
+    -- Lua's # operator stops at the first nil. Scan for the real max.
+    for i = maxBarsLocal, 1, -1 do
+        if activeBars[i] then maxSlot = i; break end
+    end
+
+    for i = 1, maxSlot do
+        local bar = activeBars[i]
+        if bar then
+            bar:SetSize(barW, barH)
+            bar:ClearAllPoints()
+            if growth == "UP" then
+                bar:SetPoint("BOTTOM", targetedListContainer, "BOTTOM",
+                    0, (i - 1) * (barH + spacing))
+            else
+                bar:SetPoint("TOP", targetedListContainer, "TOP",
+                    0, -(i - 1) * (barH + spacing))
+            end
+            TargetedList_ApplyBarAppearance(bar, db)
+            TargetedList_ApplyTextLayout(bar, db)
+            bar:Show()
+        end
+    end
+end
+
+-- ------------------------------------------------------------
+-- Render pass
+-- ------------------------------------------------------------
+--
+-- Walks activeTargetedListCasts, acquires a pooled bar for each,
+-- applies content via the secret-safe sink function, and lays out.
+-- Called from the cast lifecycle after any change to the active set,
+-- from UpdateTargetedListLayout when settings change, and from
+-- test mode when rebuilding demo bars.
+
+local function TargetedList_ReleaseAllActiveBars()
+    for i = #activeBars, 1, -1 do
+        local bar = activeBars[i]
+        if bar then targetedListBarPool:Release(bar) end
+        activeBars[i] = nil
+    end
+    wipe(casterToBar)
+    wipe(casterToSlot)
+    nextFreeSlot = 1
+end
+
+-- ------------------------------------------------------------
+-- Bar style presets
+-- ------------------------------------------------------------
+-- Each preset is a bundle of individual settings. Picking a preset
+-- from the dropdown writes the entire bundle to db and triggers a
+-- layout refresh. Individual settings remain user-editable after
+-- the bundle is applied — the preset is a one-shot "start from this
+-- configuration" action, not a continuous override.
+
+local TARGETEDLIST_STYLE_PRESETS = {
+    DEFAULT = {
+        targetedListWidth = 240,
+        targetedListHeight = 22,
+        targetedListSpacing = 2,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.6,
+        targetedListFontSize = 12,
+    },
+    COMPACT = {
+        targetedListWidth = 200,
+        targetedListHeight = 16,
+        targetedListSpacing = 1,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.6,
+        targetedListFontSize = 10,
+    },
+    DETAILED = {
+        targetedListWidth = 280,
+        targetedListHeight = 30,
+        targetedListSpacing = 3,
+        targetedListShowIcon = true,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = true,
+        targetedListShowBorder = true,
+        targetedListBackgroundAlpha = 0.7,
+        targetedListFontSize = 14,
+    },
+    MINIMAL = {
+        targetedListWidth = 180,
+        targetedListHeight = 14,
+        targetedListSpacing = 1,
+        targetedListShowIcon = false,
+        targetedListIconPosition = "LEFT",
+        targetedListZoomIcon = true,
+        targetedListShowSpellName = true,
+        targetedListShowTargetName = true,
+        targetedListShowDuration = false,
+        targetedListShowBorder = false,
+        targetedListBackgroundAlpha = 0.4,
+        targetedListFontSize = 10,
+    },
+}
+
+function DF:ApplyTargetedListPreset(presetName)
+    if not TargetedList_IsGateOpen() then return end
+    local preset = TARGETEDLIST_STYLE_PRESETS[presetName]
+    if not preset then return end
+    local party = DF.db and DF.db.party
+    if not party then return end
+
+    for k, v in pairs(preset) do
+        party[k] = v
+    end
+    party.targetedListStylePreset = presetName
+
+    DF:UpdateTargetedListLayout()
+end
+
+-- ------------------------------------------------------------
+-- Fade-out / interrupted-flash ticker
+-- ------------------------------------------------------------
+-- When a cast stops, its record is marked with fadingStartedAt +
+-- fadingDuration instead of being removed immediately. The ticker
+-- below re-renders every ~50ms so the bar's alpha/tint can animate.
+-- When a fading record's timer expires, the render pass removes it
+-- from activeTargetedListCasts. The ticker self-cancels when no
+-- fading records remain.
+
+local targetedListFadeTicker = nil
+
+local function TargetedList_HasAnyFadingRecord()
+    for _, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt then return true end
+    end
+    return false
+end
+
+-- Assign to the forward-declared file-local (see State section
+-- above). This avoids creating a global and lets OnCastStop's
+-- reference resolve to this function via upvalue lookup.
+TargetedList_StartFadeTicker = function()
+    if targetedListFadeTicker then return end
+    if not C_Timer or not C_Timer.NewTicker then return end
+    targetedListFadeTicker = C_Timer.NewTicker(0.05, function()
+        if not TargetedList_HasAnyFadingRecord() then
+            if targetedListFadeTicker then
+                targetedListFadeTicker:Cancel()
+                targetedListFadeTicker = nil
+            end
+            return
+        end
+        if DF._TargetedListRender then
+            DF._TargetedListRender()
+        end
+    end)
+end
+
+-- Scratch array reused across renders to avoid per-render allocations.
+local targetedListSortBuf = {}
+
+-- Sort comparators. Only NEWEST and OLDEST are currently implemented —
+-- other candidates (SHORTEST_REMAINING, INTERRUPTIBLE_FIRST, TARGET_ORDER)
+-- would need to inspect secret-tainted values (duration objects,
+-- uninterruptible flag, target-name-to-unit resolution) which errors
+-- in Lua. startTime is the only clean numeric sort key we have.
+local function TargetedList_SortNewestFirst(a, b)
+    return (a.startTime or 0) > (b.startTime or 0)
+end
+local function TargetedList_SortOldestFirst(a, b)
+    return (a.startTime or 0) < (b.startTime or 0)
+end
+
+-- ============================================================
+-- INCREMENTAL RENDER (TS3-style)
+-- ============================================================
+-- Instead of tearing down and rebuilding ALL bars every state
+-- change, bars persist in casterToBar[unit]. Render:
+--   1. Expires completed fades (release that one bar)
+--   2. Ensures every live record has a bar (acquire if missing)
+--   3. Updates fading bars' alpha/color in-place
+--   4. Sorts and repositions — no pool churn
+--
+-- Content (ApplyBarContent) runs ONCE at acquisition. Subsequent
+-- renders only touch alpha/color for fading bars and re-anchor
+-- positions via LayoutBars.
+
+local function TargetedList_Render()
+    if not TargetedList_IsGateOpen() then return end
+    TargetedList_EnsureBarPool()
+
+    local db = DF.db and DF.db.party
+    local maxBars = (db and db.targetedListMaxBars) or 6
+    local now = TL_GetTime()
+
+    -- Step 1: expire fading records whose window elapsed.
+    -- Free their bar and slot.
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt
+           and (now - rec.fadingStartedAt) >= (rec.fadingDuration or 0) then
+            activeTargetedListCasts[unit] = nil
+            local bar = casterToBar[unit]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[unit] = nil
+            end
+            casterToSlot[unit] = nil
+        end
+    end
+
+    -- Step 1b: release orphaned bars. A bar is orphaned when its
+    -- record was removed directly (e.g. fadeDuration == 0 in OnCastStop)
+    -- rather than through the fading path. Without this, the bar stays
+    -- visible in casterToBar with no record to drive its removal.
+    for unit, bar in pairs(casterToBar) do
+        if not activeTargetedListCasts[unit] then
+            targetedListBarPool:Release(bar)
+            casterToBar[unit] = nil
+            casterToSlot[unit] = nil
+        end
+    end
+
+    -- Step 2: ensure every live record has a bar. Assign a slot index
+    -- for STATIC sort order — the slot persists for the record's
+    -- lifetime so its bar never changes position.
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if not casterToBar[unit] then
+            local bar = targetedListBarPool:Acquire()
+            casterToBar[unit] = bar
+
+            -- Find the lowest available slot for STATIC mode.
+            -- For non-STATIC modes the slot is unused but harmless.
+            if not casterToSlot[unit] then
+                -- Find lowest unused slot
+                local slot = 1
+                local usedSlots = {}
+                for _, s in pairs(casterToSlot) do usedSlots[s] = true end
+                while usedSlots[slot] do slot = slot + 1 end
+                casterToSlot[unit] = slot
+            end
+
+            TargetedList_ApplyBarContent(bar, rec)
+        end
+    end
+
+    -- Step 3: update fading bars' visual state (alpha + color + text).
+    for unit, rec in pairs(activeTargetedListCasts) do
+        if rec.fadingStartedAt then
+            local bar = casterToBar[unit]
+            if bar then
+                local elapsed = now - rec.fadingStartedAt
+                local dur = rec.fadingDuration or 0.25
+                local pct = 1 - math.min(1, math.max(0, elapsed / dur))
+                bar:SetAlpha(pct)
+                if rec.wasInterrupted then
+                    bar.progress:SetStatusBarColor(1, 0.95, 0.2, 1)
+                    if bar.interruptText then
+                        bar.spellName:Hide()
+                        bar.targetName:Hide()
+                        if bar.duration then bar.duration:Hide() end
+                        if rec.isTestCast and rec.testInterrupterName then
+                            bar.interruptText:SetText("Interrupted: " .. rec.testInterrupterName)
+                            -- Class-color the test interrupter name
+                            if rec.testInterrupterClass and TL_C_ClassColor
+                               and TL_C_ClassColor.GetClassColor then
+                                local col = TL_C_ClassColor.GetClassColor(rec.testInterrupterClass)
+                                if col then
+                                    bar.interruptText:SetTextColor(col.r, col.g, col.b, 1)
+                                end
+                            end
+                        elseif rec.interrupterGuid and TL_UnitNameFromGUID then
+                            -- UnitNameFromGUID returns a secret-tainted string,
+                            -- piped through SetFormattedText (secret-safe sink)
+                            bar.interruptText:SetFormattedText("Interrupted: %s",
+                                TL_UnitNameFromGUID(rec.interrupterGuid) or "")
+                            if TL_UnitClassFromGUID and TL_C_ClassColor
+                               and TL_C_ClassColor.GetClassColor then
+                                local _, iClass = TL_UnitClassFromGUID(
+                                    rec.interrupterGuid)
+                                if iClass then
+                                    local col = TL_C_ClassColor.GetClassColor(iClass)
+                                    if col then
+                                        bar.interruptText:SetTextColor(
+                                            col.r, col.g, col.b, 1)
+                                    end
+                                end
+                            end
+                        end
+                        bar.interruptText:Show()
+                    end
+                end
+            end
+        end
+    end
+
+    -- Step 4: sort and build the ordered activeBars list.
+    local sortOrder = (db and db.targetedListSortOrder) or "NEWEST"
+
+    wipe(activeBars)
+    local count = 0
+
+    if sortOrder == "STATIC" then
+        -- Slot-based positioning: each bar has a fixed slot index
+        -- assigned at acquisition. Bars never shift. Gaps are left
+        -- when a bar is removed.
+        for unit, rec in pairs(activeTargetedListCasts) do
+            local slot = casterToSlot[unit]
+            local bar = casterToBar[unit]
+            if bar and slot and slot <= maxBars then
+                activeBars[slot] = bar
+                bar:Show()
+                if slot > count then count = slot end
+            elseif bar then
+                bar:Hide()
+            end
+        end
+    else
+        -- Sort-based positioning: gather, sort, assign sequentially.
+        wipe(targetedListSortBuf)
+        for unit, rec in pairs(activeTargetedListCasts) do
+            targetedListSortBuf[#targetedListSortBuf + 1] = rec
+        end
+
+        if sortOrder == "OLDEST" then
+            table.sort(targetedListSortBuf, TargetedList_SortOldestFirst)
+        else
+            table.sort(targetedListSortBuf, TargetedList_SortNewestFirst)
+        end
+
+        for i = 1, #targetedListSortBuf do
+            local rec = targetedListSortBuf[i]
+            local bar = casterToBar[rec.casterUnit]
+            if bar then
+                count = count + 1
+                if count <= maxBars then
+                    activeBars[count] = bar
+                    bar:Show()
+                else
+                    bar:Hide()
+                end
+            end
+        end
+        wipe(targetedListSortBuf)
+    end
+
+    -- Step 5: position and show container.
+    if targetedListContainer then
+        if count > 0 then
+            targetedListContainer:Show()
+        else
+            targetedListContainer:Hide()
+        end
+    end
+
+    TargetedList_LayoutBars()
+end
+
+-- Re-export so the cast lifecycle can trigger a render after
+-- modifying activeTargetedListCasts.
+DF._TargetedListRender = TargetedList_Render
+
+-- ------------------------------------------------------------
+-- Mover
+-- ------------------------------------------------------------
+
+local targetedListMover = nil
+
+local function TargetedList_CreateMover()
+    if targetedListMover then return targetedListMover end
+    TargetedList_EnsureContainer()
+
+    local mover = CreateFrame("Frame", "DandersFramesTargetedListMover", UIParent, "BackdropTemplate")
+    mover:SetFrameStrata("DIALOG")
+    mover:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 2,
+    })
+    mover:SetBackdropColor(1.0, 0.5, 0.2, 0.3)
+    mover:SetBackdropBorderColor(1.0, 0.5, 0.2, 0.8)
+    mover:EnableMouse(true)
+    mover:SetMovable(true)
+    mover:RegisterForDrag("LeftButton")
+    mover:Hide()
+
+    local label = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("CENTER")
+    label:SetText("Targeted List")
+    label:SetTextColor(1, 1, 1, 1)
+    mover.label = label
+
+    -- Left-click switches the shared position panel to our mode.
+    mover:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("targetedList")
+        end
+    end)
+
+    mover:SetScript("OnDragStart", function(self)
+        -- Also switch mode on drag start so the panel reflects our
+        -- position live as the user nudges.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("targetedList")
+        end
+        self:StartMoving()
+        local db = DF:GetDB()
+        self:SetScript("OnUpdate", function()
+            local sw, sh = GetScreenWidth(), GetScreenHeight()
+            local cx, cy = self:GetCenter()
+            if cx and cy then
+                local x, y = cx - sw / 2, cy - sh / 2
+                -- Live-follow: keep container glued to mover while dragging
+                if targetedListContainer then
+                    targetedListContainer:ClearAllPoints()
+                    targetedListContainer:SetPoint("CENTER", UIParent, "CENTER", x, y)
+                end
+                -- Snap preview (matches personal mover behavior)
+                if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown()
+                   and DF.UpdateSnapPreview then
+                    DF:UpdateSnapPreview(self)
+                end
+            end
+        end)
+    end)
+
+    mover:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        self:SetScript("OnUpdate", nil)
+        if DF.HideSnapPreview then DF:HideSnapPreview() end
+
+        local sw, sh = GetScreenWidth(), GetScreenHeight()
+        local cx, cy = self:GetCenter()
+        if not cx or not cy then return end
+        local x, y = cx - sw / 2, cy - sh / 2
+
+        -- Snap to grid if enabled, mirroring the personal mover.
+        local db = DF:GetDB()
+        if db.snapToGrid and DF.gridFrame and DF.gridFrame:IsShown()
+           and DF.SnapToGrid then
+            x, y = DF:SnapToGrid(x, y)
+        end
+
+        self:ClearAllPoints()
+        self:SetPoint("CENTER", UIParent, "CENTER", x, y)
+        if DF.db and DF.db.party then
+            DF.db.party.targetedListX = x
+            DF.db.party.targetedListY = y
+        end
+        DF:UpdateTargetedListLayout()
+    end)
+
+    -- Right-click anywhere on the mover locks everything (same as
+    -- the personal targeted spells mover and the main mover frame).
+    mover:SetScript("OnMouseDown", function(self, button)
+        if button == "RightButton" and DF.LockFrames then
+            DF:LockFrames()
+        end
+    end)
+
+    targetedListMover = mover
+    DF.targetedListMoverFrame = mover  -- exposed for position panel apply()
+    return mover
+end
+
+function DF:ShowTargetedListMover()
+    if not TargetedList_IsGateOpen() then return end
+    TargetedList_CreateMover()
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local w, h = TargetedList_ComputeContainerSize(db)
+    targetedListMover:SetSize(w, h)
+    targetedListMover:ClearAllPoints()
+    targetedListMover:SetPoint("CENTER", UIParent, "CENTER",
+        db.targetedListX or 0, db.targetedListY or -10)
+    targetedListMover:Show()
+    -- Show test bars alongside the mover so users can see the
+    -- actual bar layout while positioning.
+    DF:ShowTestTargetedList()
+end
+
+function DF:HideTargetedListMover()
+    if targetedListMover then
+        targetedListMover:Hide()
+    end
+    DF:HideTestTargetedList()
+end
+
+-- ------------------------------------------------------------
+-- Test mode
+-- ------------------------------------------------------------
+--
+-- Synthetic bars driven from DF.TestData.units (the 5 test party
+-- names) and a fixed list of real spell IDs. Bypasses the live-cast
+-- lifecycle entirely — test mode just acquires pooled bars, fills
+-- them with clean test data, and lays them out.
+--
+-- Unlike live casts, test spellIds are CLEAN (they're literals in
+-- our code, not coming from UnitCastingInfo), so we can use them
+-- freely for formatting if needed.
+
+local TARGETED_LIST_TEST_SPELLS = {
+    -- {spellId, isChannel, isImportant (always true for demo), uninterruptible}
+    {spellId = 196408, isChannel = false, uninterruptible = false},  -- Focused Assault
+    {spellId = 260189, isChannel = true,  uninterruptible = false},  -- Grasping Tendrils
+    {spellId = 204242, isChannel = false, uninterruptible = true},   -- Solar Beam
+    {spellId = 207982, isChannel = false, uninterruptible = false},  -- Mortal Strike
+    {spellId = 205708, isChannel = true,  uninterruptible = false},  -- Chilled
+    {spellId = 229714, isChannel = false, uninterruptible = true},   -- Death Bolt
+}
+
+local function TargetedList_GetTestTargetName(index)
+    local units = DF.TestData and DF.TestData.units
+    if not units or #units == 0 then return "Target" end
+    local u = units[((index - 1) % #units) + 1]
+    return u and u.name or "Target"
+end
+
+local function TargetedList_GetTestTargetClass(index)
+    local units = DF.TestData and DF.TestData.units
+    if not units or #units == 0 then return nil end
+    local u = units[((index - 1) % #units) + 1]
+    return u and u.class or nil
+end
+
+-- ============================================================
+-- Test mode: fake event generator
+-- ============================================================
+-- Instead of pre-allocating bars and animating them in-place,
+-- test mode periodically spawns fake cast records into
+-- activeTargetedListCasts. The normal render pipeline handles
+-- everything — sorting, layout, bar acquisition, content, fade.
+-- This means test mode looks exactly like live play: bars appear,
+-- shift, sort, fade out, and flash on interrupt.
+
+local targetedListTestTicker = nil
+local targetedListTestNextId = 1  -- incrementing key for test records
+
+-- Spawn a new fake cast record. Called periodically by the ticker.
+local function TargetedList_SpawnTestCast()
+    local db = DF.db and DF.db.party
+    if not db then return end
+
+    -- Pick a test spell and target
+    local idx = ((targetedListTestNextId - 1) % #TARGETED_LIST_TEST_SPELLS) + 1
+    local spec = TARGETED_LIST_TEST_SPELLS[idx]
+    local tIdx = ((targetedListTestNextId - 1) % 5) + 1
+    local targetName = TargetedList_GetTestTargetName(tIdx)
+    local targetClass = TargetedList_GetTestTargetClass(tIdx)
+
+    -- Clean spell metadata
+    local spellName = TL_C_Spell_GetSpellName and TL_C_Spell_GetSpellName(spec.spellId) or "Test Spell"
+    local spellTexture = TL_C_Spell_GetSpellTexture and TL_C_Spell_GetSpellTexture(spec.spellId)
+
+    local castDuration = 2 + (targetedListTestNextId % 5) * 1.0  -- 2-6s
+    local willInterrupt = (targetedListTestNextId % 3 == 0)
+    local key = "test-" .. targetedListTestNextId
+    targetedListTestNextId = targetedListTestNextId + 1
+
+    -- Interrupted casts trigger at 40-80% of their duration so they
+    -- look like real mid-cast interrupts, not completed-then-interrupted.
+    local interruptAt = nil
+    if willInterrupt then
+        interruptAt = castDuration * (0.4 + (targetedListTestNextId % 5) * 0.1)
+    end
+
+    activeTargetedListCasts[key] = {
+        isTestCast       = true,
+        spellId          = spec.spellId,
+        isChannel        = spec.isChannel or false,
+        startTime        = TL_GetTime(),
+        casterUnit       = key,  -- fake unit token
+        uninterruptible  = spec.uninterruptible or false,
+        -- Test-specific clean fields (bypasses secret-value APIs)
+        testSpellName    = spellName,
+        testSpellTexture = spellTexture,
+        testTargetName   = targetName,
+        testTargetClass  = targetClass,
+        testCastDuration = castDuration,
+        testWillInterrupt = willInterrupt,
+        testInterruptAt  = interruptAt,
+        -- Fake interrupter name + class for display during interrupted flash
+        testInterrupterName = willInterrupt and targetName or nil,
+        testInterrupterClass = willInterrupt and targetClass or nil,
+        -- Alternate importance: odd-numbered casts are "important"
+        testIsImportant = (targetedListTestNextId % 2 == 0),
+    }
+    -- NOTE: caller is responsible for calling TargetedList_Render()
+    -- after all spawns/modifications are done. This avoids premature
+    -- bar acquisition before static-mode record modifications.
+end
+
+-- Lightweight progress update for test bars. Only touches SetValue
+-- on existing bars — no bar rebuild, no pool churn. This is what
+-- runs every tick for smooth fill animation.
+local function TargetedList_UpdateTestProgress()
+    -- Iterate all tracked bars via casterToBar (not activeBars which
+    -- may have nil gaps in STATIC mode that ipairs would skip).
+    local now = TL_GetTime()
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec and rec.isTestCast and rec.testCastDuration
+           and not rec.fadingStartedAt and not rec.testFrozenFill then
+            local cutoff = rec.testInterruptAt or rec.testCastDuration
+            local elapsed = now - rec.startTime
+            local pct = math.min(1, math.max(0, elapsed / cutoff))
+            bar.progress:SetMinMaxValues(0, 1)
+            bar.progress:SetValue(pct)
+        end
+    end
+end
+
+-- Check test casts and transition them to fading when their cast
+-- duration elapses. Called by the test ticker. Only triggers a full
+-- Render on state transitions (cast finished → fading), not every tick.
+local function TargetedList_UpdateTestCasts()
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local now = TL_GetTime()
+    local fadeDuration = db.targetedListFadeOutDuration or 0.25
+    local flashDuration = db.targetedListInterruptedFlashDuration or 1.0
+    local needsRender = false
+
+    for key, rec in pairs(activeTargetedListCasts) do
+        if rec.isTestCast and not rec.fadingStartedAt then
+            local elapsed = now - rec.startTime
+            local cutoff = rec.testInterruptAt or rec.testCastDuration or 3
+            if elapsed >= cutoff then
+                local wasInt = rec.testWillInterrupt
+                rec.fadingStartedAt = now
+                rec.fadingDuration = wasInt and flashDuration or fadeDuration
+                rec.wasInterrupted = wasInt
+                needsRender = true
+                TargetedList_StartFadeTicker()
+            end
+        end
+    end
+
+    -- Only re-render if a cast actually transitioned to fading.
+    -- The fade ticker handles continuous alpha updates separately.
+    if needsRender then
+        TargetedList_Render()
+    end
+end
+
+function DF:ShowTestTargetedList()
+    if not TargetedList_IsGateOpen() then return end
+
+    -- FIRST: cancel any running ticker from a previous mode. This
+    -- prevents animated-mode tickers from interfering with static mode.
+    if targetedListTestTicker then
+        targetedListTestTicker:Cancel()
+        targetedListTestTicker = nil
+    end
+    -- Also cancel the fade ticker to prevent stale fade renders
+    if targetedListFadeTicker then
+        targetedListFadeTicker:Cancel()
+        targetedListFadeTicker = nil
+    end
+
+    targetedListTestActive = true
+    TargetedList_EnsureContainer()
+    TargetedList_EnsureBarPool()
+
+    -- Clear ALL existing test records AND their bars from casterToBar
+    for key in pairs(activeTargetedListCasts) do
+        if type(key) == "string" and key:sub(1, 5) == "test-" then
+            activeTargetedListCasts[key] = nil
+            local bar = casterToBar[key]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[key] = nil
+            end
+        end
+    end
+    wipe(activeBars)
+    targetedListTestNextId = 1
+
+    local db = DF.db and DF.db.party
+    local maxBars = (db and db.targetedListMaxBars) or 6
+    local animate = db and db.testAnimateTargetedList
+
+    if animate then
+        -- Animated mode: spawn initial batch staggered, ticker manages lifecycle
+        local initialCount = math.min(maxBars, 4)
+        for i = 1, initialCount do
+            TargetedList_SpawnTestCast()
+        end
+        TargetedList_Render()
+
+        -- Ticker spawns new casts and manages lifecycle.
+        if not targetedListTestTicker and C_Timer and C_Timer.NewTicker then
+            local spawnInterval = 2.0
+            local spawnTimer = 0
+            targetedListTestTicker = C_Timer.NewTicker(0.05, function()
+                if not targetedListTestActive then
+                    if targetedListTestTicker then
+                        targetedListTestTicker:Cancel()
+                        targetedListTestTicker = nil
+                    end
+                    return
+                end
+
+                -- Check for cast completions / interrupts
+                TargetedList_UpdateTestCasts()
+
+                -- Lightweight progress fill update (no bar rebuild)
+                TargetedList_UpdateTestProgress()
+
+                -- Periodically spawn new casts
+                spawnTimer = spawnTimer + 0.05
+                if spawnTimer >= spawnInterval then
+                    spawnTimer = 0
+                    local count = 0
+                    for _, rec in pairs(activeTargetedListCasts) do
+                        if rec.isTestCast and not rec.fadingStartedAt then
+                            count = count + 1
+                        end
+                    end
+                    if count < ((DF.db and DF.db.party and DF.db.party.targetedListMaxBars) or 6) then
+                        TargetedList_SpawnTestCast()
+                        TargetedList_Render()
+                    end
+                end
+            end)
+        end
+    else
+        -- Static mode: showcase all visual states for customisation.
+        -- Bars show a mix of: normal casting (interruptible +
+        -- uninterruptible), interrupted (with interrupter name), and
+        -- important glow. Each bar is frozen at a varied fill point.
+        for i = 1, maxBars do
+            TargetedList_SpawnTestCast()
+            local key = "test-" .. (targetedListTestNextId - 1)
+            local rec = activeTargetedListCasts[key]
+            if rec then
+                -- Freeze the bar at a varied fill point. We store this
+                -- directly rather than using time math (which broke when
+                -- testCastDuration was set to 99999 making elapsed/dur ≈ 0).
+                rec.testFrozenFill = 0.2 + ((i - 1) * 0.12) % 0.6
+                rec.testCastDuration = 99999
+                rec.testInterruptAt = nil
+                rec.testWillInterrupt = false
+
+                -- Distribute visual states across the bars:
+                -- Bar 3 (if maxBars >= 3) or last bar: show as interrupted
+                if maxBars >= 3 and i == 3 then
+                    rec.fadingStartedAt = TL_GetTime()
+                    rec.fadingDuration = 99999  -- never expires in static
+                    rec.wasInterrupted = true
+                    rec.testFrozenFill = 0.55   -- partial fill on interrupt
+                    rec.testInterrupterName = TargetedList_GetTestTargetName(
+                        ((i + 1) % 5) + 1)
+                    rec.testInterrupterClass = TargetedList_GetTestTargetClass(
+                        ((i + 1) % 5) + 1)
+                elseif i == maxBars and maxBars ~= 3 then
+                    rec.fadingStartedAt = TL_GetTime()
+                    rec.fadingDuration = 99999
+                    rec.wasInterrupted = true
+                    rec.testFrozenFill = 0.7
+                    rec.testInterrupterName = TargetedList_GetTestTargetName(
+                        ((i + 2) % 5) + 1)
+                    rec.testInterrupterClass = TargetedList_GetTestTargetClass(
+                        ((i + 2) % 5) + 1)
+                end
+            end
+        end
+        TargetedList_Render()
+    end
+end
+
+function DF:HideTestTargetedList()
+    targetedListTestActive = false
+    -- Cancel the test ticker
+    if targetedListTestTicker then
+        targetedListTestTicker:Cancel()
+        targetedListTestTicker = nil
+    end
+    -- Remove test records and release their bars + slots individually
+    for key in pairs(activeTargetedListCasts) do
+        if type(key) == "string" and key:sub(1, 5) == "test-" then
+            activeTargetedListCasts[key] = nil
+            local bar = casterToBar[key]
+            if bar then
+                targetedListBarPool:Release(bar)
+                casterToBar[key] = nil
+            end
+            casterToSlot[key] = nil
+        end
+    end
+    -- Rebuild activeBars from remaining live records
+    wipe(activeBars)
+    local count = 0
+    for unit, bar in pairs(casterToBar) do
+        count = count + 1
+        activeBars[count] = bar
+    end
+    if targetedListContainer then
+        if count > 0 then
+            TargetedList_LayoutBars()
+        else
+            targetedListContainer:Hide()
+        end
+    end
+end
+
+-- Called from ReleaseAllBars (the lifecycle path) so it also tears
+-- down the visible bars including any test records.
+local _TargetedList_ReleaseAllBars_Prev = TargetedList_ReleaseAllBars
+TargetedList_ReleaseAllBars = function()
+    if not TargetedList_IsGateOpen() then return end
+    _TargetedList_ReleaseAllBars_Prev()
+    TargetedList_ReleaseAllActiveBars()
+    if targetedListContainer then
+        targetedListContainer:Hide()
+    end
+end
+DF._TargetedListReleaseAllBars = TargetedList_ReleaseAllBars
+
+-- ------------------------------------------------------------
+-- Hook the cast lifecycle to trigger renders
+-- ------------------------------------------------------------
+--
+-- DelayedPickup and OnCastStop already modify activeTargetedListCasts.
+-- We re-wrap them with a post-modification render trigger. Test mode
+-- and live casts both share the same render pipeline, so no guards.
+
+local _TargetedList_DelayedPickup_Prev = TargetedList_DelayedPickup
+TargetedList_DelayedPickup = function(...)
+    _TargetedList_DelayedPickup_Prev(...)
+    TargetedList_Render()
+end
+
+local _TargetedList_OnCastStop_Prev = TargetedList_OnCastStop
+TargetedList_OnCastStop = function(...)
+    _TargetedList_OnCastStop_Prev(...)
+    TargetedList_Render()
+end
+
+local _TargetedList_OnInterruptibility_Prev = TargetedList_OnInterruptibilityChange
+TargetedList_OnInterruptibilityChange = function(...)
+    _TargetedList_OnInterruptibility_Prev(...)
+    TargetedList_Render()
+end
+
+DF._TargetedListProcessCastStart = TargetedList_ProcessCastStart
+DF._TargetedListOnCastStop = TargetedList_OnCastStop
+DF._TargetedListOnCastUpdate = TargetedList_OnCastUpdate
+DF._TargetedListOnInterruptibilityChange = TargetedList_OnInterruptibilityChange
+DF._TargetedListOnTargetChange = TargetedList_OnTargetChange
+DF._TargetedListValidateAll = TargetedList_ValidateTrackedBars
+
+-- ------------------------------------------------------------
+-- Public entry points
+-- ------------------------------------------------------------
+
+-- Called from DF:InitTargetedSpells() at addon init and from the
+-- settings toggle callback. Safe to call on stable (no-op via gate).
+function DF:InitTargetedList()
+    if not TargetedList_IsGateOpen() then return end
+    -- Create the container early so the mover / test mode have
+    -- something to anchor to. Bar pool stays lazy.
+    TargetedList_EnsureContainer()
+end
+
+-- Called from the settings-apply path. Bumps the layout version and
+-- triggers a re-layout. Safe to call on every callback.
+function DF:UpdateTargetedListLayout()
+    if not TargetedList_IsGateOpen() then return end
+    targetedListLayoutVersion = targetedListLayoutVersion + 1
+    -- Re-apply appearance + content to all existing bars so settings
+    -- changes (font, texture, border, etc.) take effect on bars that
+    -- are already acquired (the incremental render only applies
+    -- content at acquisition time, not on every render tick).
+    local db = DF.db and DF.db.party
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec then
+            TargetedList_ApplyBarContent(bar, rec)
+        end
+    end
+    TargetedList_Render()
+    -- Also resize the mover if it's visible
+    if targetedListMover and targetedListMover:IsShown() then
+        local db = DF.db and DF.db.party
+        if db then
+            local w, h = TargetedList_ComputeContainerSize(db)
+            targetedListMover:SetSize(w, h)
+        end
+    end
+end
+
+-- Lightweight updates for color picker drag. These only touch the
+-- specific visual property on existing bars — no layout rebuild, no
+-- pool churn, no content re-application. Designed to run at color-
+-- picker drag-tick rate without lag.
+
+function DF:LightweightUpdateTargetedListBarColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local interColor = db.targetedListInterruptibleColor or {r=1, g=0.2, b=0.2, a=1}
+    local uninterColor = db.targetedListUninterruptibleColor or {r=0.5, g=0.5, b=0.5, a=1}
+    for unit, bar in pairs(casterToBar) do
+        local rec = activeTargetedListCasts[unit]
+        if rec and not rec.fadingStartedAt then
+            if rec.isTestCast then
+                local c = rec.uninterruptible and uninterColor or interColor
+                bar.progress:SetStatusBarColor(c.r, c.g, c.b, c.a or 1)
+            elseif rec.uninterruptible ~= nil then
+                local tex = bar.progress:GetStatusBarTexture()
+                if tex and tex.SetVertexColorFromBoolean then
+                    tex:SetVertexColorFromBoolean(rec.uninterruptible,
+                        uninterColor, interColor)
+                end
+            end
+        end
+    end
+end
+
+function DF:LightweightUpdateTargetedListBorderColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local bc = db.targetedListBorderColor or {r=0, g=0, b=0, a=1}
+    for _, bar in pairs(casterToBar) do
+        if bar.border and bar.border:IsShown() then
+            bar.border:SetBackdropBorderColor(bc.r, bc.g, bc.b, bc.a or 1)
+        end
+    end
+end
+
+function DF:LightweightUpdateTargetedListHighlightColor()
+    if not TargetedList_IsGateOpen() then return end
+    local db = DF.db and DF.db.party
+    if not db then return end
+    local hc = db.targetedListHighlightColor or {r=1, g=0.8, b=0}
+    for _, bar in pairs(casterToBar) do
+        if bar.highlightFrame and bar.highlightFrame:IsShown() then
+            if DF.UpdateGlowBorder then
+                DF.UpdateGlowBorder(bar.highlightFrame, 2, hc.r, hc.g, hc.b, 0.8)
+            end
+        end
+    end
+end
+
+-- Called from the settings-apply path when the enable checkbox flips.
+function DF:ToggleTargetedList(enabled)
+    if not TargetedList_IsGateOpen() then return end
+    if enabled then
+        DF:InitTargetedList()
+        TargetedList_Render()
+    else
+        TargetedList_ReleaseAllBars()
+    end
+    -- Re-evaluate shared event registration — the cast event frame
+    -- may need to turn on/off depending on other consumers.
+    DF:UpdateTargetedSpellEventRegistration()
+end
+
+-- ============================================================
 -- INITIALIZATION
 -- ============================================================
 
 function DF:InitTargetedSpells()
     local db = DF:GetDB()
-    if db.targetedSpellEnabled then
-        DF:EnableTargetedSpells()
-    end
-    
+
+    -- Group-frame Targeted Spells is permanently disabled (Blizzard's
+    -- 2026-04-07 UnitIsUnit hotfix). Force the user-facing setting off
+    -- so the GUI reflects reality every load — DF.GroupTargetedSpellsAPIBlocked
+    -- is set unconditionally at the top of this file.
+    ForceDisableGroupTargetedSpellSettings()
+
+    -- Group-side enable path is no longer reachable — only events for
+    -- the personal display are registered (handled by
+    -- UpdateTargetedSpellEventRegistration below).
+
     -- Apply nameplate offscreen setting if enabled
     if db.targetedSpellNameplateOffscreen then
         DF:SetNameplateOffscreen(true)
     end
-    
-    -- Initialize personal targeted spells
+
+    -- Initialize personal targeted spells. Note: TogglePersonalTargetedSpells
+    -- only manages the container/icons; the events that drive cast tracking
+    -- are registered separately so personal display can run even when the
+    -- group-frame feature is off or API-blocked.
     if db.personalTargetedSpellEnabled then
         DF:TogglePersonalTargetedSpells(true)
     end
+
+    -- Initialize the Targeted List. Safe to call unconditionally — the
+    -- function is gated internally on DF.RELEASE_CHANNEL and on the
+    -- user's targetedListEnabled setting.
+    if DF.InitTargetedList then
+        DF:InitTargetedList()
+    end
+
+    DF:UpdateTargetedSpellEventRegistration()
 end

@@ -706,12 +706,10 @@ end
 function DF:UpdateRoleIconAppearance(frame)
     if not IsDandersFrame(frame) then return end
     if not frame.roleIcon then return end
-    
+
     local db = GetDB(frame)
     if not db then return end
-    
-    if DF.testMode or DF.raidTestMode then return end
-    
+
     local deadOrOffline = IsDeadOrOffline(frame)
     local inRange = GetInRange(frame)
     
@@ -900,9 +898,13 @@ function DF:UpdateMissingBuffAppearance(frame)
     
     if DF.testMode or DF.raidTestMode then return end
     
+    local deadOrOffline = IsDeadOrOffline(frame)
     local inRange = GetInRange(frame)
-    
+
     local alpha = 1.0
+    if deadOrOffline and db.fadeDeadFrames then
+        alpha = db.fadeDeadIcons or 1.0
+    end
 
     if db.oorEnabled then
         local oorAlpha = db.oorMissingBuffAlpha or 0.5

@@ -27,6 +27,58 @@ local SEVERITY = {
 
 local SEVERITY_ORDER = { "INFO", "WARN", "ERROR" }
 
+-- ============================================================
+-- DECLARED CATEGORY REGISTRY
+-- All categories used by DF:Debug calls anywhere in the addon are
+-- declared here so the Debug Console can show them BEFORE any logs
+-- exist. The user can pre-disable noisy categories before triggering
+-- the bug they're trying to capture, ensuring the relevant trace
+-- never gets evicted by the maxLines cap.
+--
+-- New categories that aren't in this registry are still auto-
+-- discovered the first time they log, and appear under "Other".
+-- Order within each group is preserved as written.
+-- ============================================================
+
+local CATEGORY_GROUPS = {
+    {
+        name = "Frames & Layout",
+        categories = {
+            { key = "ROSTER",     desc = "Group composition changes, throttling, sorting decisions" },
+            { key = "RAIDPOS",    desc = "Raid container position writes (jumping/stuck-position bug)" },
+            { key = "POSITION",   desc = "Secure position handler trigger and snippet runs" },
+            { key = "LAYOUT",     desc = "Frame size, spacing, growth direction, container resize" },
+            { key = "VISIBILITY", desc = "Header show/hide and state-driver changes" },
+            { key = "FLATRAID",   desc = "Flat raid layout and sorting" },
+            { key = "FRAMESORT",  desc = "FrameSort addon integration" },
+        },
+    },
+    {
+        name = "Profiles",
+        categories = {
+            { key = "PROFILE",     desc = "Profile load, save, switch, full refresh" },
+            { key = "AUTOPROFILE", desc = "Auto-profile evaluation and runtime overlay" },
+        },
+    },
+    {
+        name = "Auras",
+        categories = {
+            { key = "AD",       desc = "Aura Designer" },
+            { key = "BLIZAURA", desc = "Blizzard aura source pipeline" },
+        },
+    },
+    {
+        name = "Other",
+        categories = {
+            { key = "CLICK",        desc = "Click-casting binding apply, hover, PreClick state" },
+            { key = "PET",          desc = "Pet frame lifecycle and visibility" },
+            { key = "SCRIPT",       desc = "Lua script errors and pcall failures" },
+            { key = "SYSTEM",       desc = "Reload separators and init confirmation" },
+            { key = "TARGETEDLIST", desc = "Targeted List cast pickup, stop, and interrupter lookup (alpha/beta only)" },
+        },
+    },
+}
+
 local DEFAULTS = {
     enabled = false,
     logLevel = "INFO",
@@ -110,18 +162,32 @@ end
 -- PUBLIC API
 -- ============================================================
 
+-- Per-category logging gate. An explicit `false` in filters disables the
+-- category at the source so it never enters the log buffer — preventing
+-- noise categories from evicting the relevant trace under the maxLines cap.
+-- Absent (nil) or `true` = log it. Auto-discovery still works because new
+-- categories aren't in `filters` until the user explicitly disables them.
+local function IsCategoryLogged(category)
+    local filters = debugDb and debugDb.filters
+    if not filters or not category then return true end
+    return filters[category] ~= false
+end
+
 function DF:Debug(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("INFO", category, fmt, ...)
 end
 
 function DF:DebugWarn(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("WARN", category, fmt, ...)
 end
 
 function DF:DebugError(category, fmt, ...)
     if not debugDb or not debugDb.enabled then return end
+    if not IsCategoryLogged(category) then return end
     DebugConsole:Log("ERROR", category, fmt, ...)
 end
 
@@ -129,8 +195,30 @@ end
 -- INTERNAL LOGGING
 -- ============================================================
 
+-- Returns true if the given value is a WoW "secret" (secret-tainted) value.
+-- Secret values cannot be used in table.concat or most string operations
+-- without errors. We use this to sanitize log messages so a tainted value
+-- can never corrupt the debug log. Gracefully no-ops on builds without the API.
+local isSecretValue = _G.issecretvalue or function() return false end
+
+-- Sanitizes a message string for safe storage in the log. If the string
+-- itself is secret-tainted (because one of the format args was a secret),
+-- returns a non-secret placeholder instead.
+local function sanitizeLogMessage(msg)
+    if msg == nil then return "nil" end
+    if type(msg) ~= "string" then
+        msg = tostring(msg)
+    end
+    if isSecretValue(msg) then
+        return "<SECRET — log arg was a secret value>"
+    end
+    return msg
+end
+
 function DebugConsole:Log(level, category, fmt, ...)
-    -- Format the message
+    -- Format the message. If any format arg is a secret-tainted value, the
+    -- resulting string inherits the taint and cannot be safely concatenated
+    -- later. sanitizeLogMessage replaces tainted messages with a placeholder.
     local msg
     if select("#", ...) > 0 then
         local ok, result = pcall(format, fmt, ...)
@@ -138,6 +226,7 @@ function DebugConsole:Log(level, category, fmt, ...)
     else
         msg = tostring(fmt)
     end
+    msg = sanitizeLogMessage(msg)
 
     -- Create entry: {timestamp, level, category, message}
     local entry = {
@@ -229,10 +318,28 @@ function DebugConsole:RefreshDisplay()
     local lines = {}
 
     for _, entry in ipairs(debugLog) do
-        local timestamp = entry[1]
-        local level     = entry[2]
-        local category  = entry[3]
+        local timestamp = entry[1] or "??:??:??"
+        local level     = entry[2] or "INFO"
+        local category  = entry[3] or "GENERAL"
         local message   = entry[4]
+
+        -- Sanitize every field BEFORE passing to format. Legacy entries
+        -- (logged before the write-time sanitizer existed) may have nil or
+        -- secret-tainted messages which would crash format().
+        if message == nil then
+            message = "<nil>"
+        elseif type(message) ~= "string" then
+            message = tostring(message) or "<nonstring>"
+        end
+        if isSecretValue(message) then
+            message = "<SECRET — legacy tainted entry>"
+        end
+        if type(timestamp) ~= "string" or isSecretValue(timestamp) then
+            timestamp = "??:??:??"
+        end
+        if type(category) ~= "string" or isSecretValue(category) then
+            category = "GENERAL"
+        end
 
         -- Check severity filter
         local sev = SEVERITY[level]
@@ -240,8 +347,14 @@ function DebugConsole:RefreshDisplay()
             -- Check category filter (absent = visible, explicit false = hidden)
             if filters[category] ~= false then
                 local colorCode = sev.color or "|cffffffff"
-                tinsert(lines, format("%s %s[%s]|r [%s] %s",
-                    timestamp, colorCode, sev.label, category, message))
+                local ok, formatted = pcall(format, "%s %s[%s]|r [%s] %s",
+                    timestamp, colorCode, sev.label, category, message)
+                if ok and not isSecretValue(formatted) then
+                    tinsert(lines, formatted)
+                else
+                    tinsert(lines, timestamp .. " [" .. (sev.label or "?") ..
+                        "] [" .. category .. "] <unrenderable entry>")
+                end
             end
         end
     end
@@ -283,6 +396,25 @@ function DebugConsole:GetKnownCategories()
     return knownCategories
 end
 
+-- Returns the declared category groups (ordered list of {name, categories}).
+-- Used by the settings UI to render checkboxes grouped by feature.
+function DebugConsole:GetCategoryGroups()
+    return CATEGORY_GROUPS
+end
+
+-- Returns a set of every category declared in the registry.
+-- Used to figure out which auto-discovered categories should appear under
+-- the dynamic "Other" group (those not already in the registry).
+function DebugConsole:GetRegisteredCategorySet()
+    local set = {}
+    for _, group in ipairs(CATEGORY_GROUPS) do
+        for _, cat in ipairs(group.categories) do
+            set[cat.key] = true
+        end
+    end
+    return set
+end
+
 function DebugConsole:GetLogEntryCount()
     return debugLog and #debugLog or 0
 end
@@ -305,8 +437,28 @@ function DebugConsole:GetExportText()
     for _, entry in ipairs(debugLog) do
         local sev = SEVERITY[entry[2]]
         if sev and sev.level >= minLevelNum and filters[entry[3]] ~= false then
-            tinsert(entries, format("%s [%s] [%s] %s",
-                entry[1], entry[2], entry[3], entry[4]))
+            -- Sanitize each field before format — legacy entries may have
+            -- nil or secret-tainted values which would crash format/concat.
+            local ts  = entry[1]
+            local lvl = entry[2]
+            local cat = entry[3]
+            local msg = entry[4]
+            if type(ts)  ~= "string" or isSecretValue(ts)  then ts  = "??:??:??" end
+            if type(lvl) ~= "string" or isSecretValue(lvl) then lvl = "INFO" end
+            if type(cat) ~= "string" or isSecretValue(cat) then cat = "GENERAL" end
+            if msg == nil then
+                msg = "<nil>"
+            elseif type(msg) ~= "string" then
+                msg = tostring(msg) or "<nonstring>"
+            end
+            if isSecretValue(msg) then msg = "<SECRET — legacy tainted entry>" end
+
+            local ok, formatted = pcall(format, "%s [%s] [%s] %s", ts, lvl, cat, msg)
+            if ok and not isSecretValue(formatted) then
+                tinsert(entries, formatted)
+            else
+                tinsert(entries, ts .. " [" .. lvl .. "] [" .. cat .. "] <unrenderable entry>")
+            end
         end
     end
 
@@ -319,7 +471,11 @@ function DebugConsole:GetExportText()
     tinsert(result, "========================================")
     tinsert(result, "")
     for i = 1, #entries do
-        result[#result + 1] = entries[i]
+        local entry = entries[i]
+        if isSecretValue(entry) then
+            entry = "<SECRET — export line was tainted>"
+        end
+        result[#result + 1] = entry
     end
 
     return table.concat(result, "\n")

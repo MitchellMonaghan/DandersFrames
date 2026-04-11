@@ -5,11 +5,31 @@ local addonName, DF = ...
 -- Contains frame update and layout functions
 -- ============================================================
 
--- Local caching of frequently used globals and WoW API for performance
+-- Local caching of frequently used globals and WoW API for performance.
+-- Audit finding #3 (2026-04-06): UpdateHealthFast and UpdatePower are
+-- called once per unit per UNIT_HEALTH / UNIT_POWER event, and each
+-- call hits 3-5 of these unit API functions. In a 25-player raid at
+-- typical combat event rates that's thousands of global hash lookups
+-- per second that compile to nothing with these locals in scope.
+-- Matching pattern: Frames/Bars.lua:8-19 already uses this pattern
+-- for its own unit API calls.
 local pairs, ipairs, type, tonumber, tostring = pairs, ipairs, type, tonumber, tostring
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 local format = string.format
 local issecretvalue = issecretvalue
+local InCombatLockdown = InCombatLockdown
+-- Unit health / power / state APIs (hot path in UpdateHealthFast + UpdatePower)
+local UnitExists = UnitExists
+local UnitClass = UnitClass
+local UnitIsConnected = UnitIsConnected
+local UnitIsDead = UnitIsDead
+local UnitIsGhost = UnitIsGhost
+local UnitHealth = UnitHealth
+local UnitHealthMax = UnitHealthMax
+local UnitHealthMissing = UnitHealthMissing
+local UnitPower = UnitPower
+local UnitPowerMax = UnitPowerMax
+local UnitPowerType = UnitPowerType
 
 -- Growth direction helper (file-scope, no closure allocation)
 local function GetGrowthOffset(direction, iconSize, pad)
@@ -598,9 +618,10 @@ function DF:UpdateUnitFrame(frame, source)
         end
         -- Apply dead fade for offline units
         DF:ApplyDeadFade(frame, "Offline")
+        frame.dfLastKnownConnected = false
         return
     end
-    
+
     -- ========================================
     -- DEAD/GHOST CHECK
     -- ========================================
@@ -661,13 +682,14 @@ function DF:UpdateUnitFrame(frame, source)
     
     -- Unit is alive and connected - reset dead fade if it was applied
     DF:ResetDeadFade(frame)
-    
+    frame.dfLastKnownConnected = true
+
     -- Clear status text for alive units
     if frame.statusText then
         frame.statusText:SetText("")
         frame.statusText:Hide()
     end
-    
+
     -- ========================================
     -- HEALTH
     -- ========================================
@@ -830,9 +852,10 @@ function DF:UpdateUnitFrame(frame, source)
                 local deficit = UnitHealthMissing(unit, true)
                 if deficit then
                     if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
-                        local truncated = C_StringUtil.TruncateWhenZero(deficit)
-                        local result = C_StringUtil.WrapString(truncated, "-")
-                        frame.healthText:SetText(result)
+                        frame.healthText:SetText(C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(deficit), "-"))
+                        if db.healthTextAbbreviate and AbbreviateNumbers and frame.healthText:GetText() then
+                            frame.healthText:SetFormattedText("-%s", AbbreviateNumbers(deficit))
+                        end
                     elseif db.healthTextAbbreviate and AbbreviateNumbers then
                         frame.healthText:SetFormattedText("-%s", AbbreviateNumbers(deficit))
                     else
@@ -880,9 +903,15 @@ function DF:UpdateUnitFrame(frame, source)
                 frame.dfPowerBar:SetMinMaxValues(0, maxPower)
                 frame.dfPowerBar:SetValue(power)
 
-                local powerType, powerToken = UnitPowerType(unit)
-                local powerColor = DF:GetPowerColor(powerToken, powerType)
-                frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+                local _, classToken = UnitClass(unit)
+                local classColor = db.resourceBarClassColor and classToken and DF:GetClassColor(classToken)
+                if classColor then
+                    frame.dfPowerBar:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+                else
+                    local powerType, powerToken = UnitPowerType(unit)
+                    local powerColor = DF:GetPowerColor(powerToken, powerType)
+                    frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+                end
                 frame.dfPowerBar:Show()
                 -- Let the appearance system handle alpha (OOR, dead, element-specific)
                 if DF.UpdatePowerBarAppearance then
@@ -1001,6 +1030,7 @@ function DF:UpdateHealthFast(frame)
             frame.dfHealAbsorbBar:Hide()
         end
         DF:ApplyDeadFade(frame, "Offline")
+        frame.dfLastKnownConnected = false
         return
     end
 
@@ -1041,6 +1071,7 @@ function DF:UpdateHealthFast(frame)
 
     -- Unit is alive and connected - reset dead fade if it was applied
     DF:ResetDeadFade(frame)
+    frame.dfLastKnownConnected = true
 
     -- Clear resurrection icon if unit was pending a res and is now alive
     if DF.HasPendingResurrection and DF:HasPendingResurrection(unit) then
@@ -1093,9 +1124,10 @@ function DF:UpdateHealthFast(frame)
                 local deficit = UnitHealthMissing(unit, true)
                 if deficit then
                     if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
-                        local truncated = C_StringUtil.TruncateWhenZero(deficit)
-                        local result = C_StringUtil.WrapString(truncated, "-")
-                        frame.healthText:SetText(result)
+                        frame.healthText:SetText(C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(deficit), "-"))
+                        if db.healthTextAbbreviate and AbbreviateNumbers and frame.healthText:GetText() then
+                            frame.healthText:SetFormattedText("-%s", AbbreviateNumbers(deficit))
+                        end
                     elseif db.healthTextAbbreviate and AbbreviateNumbers then
                         frame.healthText:SetFormattedText("-%s", AbbreviateNumbers(deficit))
                     else
@@ -1194,9 +1226,15 @@ function DF:UpdatePower(frame)
     frame.dfPowerBar:SetValue(power)
 
     -- Update color
-    local powerType, powerToken = UnitPowerType(unit)
-    local powerColor = DF:GetPowerColor(powerToken, powerType)
-    frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+    local _, classToken = UnitClass(unit)
+    local classColor = db.resourceBarClassColor and classToken and DF:GetClassColor(classToken)
+    if classColor then
+        frame.dfPowerBar:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+    else
+        local powerType, powerToken = UnitPowerType(unit)
+        local powerColor = DF:GetPowerColor(powerToken, powerType)
+        frame.dfPowerBar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+    end
     frame.dfPowerBar:Show()
 end
 
@@ -1311,14 +1349,17 @@ function DF:UpdateHealth(frame)
         elseif format == "DEFICIT" then
             local miss = UnitHealthMissing(unit, true)
             
-            if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
-                local truncated = C_StringUtil.TruncateWhenZero(miss)
-                local result = C_StringUtil.WrapString(truncated, "-")
-                frame.healthText:SetText(result)
-            elseif db.healthTextAbbreviate then
-                frame.healthText:SetFormattedText("-%s", FormatValue(miss))
-            else
-                frame.healthText:SetFormattedText("-%s", miss)
+            if miss then
+                if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
+                    frame.healthText:SetText(C_StringUtil.WrapString(C_StringUtil.TruncateWhenZero(miss), "-"))
+                    if db.healthTextAbbreviate and frame.healthText:GetText() then
+                        frame.healthText:SetFormattedText("-%s", FormatValue(miss))
+                    end
+                elseif db.healthTextAbbreviate then
+                    frame.healthText:SetFormattedText("-%s", FormatValue(miss))
+                else
+                    frame.healthText:SetFormattedText("-%s", miss)
+                end
             end
         elseif format == "CURRENT" then
             local curr = UnitHealth(unit, true)

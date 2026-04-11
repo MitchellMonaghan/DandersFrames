@@ -994,6 +994,27 @@ function FlatRaidFrames:UpdateSorting()
     -- Resize innerContainer to fit visible frames
     -- Note: Call directly, no delays (combat safety)
     self:ResizeInnerContainer()
+
+    -- Belt-and-suspenders: In complex sort mode, re-apply nameList on next frame
+    -- to catch any roster data that wasn't fresh at call time. This fixes a timing gap
+    -- where hidden groups could bleed through if the nameList was built from stale data.
+    -- NOTE: We call BuildSortedNameList() directly here instead of UpdateNameList()/UpdateSorting()
+    -- to avoid an infinite loop: UpdateSorting() in complex mode always schedules this same
+    -- deferred timer, so calling UpdateNameList() here would cause it to fire every frame.
+    if not useGroupBy then
+        C_Timer.After(0, function()
+            if not InCombatLockdown() and FlatRaidFrames.header and FlatRaidFrames.header:IsShown() then
+                -- Refresh nameList directly to avoid re-entering UpdateSorting
+                local nameList = FlatRaidFrames:BuildSortedNameList()
+                FlatRaidFrames.header:SetAttribute("nameList", nameList)
+            end
+        end)
+    end
+
+    -- Schedule private aura reanchor after all attribute changes settle
+    if DF.SchedulePrivateAuraReanchor then
+        DF:SchedulePrivateAuraReanchor()
+    end
 end
 
 -- Alias for backward compatibility
@@ -1090,6 +1111,9 @@ function FlatRaidFrames:SetEnabled(enabled)
                     if DF.RegisterRaidFrame then DF:RegisterRaidFrame(child) end
                 end
             end
+            -- Reapply layout settings in case spacing/anchors/growth changed
+            self:ApplyLayoutSettings(true)  -- true = skip internal 4-step refresh
+            self:ResizeInnerContainer()
             self._settingEnabled = nil
             return
         end
@@ -1306,8 +1330,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         
         -- Process pending updates
         if FlatRaidFrames.pendingNameListUpdate then
-            FlatRaidFrames:UpdateNameList()
             FlatRaidFrames.pendingNameListUpdate = false
+            C_Timer.After(0, function()
+                if FlatRaidFrames.header and FlatRaidFrames.header:IsShown() then
+                    FlatRaidFrames:UpdateNameList()
+                end
+            end)
         end
         
         if FlatRaidFrames.pendingLayoutUpdate then

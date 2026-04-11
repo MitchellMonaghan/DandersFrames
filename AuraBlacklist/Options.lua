@@ -7,9 +7,12 @@ local addonName, DF = ...
 -- ============================================================
 
 local pairs, ipairs = pairs, ipairs
+local format = string.format
 local tinsert = table.insert
 local wipe = wipe
 local CreateFrame = CreateFrame
+
+local L = DF.L
 
 -- ============================================================
 -- MAIN PAGE BUILD
@@ -186,7 +189,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         local combatChecked = isBlacklisted and type(entry) == "table" and entry.combat or false
         local oocChecked = isBlacklisted and type(entry) == "table" and entry.ooc or false
 
-        local combatCB = CreateMiniCheckbox(row, "Combat", combatChecked, function(newState)
+        local combatCB = CreateMiniCheckbox(row, L["Combat"], combatChecked, function(newState)
             local blNow = GetBlacklist()
             local e = blNow[blacklistKey] and blNow[blacklistKey][spell.spellId]
             if newState and not e then
@@ -207,7 +210,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         end)
         combatCB:SetPoint("RIGHT", row, "RIGHT", -104, 0)
 
-        local oocCB = CreateMiniCheckbox(row, "OOC", oocChecked, function(newState)
+        local oocCB = CreateMiniCheckbox(row, L["OOC"], oocChecked, function(newState)
             local blNow = GetBlacklist()
             local e = blNow[blacklistKey] and blNow[blacklistKey][spell.spellId]
             if newState and not e then
@@ -298,9 +301,10 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         listBg:SetBackdropBorderColor(0.20, 0.20, 0.20, 1)
 
         -- Scroll frame
-        local scrollFrame = CreateFrame("ScrollFrame", nil, listBg, "UIPanelScrollFrameTemplate")
+        local scrollFrame = CreateFrame("ScrollFrame", nil, listBg, "ScrollFrameTemplate")
         scrollFrame:SetPoint("TOPLEFT", 4, -4)
         scrollFrame:SetPoint("BOTTOMRIGHT", -24, 4)
+        DF.GUI.StyleScrollBar(scrollFrame)
 
         local scrollContent = CreateFrame("Frame", nil, scrollFrame)
         scrollContent:SetSize(LIST_WIDTH - 28, 1)
@@ -309,7 +313,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         -- Empty hint
         local emptyText = listBg:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         emptyText:SetPoint("CENTER", listBg, "CENTER", 0, 0)
-        emptyText:SetText("No spells available for this class")
+        emptyText:SetText(L["No spells available for this class"])
 
         -- Refresh
         local function Refresh()
@@ -332,7 +336,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
                 end
             end
             if blCount > 0 then
-                countText:SetText(blCount .. " blacklisted")
+                countText:SetText(format(L["%d blacklisted"], blCount))
             else
                 countText:SetText("")
             end
@@ -356,7 +360,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
     desc:SetPoint("TOPLEFT", 10, -10)
     desc:SetPoint("RIGHT", -10, 0)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Hide specific buffs and debuffs from your frames. Click a spell to toggle blacklisting. Blacklisted auras will not appear on buff bars or Aura Designer indicators.")
+    desc:SetText(L["Hide specific buffs and debuffs from your frames. Click a spell to toggle blacklisting. Blacklisted auras will not appear on buff bars or Aura Designer indicators."])
     desc:SetTextColor(0.6, 0.6, 0.6)
 
     -- ========== CLASS DROPDOWN ==========
@@ -366,12 +370,12 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
     local classLabel = dropdownContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classLabel:SetPoint("TOPLEFT", 0, 0)
-    classLabel:SetText("Class")
+    classLabel:SetText(L["Class"])
     classLabel:SetTextColor(0.7, 0.7, 0.7)
 
     -- Build dropdown items
     local classOptions = {}
-    tinsert(classOptions, { value = "AUTO", text = "Auto (detect class)" })
+    tinsert(classOptions, { value = "AUTO", text = L["Auto (detect class)"] })
     if DF.AuraBlacklist and DF.AuraBlacklist.ClassOrder then
         for _, classToken in ipairs(DF.AuraBlacklist.ClassOrder) do
             local className = DF.AuraBlacklist.ClassNames and DF.AuraBlacklist.ClassNames[classToken] or classToken
@@ -409,13 +413,13 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
                 if selectedClass == "AUTO" then
                     local playerClass = GetPlayerClass()
                     local playerClassName = DF.AuraBlacklist and DF.AuraBlacklist.ClassNames and DF.AuraBlacklist.ClassNames[playerClass] or playerClass
-                    displayText = "Auto (" .. (playerClassName or "Unknown") .. ")"
+                    displayText = format(L["Auto (%s)"], playerClassName or L["Unknown"])
                 end
                 dropdownText:SetText(displayText)
                 return
             end
         end
-        dropdownText:SetText("Select Class")
+        dropdownText:SetText(L["Select Class"])
     end
 
     -- Dropdown menu (parented to UIParent so it renders above everything)
@@ -492,14 +496,14 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
     -- ========== BUFF BLACKLIST WIDGET ==========
     local buffWidget = CreateSpellListWidget(
-        dropdownContainer, -10, "BUFF BLACKLIST",
+        dropdownContainer, -10, L["BUFF BLACKLIST"],
         GetAllBuffs, "buffs", buffItemPool
     )
     page._buffWidget = buffWidget
 
     -- ========== DEBUFF BLACKLIST WIDGET ==========
     local debuffWidget = CreateSpellListWidget(
-        buffWidget, -20, "DEBUFF BLACKLIST",
+        buffWidget, -20, L["DEBUFF BLACKLIST"],
         GetAllDebuffs, "debuffs", debuffItemPool
     )
     page._debuffWidget = debuffWidget

@@ -23,6 +23,9 @@ local IsInRaid = IsInRaid
 local InCombatLockdown = InCombatLockdown
 local CreateFrame = CreateFrame
 
+-- Forward declarations for caches used in closures
+local resCache = {}    -- unit -> 1 (casting) or timestamp (pending accept start time)
+
 -- Secret value handling (Midnight-safe)
 local issecretvalue = issecretvalue or function() return false end
 local canaccessvalue = function(v)
@@ -38,7 +41,8 @@ local function CreateStatusIcon(parent, size)
     icon:SetSize(size or 16, size or 16)
     icon:SetFrameLevel(parent:GetFrameLevel() + 5)
     icon:Hide()
-    
+    icon:SetIgnoreParentAlpha(true)
+
     icon.texture = icon:CreateTexture(nil, "OVERLAY")
     icon.texture:SetAllPoints()
     icon.texture:SetDrawLayer("OVERLAY", 6)
@@ -89,7 +93,39 @@ function DF:CreateStatusIcons(frame)
     frame.resurrectionIcon:SetPoint("CENTER", frame, "CENTER", 0, 10)
     frame.resurrectionIcon.texture:SetTexture("Interface\\RaidFrame\\Raid-Icon-Rez")
     frame.resurrectionIcon.text:SetTextColor(0.2, 1, 0.2, 1)  -- Green for res
-    
+    frame.resurrectionIcon.unitFrame = frame
+    frame.resurrectionIcon:EnableMouse(true)
+    if frame.resurrectionIcon.SetPropagateMouseMotion then
+        frame.resurrectionIcon:SetPropagateMouseMotion(true)
+    end
+    if frame.resurrectionIcon.SetPropagateMouseClicks then
+        frame.resurrectionIcon:SetPropagateMouseClicks(true)
+    end
+    if frame.resurrectionIcon.SetMouseClickEnabled then
+        frame.resurrectionIcon:SetMouseClickEnabled(false)
+    end
+    frame.resurrectionIcon:SetScript("OnEnter", function(self)
+        local db = DF:GetFrameDB(self.unitFrame)
+        if not db or not db.tooltipResurrectionEnabled then return end
+        local unit = self.unitFrame and self.unitFrame.unit
+        local state = unit and resCache[unit]
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:ClearLines()
+        if state == 1 then
+            GameTooltip:AddLine("Resurrection Incoming", 0.2, 1, 0.2)
+            GameTooltip:AddLine("A resurrection is being cast on this player.", 0.8, 0.8, 0.8, true)
+        elseif type(state) == "number" then
+            GameTooltip:AddLine("Resurrection Pending", 1, 1, 0)
+            GameTooltip:AddLine("Waiting for this player to accept the resurrection.", 0.8, 0.8, 0.8, true)
+        else
+            GameTooltip:AddLine("Resurrection", 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    frame.resurrectionIcon:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
     -- ========================================
     -- PHASED ICON (unit is phased/different instance)
     -- ========================================
@@ -258,7 +294,13 @@ function DF:UpdateSummonIcon(frame)
     local showIcon = false
     local texture = nil
     local statusText = nil
-    
+
+    -- If the unit no longer exists (player left group), clear the icon immediately
+    if not UnitExists(unit) then
+        frame.summonIcon:Hide()
+        return
+    end
+
     -- Check for incoming summon (secret-safe)
     if C_IncomingSummon and C_IncomingSummon.HasIncomingSummon then
         local hasSummon = nil
@@ -311,7 +353,6 @@ end
 -- pending accept expired after 60s - the WoW accept window).
 -- ============================================================
 
-local resCache = {}    -- unit -> 1 (casting) or timestamp (pending accept start time)
 local resTimer
 
 local RES_ACCEPT_TIMEOUT = 60  -- WoW's res accept window is 60 seconds

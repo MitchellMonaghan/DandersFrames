@@ -15,6 +15,7 @@ local max, min, floor = math.max, math.min, math.floor
 local strsplit = strsplit
 local sort = table.sort
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
+local L = DF.L
 
 -- Local references set during BuildAuraDesignerPage
 local GUI
@@ -36,51 +37,51 @@ local C_TEXT_DIM   = {r = 0.6, g = 0.6, b = 0.6, a = 1}
 
 -- Indicator type definitions
 local INDICATOR_TYPES = {
-    { key = "icon",       label = "Icon",             placed = true  },
-    { key = "square",     label = "Square",           placed = true  },
-    { key = "bar",        label = "Bar",              placed = true  },
-    { key = "border",     label = "Border",           placed = false },
-    { key = "healthbar",  label = "Health Bar Color", placed = false },
-    { key = "nametext",   label = "Name Text Color",  placed = false },
-    { key = "healthtext", label = "Health Text Color", placed = false },
-    { key = "framealpha", label = "Frame Alpha",      placed = false },
-    { key = "sound",      label = "Sound Alert",      placed = false },
+    { key = "icon",       label = L["Icon"],             placed = true  },
+    { key = "square",     label = L["Square"],           placed = true  },
+    { key = "bar",        label = L["Bar"],              placed = true  },
+    { key = "border",     label = L["Border"],           placed = false },
+    { key = "healthbar",  label = L["Health Bar Color"], placed = false },
+    { key = "nametext",   label = L["Name Text Color"],  placed = false },
+    { key = "healthtext", label = L["Health Text Color"], placed = false },
+    { key = "framealpha", label = L["Frame Alpha"],      placed = false },
+    { key = "sound",      label = L["Sound Alert"],      placed = false },
 }
 
 local ANCHOR_OPTIONS = {
-    CENTER = "Center", TOP = "Top", BOTTOM = "Bottom", LEFT = "Left", RIGHT = "Right",
-    TOPLEFT = "Top Left", TOPRIGHT = "Top Right", BOTTOMLEFT = "Bottom Left", BOTTOMRIGHT = "Bottom Right",
+    CENTER = L["Center"], TOP = L["Top"], BOTTOM = L["Bottom"], LEFT = L["Left"], RIGHT = L["Right"],
+    TOPLEFT = L["Top Left"], TOPRIGHT = L["Top Right"], BOTTOMLEFT = L["Bottom Left"], BOTTOMRIGHT = L["Bottom Right"],
     _order = {"TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT"},
 }
 
 local GROWTH_OPTIONS = {
-    RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down",
+    RIGHT = L["Right"], LEFT = L["Left"], UP = L["Up"], DOWN = L["Down"],
     _order = {"RIGHT", "LEFT", "UP", "DOWN"},
 }
 
 local FRAME_STRATA_OPTIONS = {
-    INHERIT = "Inherit (Frame)", BACKGROUND = "Background", LOW = "Low", MEDIUM = "Medium", HIGH = "High",
+    INHERIT = L["Inherit (Frame)"], BACKGROUND = L["Background"], LOW = L["Low"], MEDIUM = L["Medium"], HIGH = L["High"],
     _order = {"INHERIT", "BACKGROUND", "LOW", "MEDIUM", "HIGH"},
 }
 
 local BORDER_STYLE_OPTIONS = {
-    SOLID = "Solid Border", ANIMATED = "Animated Border", DASHED = "Dashed Border",
-    GLOW = "Glow", CORNERS = "Corners Only",
+    SOLID = L["Solid Border"], ANIMATED = L["Animated Border"], DASHED = L["Dashed Border"],
+    GLOW = L["Glow"], CORNERS = L["Corners Only"],
     _order = {"SOLID", "ANIMATED", "DASHED", "GLOW", "CORNERS"},
 }
 
 local HEALTHBAR_MODE_OPTIONS = {
-    Replace = "Replace", Tint = "Tint",
+    Replace = L["Replace"], Tint = L["Tint"],
     _order = {"Replace", "Tint"},
 }
 
 local BAR_ORIENT_OPTIONS = {
-    HORIZONTAL = "Horizontal", VERTICAL = "Vertical",
+    HORIZONTAL = L["Horizontal"], VERTICAL = L["Vertical"],
     _order = {"HORIZONTAL", "VERTICAL"},
 }
 
 local OUTLINE_OPTIONS = {
-    NONE = "None", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline", SHADOW = "Shadow",
+    NONE = L["None"], OUTLINE = L["Outline"], THICKOUTLINE = L["Thick Outline"], SHADOW = L["Shadow"],
     _order = {"NONE", "OUTLINE", "THICKOUTLINE", "SHADOW"},
 }
 
@@ -253,13 +254,13 @@ local function ShowBuffCoexistPopup(onConfirm, onCancel)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         title:SetPoint("TOP", 0, -12)
-        title:SetText("Aura Designer")
+        title:SetText(L["Aura Designer"])
         title:SetTextColor(tc.r, tc.g, tc.b)
 
         local desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         desc:SetPoint("TOP", title, "BOTTOM", 0, -6)
         desc:SetWidth(390)
-        desc:SetText("Would you like to keep standard buff icons alongside\nAura Designer, or let it fully replace them?")
+        desc:SetText(L["Would you like to keep standard buff icons alongside\nAura Designer, or let it fully replace them?"])
         desc:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
         desc:SetJustifyH("CENTER")
 
@@ -281,8 +282,8 @@ local function ShowBuffCoexistPopup(onConfirm, onCancel)
             return btn
         end
 
-        f.keepBtn = MakeButton(f, "Keep Buffs", -95)
-        f.replaceBtn = MakeButton(f, "Replace Buffs", 95)
+        f.keepBtn = MakeButton(f, L["Keep Buffs"], -95)
+        f.replaceBtn = MakeButton(f, L["Replace Buffs"], 95)
 
         -- Close on Escape
         f:SetScript("OnKeyDown", function(self, key)
@@ -520,6 +521,9 @@ local function EnsureTypeConfig(auraName, typeKey)
                 combatMode = "ALWAYS",
                 startDelay = 2,
                 loopInterval = 3,
+                expireEnabled = false,
+                expireThreshold = 5,
+                expireThresholdMode = "SECONDS",
             }
         end
     end
@@ -1122,9 +1126,9 @@ local currentBannerShift = 0 -- tracks current coexist banner offset
 -- ============================================================
 
 StaticPopupDialogs["DF_AURA_DESIGNER_RESET_GLOBAL"] = {
-    text = "Reset all Aura Designer settings in this auto layout to match your global profile?\n\nThis cannot be undone.",
-    button1 = "Reset",
-    button2 = "Cancel",
+    text = L["Reset all Aura Designer settings in this auto layout to match your global profile?\n\nThis cannot be undone."],
+    button1 = L["Reset"],
+    button2 = L["Cancel"],
     OnAccept = function()
         local AutoProfilesUI = DF.AutoProfilesUI
         if not AutoProfilesUI or not AutoProfilesUI:IsEditing() then return end
@@ -1188,18 +1192,18 @@ local effectCardPool = {}   -- Reusable card frames
 local FRAME_LEVEL_TYPE_KEYS = { "border", "healthbar", "nametext", "healthtext", "framealpha", "sound" }
 
 local FRAME_LEVEL_LABELS = {
-    border     = "Border",
-    healthbar  = "Health Bar",
-    nametext   = "Name Text",
-    healthtext = "Health Text",
-    framealpha = "Frame Alpha",
-    sound      = "Sound Alert",
+    border     = L["Border"],
+    healthbar  = L["Health Bar"],
+    nametext   = L["Name Text"],
+    healthtext = L["Health Text"],
+    framealpha = L["Frame Alpha"],
+    sound      = L["Sound Alert"],
 }
 
 local PLACED_TYPE_LABELS = {
-    icon   = "Icon",
-    square = "Square",
-    bar    = "Bar",
+    icon   = L["Icon"],
+    square = L["Square"],
+    bar    = L["Bar"],
 }
 
 local BADGE_COLORS = {
@@ -1374,7 +1378,7 @@ local function StartDrag(auraName, auraInfo, specKey, indicatorType)
     -- Show drag hint
     if dragHintText then
         local tc = GetThemeColor()
-        dragHintText:SetText("Drop on an anchor point to place " .. auraInfo.display)
+        dragHintText:SetText(format(L["Drop on an anchor point to place %s"], auraInfo.display))
         dragHintText:SetTextColor(tc.r, tc.g, tc.b, 0.9)
     end
 
@@ -1452,7 +1456,7 @@ local function StartMoveDrag(auraName, indicatorID, specKey)
 
     -- Show drag hint
     if dragHintText then
-        dragHintText:SetText("Drop on an anchor point to move " .. displayName)
+        dragHintText:SetText(format(L["Drop on an anchor point to move %s"], displayName))
         dragHintText:SetTextColor(tc.r, tc.g, tc.b, 0.9)
     end
 
@@ -1710,7 +1714,8 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 3,
                     }
-                    Indicators:ApplyIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ConfigureIcon(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                    Indicators:UpdateIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local iconMap = mockFrame.dfAD_icons
                     local icon = iconMap and iconMap[instanceKey]
@@ -1753,7 +1758,8 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 3,
                     }
-                    Indicators:ApplySquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ConfigureSquare(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                    Indicators:UpdateSquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local sqMap = mockFrame.dfAD_squares
                     local sq = sqMap and sqMap[instanceKey]
@@ -1792,7 +1798,8 @@ local function RefreshPlacedIndicators()
                         expirationTime = GetTime() + 10,
                         stacks = 0,
                     }
-                    Indicators:ApplyBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                    Indicators:ConfigureBar(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                    Indicators:UpdateBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
 
                     local barMap = mockFrame.dfAD_bars
                     local bar = barMap and barMap[instanceKey]
@@ -2051,8 +2058,9 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 3,
                         }
-                        Indicators:ApplyIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
-                        -- Re-enable mouse (ApplyIcon disables it for real unit frames)
+                        Indicators:ConfigureIcon(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                        Indicators:UpdateIcon(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                        -- Re-enable mouse (ConfigureIcon disables it for real unit frames)
                         icon:EnableMouse(true)
                         if icon.SetMouseClickEnabled then icon:SetMouseClickEnabled(true) end
                     end
@@ -2065,7 +2073,8 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 3,
                         }
-                        Indicators:ApplySquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                        Indicators:ConfigureSquare(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                        Indicators:UpdateSquare(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
                         sq:EnableMouse(true)
                     end
                 elseif indicator.type == "bar" then
@@ -2077,8 +2086,9 @@ RefreshPreviewLightweight = function()
                             duration = 15, expirationTime = GetTime() + 10,
                             stacks = 0,
                         }
-                        Indicators:ApplyBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
-                        -- Re-enable mouse (ApplyBar disables it for real unit frames)
+                        Indicators:ConfigureBar(mockFrame, effectiveConfig, adDB.defaults, instanceKey)
+                        Indicators:UpdateBar(mockFrame, effectiveConfig, mockAuraData, adDB.defaults, instanceKey)
+                        -- Re-enable mouse (ConfigureBar disables it for real unit frames)
                         bar:EnableMouse(true)
                         if bar.SetMouseClickEnabled then bar:SetMouseClickEnabled(true) end
                     end
@@ -2109,13 +2119,13 @@ local function CreateExpiringThresholdRow(parent, proxy, width)
     -- Slider: range depends on mode
     local label, minV, maxV, step
     if isSeconds then
-        label = "Expiring Threshold (s)"
+        label = L["Expiring Threshold (seconds)"]
         minV, maxV, step = 1, 60, 1
         -- Clamp value to seconds range if switching from percent
         local cur = proxy.expiringThreshold
         if cur and cur > 60 then proxy.expiringThreshold = 10 end
     else
-        label = "Expiring Threshold %"
+        label = L["Expiring Threshold (%)"]
         minV, maxV, step = 5, 100, 5
         -- Clamp value to percent range if switching from seconds
         local cur = proxy.expiringThreshold
@@ -2134,7 +2144,7 @@ local function CreateExpiringThresholdRow(parent, proxy, width)
     local modeText = modeBtn:CreateFontString(nil, "OVERLAY")
     modeText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
     modeText:SetPoint("CENTER", 0, 0)
-    modeText:SetText(isSeconds and "Seconds" or "Percent")
+    modeText:SetText(isSeconds and L["Seconds"] or L["Percent"])
     modeText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     ApplyBackdrop(modeBtn,
         {r = 0.14, g = 0.14, b = 0.17, a = 1},
@@ -2143,8 +2153,8 @@ local function CreateExpiringThresholdRow(parent, proxy, width)
     modeBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(0.18, 0.18, 0.22, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Threshold Mode")
-        GameTooltip:AddLine(isSeconds and "Currently: Seconds. Click for Percent." or "Currently: Percent. Click for Seconds.", 0.8, 0.8, 0.8, true)
+        GameTooltip:SetText(L["Threshold Mode"])
+        GameTooltip:AddLine(isSeconds and L["Currently: Seconds. Click for Percent."] or L["Currently: Percent. Click for Seconds."], 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     modeBtn:SetScript("OnLeave", function(self)
@@ -2187,7 +2197,7 @@ local function CreateExpiringDurationPriorityRow(parent, auraName, typeKey, widt
     local durText = durBtn:CreateFontString(nil, "OVERLAY")
     durText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
     durText:SetPoint("CENTER", 0, 0)
-    durText:SetText(isHighest and "Track Highest Duration" or "Track Lowest Duration")
+    durText:SetText(isHighest and L["Track Highest Duration"] or L["Track Lowest Duration"])
     durText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
     local durW = durText:GetStringWidth() + 16
@@ -2201,13 +2211,13 @@ local function CreateExpiringDurationPriorityRow(parent, auraName, typeKey, widt
         self:SetBackdropColor(0.18, 0.18, 0.22, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if isHighest then
-            GameTooltip:SetText("Using highest duration trigger")
-            GameTooltip:AddLine("Expiring indicator tracks the trigger with the most time remaining.", 0.8, 0.8, 0.8, true)
+            GameTooltip:SetText(L["Using highest duration trigger"])
+            GameTooltip:AddLine(L["Expiring indicator tracks the trigger with the most time remaining."], 0.8, 0.8, 0.8, true)
         else
-            GameTooltip:SetText("Using lowest duration trigger")
-            GameTooltip:AddLine("Expiring indicator tracks the trigger with the least time remaining.", 0.8, 0.8, 0.8, true)
+            GameTooltip:SetText(L["Using lowest duration trigger"])
+            GameTooltip:AddLine(L["Expiring indicator tracks the trigger with the least time remaining."], 0.8, 0.8, 0.8, true)
         end
-        GameTooltip:AddLine("Click to toggle", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(L["Click to toggle"], 0.6, 0.6, 0.6)
         GameTooltip:Show()
     end)
     durBtn:SetScript("OnLeave", function(self)
@@ -2250,8 +2260,8 @@ local function CreateExpiringDurationPriorityRow(parent, auraName, typeKey, widt
             warnText:SetJustifyH("LEFT")
             warnText:SetWordWrap(true)
             local names = table.concat(secretNames, ", ")
-            warnText:SetText(names .. (#secretNames == 1 and " is" or " are")
-                .. " secret-tracked. Whitelist buffs take priority for the expiring indicator.")
+            local verb = (#secretNames == 1) and L["is secret-tracked"] or L["are secret-tracked"]
+            warnText:SetText(names .. " " .. verb .. ". " .. L["Whitelist buffs take priority for the expiring indicator."])
             warnText:SetTextColor(0.9, 0.7, 0.3, 0.9)
             local warnH = warnText:GetStringHeight() + 4
             totalH = totalH + warnH
@@ -2277,8 +2287,11 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         totalHeight = totalHeight + (height or 30)
     end
 
-    local function AddGroup(header, buildFn)
-        local group = GUI:CreateSettingsGroup(parent, contentWidth - 10)
+    local function AddGroup(header, buildFn, showSummary)
+        local group = GUI:CreateSettingsGroup(parent, contentWidth - 10, {
+            collapsible = true,
+            showSummary = showSummary or false,
+        })
         group.padding = 6
         group:AddWidget(GUI:CreateHeader(parent, header), 25)
         buildFn(group)
@@ -2294,7 +2307,7 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         local copyLabel = copyContainer:CreateFontString(nil, "OVERLAY")
         copyLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
         copyLabel:SetPoint("TOPLEFT", 1, -1)
-        copyLabel:SetText("COPY APPEARANCE FROM")
+        copyLabel:SetText(L["COPY APPEARANCE FROM"])
         copyLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
         local copyBtn = CreateFrame("Button", nil, copyContainer, "BackdropTemplate")
@@ -2308,7 +2321,7 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
         local copyBtnText = copyBtn:CreateFontString(nil, "OVERLAY")
         copyBtnText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
         copyBtnText:SetPoint("LEFT", 6, 0)
-        copyBtnText:SetText("Select indicator...")
+        copyBtnText:SetText(L["Select indicator..."])
         copyBtnText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
         local chevron = copyBtn:CreateTexture(nil, "OVERLAY")
@@ -2428,172 +2441,172 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
 
     if typeKey == "icon" then
         -- Position
-        AddGroup("Position", function(g)
+        AddGroup(L["Position"], function(g)
             if layoutGroup then
                 local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
-                groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+                groupNote:SetText(format(L["Position managed by: %s"], layoutGroup.name or L["Layout Group"]))
                 g:AddWidget(groupNote, 18)
             else
-                g:AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset X", -150, 150, 1, proxy, "offsetX"), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset Y", -150, 150, 1, proxy, "offsetY"), 54)
+                g:AddWidget(GUI:CreateDropdown(parent, L["Anchor"], ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset X"], -150, 150, 1, proxy, "offsetX"), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset Y"], -150, 150, 1, proxy, "offsetY"), 54)
             end
         end)
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateSlider(parent, "Size", 8, 64, 1, proxy, "size"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Scale", 0.5, 3.0, 0.05, proxy, "scale"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Alpha", 0, 1, 0.05, proxy, "alpha"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Frame Level", -10, 30, 1, proxy, "frameLevel"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Frame Strata", FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Cooldown Swipe", proxy, "hideSwipe"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Icon (Text Only)", proxy, "hideIcon"), 28)
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateSlider(parent, L["Size"], 8, 64, 1, proxy, "size"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Scale"], 0.5, 3.0, 0.05, proxy, "scale"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Alpha"], 0, 1, 0.05, proxy, "alpha"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Frame Level"], -10, 30, 1, proxy, "frameLevel"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Frame Strata"], FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Cooldown Swipe"], proxy, "hideSwipe"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Icon (Text Only)"], proxy, "hideIcon"), 28)
         end)
         -- Show When Missing
-        AddGroup("Show When Missing", function(g)
+        AddGroup(L["Show When Missing"], function(g)
             local desatCb
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 if desatCb then
                     if proxy.showWhenMissing then desatCb:Show() else desatCb:Hide() end
                 end
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
-            desatCb = GUI:CreateCheckbox(parent, "Desaturate When Missing", proxy, "missingDesaturate", function()
+            desatCb = GUI:CreateCheckbox(parent, L["Desaturate When Missing"], proxy, "missingDesaturate", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end)
             g:AddWidget(desatCb, 28)
             if not proxy.showWhenMissing then desatCb:Hide() end
         end)
         -- Border
-        AddGroup("Border", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Border", proxy, "borderEnabled"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Border Thickness", 1, 5, 1, proxy, "borderThickness"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Border Inset", -3, 5, 1, proxy, "borderInset"), 54)
+        AddGroup(L["Border"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Border"], proxy, "borderEnabled"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Border Thickness"], 1, 5, 1, proxy, "borderThickness"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Border Inset"], -3, 5, 1, proxy, "borderInset"), 54)
         end)
         -- Duration Text
-        AddGroup("Duration Text", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Duration Text", proxy, "showDuration"), 28)
-            g:AddWidget(GUI:CreateFontDropdown(parent, "Duration Font", proxy, "durationFont"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Scale", 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Outline", OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Anchor", ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset X", -150, 150, 1, proxy, "durationX"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset Y", -150, 150, 1, proxy, "durationY"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Color Duration by Time", proxy, "durationColorByTime"), 28)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Duration Text Color", proxy, "durationColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Duration Above Threshold", proxy, "durationHideAboveEnabled"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Hide Above (seconds)", 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
+        AddGroup(L["Duration Text"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Duration Text"], proxy, "showDuration"), 28)
+            g:AddWidget(GUI:CreateFontDropdown(parent, L["Duration Font"], proxy, "durationFont"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Scale"], 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Outline"], OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Anchor"], ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset X"], -150, 150, 1, proxy, "durationX"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset Y"], -150, 150, 1, proxy, "durationY"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Color Duration by Time"], proxy, "durationColorByTime"), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Duration Text Color"], proxy, "durationColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Duration Above Threshold"], proxy, "durationHideAboveEnabled"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Hide Above (seconds)"], 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
         end)
         -- Stack Count
-        AddGroup("Stack Count", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Stacks", proxy, "showStacks"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Minimum", 1, 10, 1, proxy, "stackMinimum"), 54)
-            g:AddWidget(GUI:CreateFontDropdown(parent, "Stack Font", proxy, "stackFont"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Scale", 0.5, 2.0, 0.1, proxy, "stackScale"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Stack Outline", OUTLINE_OPTIONS, proxy, "stackOutline"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Stack Anchor", ANCHOR_OPTIONS, proxy, "stackAnchor"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Offset X", -150, 150, 1, proxy, "stackX"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Offset Y", -150, 150, 1, proxy, "stackY"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Stack Text Color", proxy, "stackColor", true, RPL, RPL, true), 28)
+        AddGroup(L["Stack Count"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Stacks"], proxy, "showStacks"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Minimum"], 1, 10, 1, proxy, "stackMinimum"), 54)
+            g:AddWidget(GUI:CreateFontDropdown(parent, L["Stack Font"], proxy, "stackFont"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Scale"], 0.5, 2.0, 0.1, proxy, "stackScale"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Stack Outline"], OUTLINE_OPTIONS, proxy, "stackOutline"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Stack Anchor"], ANCHOR_OPTIONS, proxy, "stackAnchor"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Offset X"], -150, 150, 1, proxy, "stackX"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Offset Y"], -150, 150, 1, proxy, "stackY"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Stack Text Color"], proxy, "stackColor", true, RPL, RPL, true), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Border Pulsate", proxy, "expiringPulsate"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Whole Alpha Pulse", proxy, "expiringWholeAlphaPulse"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Bounce", proxy, "expiringBounce"), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Pulsate Border"], proxy, "expiringPulsate"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Whole Alpha Pulse"], proxy, "expiringWholeAlphaPulse"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Bounce"], proxy, "expiringBounce"), 28)
         end)
 
     elseif typeKey == "square" then
         -- Position
-        AddGroup("Position", function(g)
+        AddGroup(L["Position"], function(g)
             if layoutGroup then
                 local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
-                groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+                groupNote:SetText(format(L["Position managed by: %s"], layoutGroup.name or L["Layout Group"]))
                 g:AddWidget(groupNote, 18)
             else
-                g:AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset X", -150, 150, 1, proxy, "offsetX"), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset Y", -150, 150, 1, proxy, "offsetY"), 54)
+                g:AddWidget(GUI:CreateDropdown(parent, L["Anchor"], ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset X"], -150, 150, 1, proxy, "offsetX"), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset Y"], -150, 150, 1, proxy, "offsetY"), 54)
             end
         end)
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateSlider(parent, "Size", 8, 64, 1, proxy, "size"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Scale", 0.5, 3.0, 0.05, proxy, "scale"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Alpha", 0, 1, 0.05, proxy, "alpha"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Frame Level", -10, 30, 1, proxy, "frameLevel"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Frame Strata", FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Cooldown Swipe", proxy, "hideSwipe"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Icon (Text Only)", proxy, "hideIcon"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateSlider(parent, L["Size"], 8, 64, 1, proxy, "size"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Scale"], 0.5, 3.0, 0.05, proxy, "scale"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Color"], proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Alpha"], 0, 1, 0.05, proxy, "alpha"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Frame Level"], -10, 30, 1, proxy, "frameLevel"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Frame Strata"], FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Cooldown Swipe"], proxy, "hideSwipe"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Icon (Text Only)"], proxy, "hideIcon"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Border
-        AddGroup("Border", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Border", proxy, "showBorder"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Border Thickness", 1, 5, 1, proxy, "borderThickness"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Border Inset", -3, 5, 1, proxy, "borderInset"), 54)
+        AddGroup(L["Border"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Border"], proxy, "showBorder"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Border Thickness"], 1, 5, 1, proxy, "borderThickness"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Border Inset"], -3, 5, 1, proxy, "borderInset"), 54)
         end)
         -- Duration Text
-        AddGroup("Duration Text", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Duration Text", proxy, "showDuration"), 28)
-            g:AddWidget(GUI:CreateFontDropdown(parent, "Duration Font", proxy, "durationFont"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Scale", 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Outline", OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Anchor", ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset X", -150, 150, 1, proxy, "durationX"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset Y", -150, 150, 1, proxy, "durationY"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Color Duration by Time", proxy, "durationColorByTime"), 28)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Duration Text Color", proxy, "durationColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Duration Above Threshold", proxy, "durationHideAboveEnabled"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Hide Above (seconds)", 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
+        AddGroup(L["Duration Text"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Duration Text"], proxy, "showDuration"), 28)
+            g:AddWidget(GUI:CreateFontDropdown(parent, L["Duration Font"], proxy, "durationFont"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Scale"], 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Outline"], OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Anchor"], ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset X"], -150, 150, 1, proxy, "durationX"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset Y"], -150, 150, 1, proxy, "durationY"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Color Duration by Time"], proxy, "durationColorByTime"), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Duration Text Color"], proxy, "durationColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Duration Above Threshold"], proxy, "durationHideAboveEnabled"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Hide Above (seconds)"], 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
         end)
         -- Stack Count
-        AddGroup("Stack Count", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Stacks", proxy, "showStacks"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Minimum", 1, 10, 1, proxy, "stackMinimum"), 54)
-            g:AddWidget(GUI:CreateFontDropdown(parent, "Stack Font", proxy, "stackFont"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Scale", 0.5, 2.0, 0.1, proxy, "stackScale"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Stack Outline", OUTLINE_OPTIONS, proxy, "stackOutline"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Stack Anchor", ANCHOR_OPTIONS, proxy, "stackAnchor"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Offset X", -150, 150, 1, proxy, "stackX"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Stack Offset Y", -150, 150, 1, proxy, "stackY"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Stack Text Color", proxy, "stackColor", true, RPL, RPL, true), 28)
+        AddGroup(L["Stack Count"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Stacks"], proxy, "showStacks"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Minimum"], 1, 10, 1, proxy, "stackMinimum"), 54)
+            g:AddWidget(GUI:CreateFontDropdown(parent, L["Stack Font"], proxy, "stackFont"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Scale"], 0.5, 2.0, 0.1, proxy, "stackScale"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Stack Outline"], OUTLINE_OPTIONS, proxy, "stackOutline"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Stack Anchor"], ANCHOR_OPTIONS, proxy, "stackAnchor"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Offset X"], -150, 150, 1, proxy, "stackX"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Stack Offset Y"], -150, 150, 1, proxy, "stackY"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Stack Text Color"], proxy, "stackColor", true, RPL, RPL, true), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Fill Pulsate", proxy, "expiringPulsate"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Whole Alpha Pulse", proxy, "expiringWholeAlphaPulse"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Bounce", proxy, "expiringBounce"), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Fill Pulsate"], proxy, "expiringPulsate"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Whole Alpha Pulse"], proxy, "expiringWholeAlphaPulse"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Bounce"], proxy, "expiringBounce"), 28)
         end)
 
     elseif typeKey == "bar" then
         -- Position
-        AddGroup("Position", function(g)
+        AddGroup(L["Position"], function(g)
             if layoutGroup then
                 local groupNote = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 groupNote:SetTextColor(0.91, 0.66, 0.25, 0.8)
-                groupNote:SetText("Position managed by: " .. (layoutGroup.name or "Layout Group"))
+                groupNote:SetText(format(L["Position managed by: %s"], layoutGroup.name or L["Layout Group"]))
                 g:AddWidget(groupNote, 18)
             else
-                g:AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset X", -150, 150, 1, proxy, "offsetX"), 54)
-                g:AddWidget(GUI:CreateSlider(parent, "Offset Y", -150, 150, 1, proxy, "offsetY"), 54)
+                g:AddWidget(GUI:CreateDropdown(parent, L["Anchor"], ANCHOR_OPTIONS, proxy, "anchor", function() DF:AuraDesigner_RefreshPage() end), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset X"], -150, 150, 1, proxy, "offsetX"), 54)
+                g:AddWidget(GUI:CreateSlider(parent, L["Offset Y"], -150, 150, 1, proxy, "offsetY"), 54)
             end
         end)
         -- Size & Orientation
-        AddGroup("Size & Orientation", function(g)
-            g:AddWidget(GUI:CreateDropdown(parent, "Orientation", BAR_ORIENT_OPTIONS, proxy, "orientation", function()
+        AddGroup(L["Size & Orientation"], function(g)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Orientation"], BAR_ORIENT_OPTIONS, proxy, "orientation", function()
                 local w = proxy.width
                 local h = proxy.height
                 proxy.width = h
@@ -2604,151 +2617,151 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
                 proxy.matchFrameHeight = mw
                 DF:AuraDesigner_RefreshPage()
             end), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Width", 0, 200, 1, proxy, "width"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Height", 1, 30, 1, proxy, "height"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Match Frame Width", proxy, "matchFrameWidth"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Match Frame Height", proxy, "matchFrameHeight"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Width"], 0, 200, 1, proxy, "width"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Height"], 1, 30, 1, proxy, "height"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Match Frame Width"], proxy, "matchFrameWidth"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Match Frame Height"], proxy, "matchFrameHeight"), 28)
         end)
         -- Texture & Colors
-        AddGroup("Texture & Colors", function(g)
-            g:AddWidget(GUI:CreateTextureDropdown(parent, "Bar Texture", proxy, "texture"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Fill Color", proxy, "fillColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Background Color", proxy, "bgColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Alpha", 0, 1, 0.05, proxy, "alpha"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Frame Level", -10, 30, 1, proxy, "frameLevel"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Frame Strata", FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
+        AddGroup(L["Texture & Colors"], function(g)
+            g:AddWidget(GUI:CreateTextureDropdown(parent, L["Bar Texture"], proxy, "texture"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Fill Color"], proxy, "fillColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Background Color"], proxy, "bgColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Alpha"], 0, 1, 0.05, proxy, "alpha"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Frame Level"], -10, 30, 1, proxy, "frameLevel"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Frame Strata"], FRAME_STRATA_OPTIONS, proxy, "frameStrata"), 54)
         end)
         -- Border
-        AddGroup("Border", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Border", proxy, "showBorder"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Border Thickness", 1, 4, 1, proxy, "borderThickness"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Border Color", proxy, "borderColor", true, RPL, RPL, true), 28)
+        AddGroup(L["Border"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Border"], proxy, "showBorder"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Border Thickness"], 1, 4, 1, proxy, "borderThickness"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Border Color"], proxy, "borderColor", true, RPL, RPL, true), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Color Bar by Duration", proxy, "barColorByTime"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Color Bar by Duration"], proxy, "barColorByTime"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
         end)
         -- Duration Text
-        AddGroup("Duration Text", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show Duration Text", proxy, "showDuration"), 28)
-            g:AddWidget(GUI:CreateFontDropdown(parent, "Duration Font", proxy, "durationFont"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Scale", 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Outline", OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
-            g:AddWidget(GUI:CreateDropdown(parent, "Duration Anchor", ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset X", -150, 150, 1, proxy, "durationX"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Duration Offset Y", -150, 150, 1, proxy, "durationY"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Color Duration by Time", proxy, "durationColorByTime"), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Hide Duration Above Threshold", proxy, "durationHideAboveEnabled"), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Hide Above (seconds)", 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
+        AddGroup(L["Duration Text"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show Duration Text"], proxy, "showDuration"), 28)
+            g:AddWidget(GUI:CreateFontDropdown(parent, L["Duration Font"], proxy, "durationFont"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Scale"], 0.5, 2.0, 0.1, proxy, "durationScale"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Outline"], OUTLINE_OPTIONS, proxy, "durationOutline"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Duration Anchor"], ANCHOR_OPTIONS, proxy, "durationAnchor"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset X"], -150, 150, 1, proxy, "durationX"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Duration Offset Y"], -150, 150, 1, proxy, "durationY"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Color Duration by Time"], proxy, "durationColorByTime"), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Duration Above Threshold"], proxy, "durationHideAboveEnabled"), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Hide Above (seconds)"], 1, 60, 1, proxy, "durationHideAboveThreshold"), 54)
         end)
 
     elseif typeKey == "border" then
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateDropdown(parent, "Style", BORDER_STYLE_OPTIONS, proxy, "style"), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateSlider(parent, "Thickness", 1, 8, 1, proxy, "thickness"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Inset", 0, 8, 1, proxy, "inset"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Style"], BORDER_STYLE_OPTIONS, proxy, "style"), 54)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Color"], proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateSlider(parent, L["Thickness"], 1, 8, 1, proxy, "thickness"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Inset"], 0, 8, 1, proxy, "inset"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
             do local dpRow, dpH = CreateExpiringDurationPriorityRow(parent, auraName, typeKey, contentWidth - 10)
             if dpRow then g:AddWidget(dpRow, dpH) end end
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Pulsate", proxy, "expiringPulsate"), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Pulsate"], proxy, "expiringPulsate"), 28)
         end)
 
     elseif typeKey == "healthbar" then
         -- Appearance
-        AddGroup("Appearance", function(g)
+        AddGroup(L["Appearance"], function(g)
             local blendSlider
-            g:AddWidget(GUI:CreateDropdown(parent, "Mode", HEALTHBAR_MODE_OPTIONS, proxy, "mode", function()
+            g:AddWidget(GUI:CreateDropdown(parent, L["Mode"], HEALTHBAR_MODE_OPTIONS, proxy, "mode", function()
                 if blendSlider then
                     local isReplace = (proxy.mode or "Replace") == "Replace"
                     if isReplace then blendSlider:Hide() else blendSlider:Show() end
                 end
             end), 54)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
-            blendSlider = GUI:CreateSlider(parent, "Blend %", 0, 1, 0.05, proxy, "blend")
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Color"], proxy, "color", true, RPL, RPL, true), 28)
+            blendSlider = GUI:CreateSlider(parent, L["Blend %"], 0, 1, 0.05, proxy, "blend")
             g:AddWidget(blendSlider, 54)
             if (proxy.mode or "Replace") == "Replace" then blendSlider:Hide() end
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
             do local dpRow, dpH = CreateExpiringDurationPriorityRow(parent, auraName, typeKey, contentWidth - 10)
             if dpRow then g:AddWidget(dpRow, dpH) end end
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Pulsate", proxy, "expiringPulsate"), 24)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Pulsate"], proxy, "expiringPulsate"), 24)
         end)
 
     elseif typeKey == "nametext" then
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Color"], proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
             do local dpRow, dpH = CreateExpiringDurationPriorityRow(parent, auraName, typeKey, contentWidth - 10)
             if dpRow then g:AddWidget(dpRow, dpH) end end
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
         end)
 
     elseif typeKey == "healthtext" then
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateColorPicker(parent, "Color", proxy, "color", true, RPL, RPL, true), 28)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Color"], proxy, "color", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Color Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Color Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
             do local dpRow, dpH = CreateExpiringDurationPriorityRow(parent, auraName, typeKey, contentWidth - 10)
             if dpRow then g:AddWidget(dpRow, dpH) end end
-            g:AddWidget(GUI:CreateColorPicker(parent, "Expiring Color", proxy, "expiringColor", true, RPL, RPL, true), 28)
+            g:AddWidget(GUI:CreateColorPicker(parent, L["Expiring Color"], proxy, "expiringColor", true, RPL, RPL, true), 28)
         end)
 
     elseif typeKey == "framealpha" then
         -- Appearance
-        AddGroup("Appearance", function(g)
-            g:AddWidget(GUI:CreateSlider(parent, "Alpha", 0, 1, 0.05, proxy, "alpha"), 54)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Show When Missing", proxy, "showWhenMissing", function()
+        AddGroup(L["Appearance"], function(g)
+            g:AddWidget(GUI:CreateSlider(parent, L["Alpha"], 0, 1, 0.05, proxy, "alpha"), 54)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Show When Missing"], proxy, "showWhenMissing", function()
                 DF.AuraDesigner.Engine:ForceRefreshAllFrames()
             end), 28)
         end)
         -- Expiring
-        AddGroup("Expiring", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Expiring Alpha Override", proxy, "expiringEnabled"), 28)
+        AddGroup(L["Expiring"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Expiring Alpha Override"], proxy, "expiringEnabled"), 28)
             g:AddWidget(CreateExpiringThresholdRow(parent, proxy, contentWidth - 10), 54)
             do local dpRow, dpH = CreateExpiringDurationPriorityRow(parent, auraName, typeKey, contentWidth - 10)
             if dpRow then g:AddWidget(dpRow, dpH) end end
-            g:AddWidget(GUI:CreateSlider(parent, "Expiring Alpha", 0, 1, 0.05, proxy, "expiringAlpha"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Expiring Alpha"], 0, 1, 0.05, proxy, "expiringAlpha"), 54)
         end)
 
     elseif typeKey == "sound" then
         -- Enable checkbox
-        AddGroup("Sound Alert", function(g)
-            g:AddWidget(GUI:CreateCheckbox(parent, "Enable Sound Alert", proxy, "enabled", function()
+        AddGroup(L["Sound Alert"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Enable Sound Alert"], proxy, "enabled", function()
                 -- Stop sound immediately when disabled
                 if not proxy.enabled and DF.AuraDesigner.SoundEngine then
                     DF.AuraDesigner.SoundEngine:StopAura(auraName)
@@ -2756,7 +2769,7 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             end), 28)
 
             -- Sound picker (searchable scrollable dropdown)
-            g:AddWidget(GUI:CreateSoundDropdown(parent, "Sound", proxy, "soundLSMKey", function()
+            g:AddWidget(GUI:CreateSoundDropdown(parent, L["Sound"], proxy, "soundLSMKey", function()
                 -- Update soundFile path when LSM key changes
                 local path = DF:GetSoundPath(proxy.soundLSMKey)
                 if path then
@@ -2765,42 +2778,118 @@ local function BuildTypeContent(parent, typeKey, auraName, width, optProxy, yOff
             end), 54)
 
             -- Custom file path (overrides LSM selection)
-            g:AddWidget(GUI:CreateEditBox(parent, "Custom Sound Path", proxy, "soundFile", nil, 280), 44)
+            g:AddWidget(GUI:CreateEditBox(parent, L["Custom Sound Path"], proxy, "soundFile", nil, 280), 44)
 
             -- Preview button
-            local previewBtn = GUI:CreateButton(parent, "Preview Sound", 120, 22, function()
+            local previewBtn = GUI:CreateButton(parent, L["Preview Sound"], 120, 22, function()
                 local soundFile = DF:GetSoundPath(proxy.soundLSMKey) or proxy.soundFile
+                if not soundFile or soundFile == "" then
+                    print("|cffff8033DandersFrames:|r " .. L["No sound file selected. Choose a sound from the dropdown or enter a custom path."])
+                    return
+                end
                 local volume = proxy.volume or 0.8
-                if soundFile and DF.AuraDesigner.SoundEngine then
-                    DF.AuraDesigner.SoundEngine:PlayWithVolume(soundFile, volume)
+                if DF.AuraDesigner.SoundEngine then
+                    local willPlay = DF.AuraDesigner.SoundEngine:PlayWithVolume(soundFile, volume)
+                    if not willPlay then
+                        print("|cffff8033DandersFrames:|r " .. format(L["Sound file could not be played: %s"], tostring(soundFile)))
+                    end
                 end
             end)
             g:AddWidget(previewBtn, 28)
 
             -- Volume slider
-            g:AddWidget(GUI:CreateSlider(parent, "Volume", 0, 1, 0.05, proxy, "volume"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Volume"], 0, 1, 0.05, proxy, "volume"), 54)
         end)
 
         -- Trigger Settings
-        AddGroup("Trigger", function(g)
+        AddGroup(L["Trigger"], function(g)
             local triggerModeOptions = {
-                ANY_MISSING = "Alert if anyone is missing the buff",
-                ALL_MISSING = "Alert only if nobody has the buff",
+                ANY_MISSING = L["Alert if anyone is missing the buff"],
+                ALL_MISSING = L["Alert only if nobody has the buff"],
             }
-            g:AddWidget(GUI:CreateDropdown(parent, "Trigger Mode", triggerModeOptions, proxy, "triggerMode"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Trigger Mode"], triggerModeOptions, proxy, "triggerMode"), 54)
 
             local combatModeOptions = {
-                ALWAYS         = "Always",
-                IN_COMBAT      = "In Combat Only",
-                OUT_OF_COMBAT  = "Out of Combat Only",
+                ALWAYS         = L["Always"],
+                IN_COMBAT      = L["In Combat Only"],
+                OUT_OF_COMBAT  = L["Out of Combat Only"],
             }
-            g:AddWidget(GUI:CreateDropdown(parent, "Combat Mode", combatModeOptions, proxy, "combatMode"), 54)
+            g:AddWidget(GUI:CreateDropdown(parent, L["Combat Mode"], combatModeOptions, proxy, "combatMode"), 54)
         end)
 
         -- Timing
-        AddGroup("Timing", function(g)
-            g:AddWidget(GUI:CreateSlider(parent, "Start Delay (sec)", 0, 10, 0.5, proxy, "startDelay"), 54)
-            g:AddWidget(GUI:CreateSlider(parent, "Loop Interval (sec)", 1, 30, 0.5, proxy, "loopInterval"), 54)
+        AddGroup(L["Timing"], function(g)
+            g:AddWidget(GUI:CreateSlider(parent, L["Start Delay (sec)"], 0, 10, 0.5, proxy, "startDelay"), 54)
+            g:AddWidget(GUI:CreateSlider(parent, L["Loop Interval (sec)"], 1, 30, 0.5, proxy, "loopInterval"), 54)
+        end)
+
+        -- Expire Alert
+        AddGroup(L["Expire Alert"], function(g)
+            g:AddWidget(GUI:CreateCheckbox(parent, L["Alert When Expiring"], proxy, "expireEnabled", function()
+                if not proxy.expireEnabled and DF.AuraDesigner.SoundEngine then
+                    DF.AuraDesigner.SoundEngine:StopAura(auraName)
+                end
+            end), 28)
+
+            -- Threshold slider + mode toggle (same pattern as CreateExpiringThresholdRow)
+            local isSeconds = (proxy.expireThresholdMode or "SECONDS") == "SECONDS"
+            local threshContainer = CreateFrame("Frame", nil, parent)
+            threshContainer:SetHeight(54)
+            threshContainer:SetWidth(contentWidth - 10)
+
+            local thLabel, thMin, thMax, thStep
+            if isSeconds then
+                thLabel = L["Expiring Threshold (seconds)"]
+                thMin, thMax, thStep = 1, 60, 1
+                local cur = proxy.expireThreshold
+                if cur and cur > 60 then proxy.expireThreshold = 5 end
+            else
+                thLabel = L["Expiring Threshold (%)"]
+                thMin, thMax, thStep = 5, 100, 5
+                local cur = proxy.expireThreshold
+                if cur and cur < 5 then proxy.expireThreshold = 30 end
+            end
+
+            local thSlider = GUI:CreateSlider(threshContainer, thLabel, thMin, thMax, thStep, proxy, "expireThreshold")
+            thSlider:SetPoint("TOPLEFT", 0, 0)
+            thSlider:SetWidth(contentWidth - 10)
+
+            local thModeBtn = CreateFrame("Button", nil, threshContainer, "BackdropTemplate")
+            thModeBtn:SetSize(56, 18)
+            thModeBtn:SetPoint("BOTTOMRIGHT", thSlider, "TOPRIGHT", -10, 2)
+
+            local thModeText = thModeBtn:CreateFontString(nil, "OVERLAY")
+            thModeText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+            thModeText:SetPoint("CENTER", 0, 0)
+            thModeText:SetText(isSeconds and L["Seconds"] or L["Percent"])
+            thModeText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+            ApplyBackdrop(thModeBtn,
+                {r = 0.14, g = 0.14, b = 0.17, a = 1},
+                {r = 0.30, g = 0.30, b = 0.35, a = 0.8})
+
+            thModeBtn:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(0.18, 0.18, 0.22, 1)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L["Threshold Mode"])
+                GameTooltip:AddLine(isSeconds and L["Currently: Seconds. Click for Percent."] or L["Currently: Percent. Click for Seconds."], 0.8, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end)
+            thModeBtn:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(0.14, 0.14, 0.17, 1)
+                GameTooltip:Hide()
+            end)
+            thModeBtn:SetScript("OnClick", function()
+                if proxy.expireThresholdMode == "SECONDS" then
+                    proxy.expireThresholdMode = "PERCENT"
+                    proxy.expireThreshold = 30
+                else
+                    proxy.expireThresholdMode = "SECONDS"
+                    proxy.expireThreshold = 5
+                end
+                DF:AuraDesigner_RefreshPage()
+            end)
+
+            g:AddWidget(threshContainer, 54)
         end)
     end
 
@@ -2874,44 +2963,44 @@ local function BuildGlobalView(parent)
     end
 
     -- ── GENERAL ──
-    AddGroup("General", function(g)
-        g:AddWidget(GUI:CreateSlider(parent, "Default Icon Size", 8, 64, 1, defaults, "iconSize"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Default Scale", 0.5, 3.0, 0.05, defaults, "iconScale"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Default Frame Level", -10, 30, 1, defaults, "indicatorFrameLevel"), 50)
-        g:AddWidget(GUI:CreateDropdown(parent, "Default Frame Strata", FRAME_STRATA_OPTIONS, defaults, "indicatorFrameStrata"), 50)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Show Duration", defaults, "showDuration"), 24)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Show Stack Count", defaults, "showStacks"), 24)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Hide Cooldown Swipe", defaults, "hideSwipe"), 24)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Hide Icon (Text Only)", defaults, "hideIcon"), 24)
+    AddGroup(L["General"], function(g)
+        g:AddWidget(GUI:CreateSlider(parent, L["Default Icon Size"], 8, 64, 1, defaults, "iconSize"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Default Scale"], 0.5, 3.0, 0.05, defaults, "iconScale"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Default Frame Level"], -10, 30, 1, defaults, "indicatorFrameLevel"), 50)
+        g:AddWidget(GUI:CreateDropdown(parent, L["Default Frame Strata"], FRAME_STRATA_OPTIONS, defaults, "indicatorFrameStrata"), 50)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Show Duration"], defaults, "showDuration"), 24)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Show Stacks"], defaults, "showStacks"), 24)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Cooldown Swipe"], defaults, "hideSwipe"), 24)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Icon (Text Only)"], defaults, "hideIcon"), 24)
     end)
 
     -- ── DURATION TEXT ──
-    AddGroup("Duration Text", function(g)
-        g:AddWidget(GUI:CreateFontDropdown(parent, "Font", defaults, "durationFont"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Scale", 0.5, 2.0, 0.1, defaults, "durationScale"), 50)
-        g:AddWidget(GUI:CreateDropdown(parent, "Outline", OUTLINE_OPTIONS, defaults, "durationOutline"), 54)
-        g:AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, defaults, "durationAnchor"), 54)
-        g:AddWidget(GUI:CreateSlider(parent, "Offset X", -150, 150, 1, defaults, "durationX"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Offset Y", -150, 150, 1, defaults, "durationY"), 50)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Color by Time", defaults, "durationColorByTime"), 24)
-        g:AddWidget(GUI:CreateColorPicker(parent, "Duration Text Color", defaults, "durationColor", true, RPL, RPL, true), 32)
-        g:AddWidget(GUI:CreateCheckbox(parent, "Hide Duration Above Threshold", defaults, "durationHideAboveEnabled"), 24)
-        g:AddWidget(GUI:CreateSlider(parent, "Hide Above (seconds)", 1, 60, 1, defaults, "durationHideAboveThreshold"), 50)
+    AddGroup(L["Duration Text"], function(g)
+        g:AddWidget(GUI:CreateFontDropdown(parent, L["Font"], defaults, "durationFont"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Scale"], 0.5, 2.0, 0.1, defaults, "durationScale"), 50)
+        g:AddWidget(GUI:CreateDropdown(parent, L["Outline"], OUTLINE_OPTIONS, defaults, "durationOutline"), 54)
+        g:AddWidget(GUI:CreateDropdown(parent, L["Anchor"], ANCHOR_OPTIONS, defaults, "durationAnchor"), 54)
+        g:AddWidget(GUI:CreateSlider(parent, L["Offset X"], -150, 150, 1, defaults, "durationX"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Offset Y"], -150, 150, 1, defaults, "durationY"), 50)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Color by Time"], defaults, "durationColorByTime"), 24)
+        g:AddWidget(GUI:CreateColorPicker(parent, L["Duration Text Color"], defaults, "durationColor", true, RPL, RPL, true), 32)
+        g:AddWidget(GUI:CreateCheckbox(parent, L["Hide Duration Above Threshold"], defaults, "durationHideAboveEnabled"), 24)
+        g:AddWidget(GUI:CreateSlider(parent, L["Hide Above (seconds)"], 1, 60, 1, defaults, "durationHideAboveThreshold"), 50)
     end)
 
     -- ── STACK TEXT ──
-    AddGroup("Stack Text", function(g)
-        g:AddWidget(GUI:CreateFontDropdown(parent, "Font", defaults, "stackFont"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Scale", 0.5, 2.0, 0.1, defaults, "stackScale"), 50)
-        g:AddWidget(GUI:CreateDropdown(parent, "Outline", OUTLINE_OPTIONS, defaults, "stackOutline"), 54)
-        g:AddWidget(GUI:CreateDropdown(parent, "Anchor", ANCHOR_OPTIONS, defaults, "stackAnchor"), 54)
-        g:AddWidget(GUI:CreateSlider(parent, "Offset X", -150, 150, 1, defaults, "stackX"), 50)
-        g:AddWidget(GUI:CreateSlider(parent, "Offset Y", -150, 150, 1, defaults, "stackY"), 50)
-        g:AddWidget(GUI:CreateColorPicker(parent, "Stack Text Color", defaults, "stackColor", true, RPL, RPL, true), 32)
+    AddGroup(L["Stack Text"], function(g)
+        g:AddWidget(GUI:CreateFontDropdown(parent, L["Font"], defaults, "stackFont"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Scale"], 0.5, 2.0, 0.1, defaults, "stackScale"), 50)
+        g:AddWidget(GUI:CreateDropdown(parent, L["Outline"], OUTLINE_OPTIONS, defaults, "stackOutline"), 54)
+        g:AddWidget(GUI:CreateDropdown(parent, L["Anchor"], ANCHOR_OPTIONS, defaults, "stackAnchor"), 54)
+        g:AddWidget(GUI:CreateSlider(parent, L["Offset X"], -150, 150, 1, defaults, "stackX"), 50)
+        g:AddWidget(GUI:CreateSlider(parent, L["Offset Y"], -150, 150, 1, defaults, "stackY"), 50)
+        g:AddWidget(GUI:CreateColorPicker(parent, L["Stack Text Color"], defaults, "stackColor", true, RPL, RPL, true), 32)
     end)
 
     -- ── IMPORT FROM BUFFS TAB ──
-    AddGroup("Import from Buffs Tab", function(g)
+    AddGroup(L["Import from Buffs Tab"], function(g)
         local descFrame = CreateFrame("Frame", nil, parent)
         descFrame:SetHeight(36)
         local descText = descFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2919,17 +3008,17 @@ local function BuildGlobalView(parent)
         descText:SetPoint("RIGHT", descFrame, "RIGHT", 0, 0)
         descText:SetJustifyH("LEFT")
         descText:SetWordWrap(true)
-        descText:SetText("Import your existing Buffs tab settings as defaults for all auras. Compatible settings will be applied automatically.")
+        descText:SetText(L["Import your existing Buffs tab settings as defaults for all auras. Compatible settings will be applied automatically."])
         descText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
         g:AddWidget(descFrame, 36)
 
         -- Compatibility list
         local compatItems = {
-            {true,  "Icon size, scale & border"},
-            {true,  "Duration & stack display"},
-            {true,  "Font settings"},
-            {false, "Position & anchors"},
-            {false, "Per-aura overrides"},
+            {true,  L["Icon size, scale & border"]},
+            {true,  L["Duration & stack display"]},
+            {true,  L["Font Settings"]},
+            {false, L["Position & anchors"]},
+            {false, L["Per-aura overrides"]},
         }
         for _, item in ipairs(compatItems) do
             local isCompat = item[1]
@@ -2952,7 +3041,7 @@ local function BuildGlobalView(parent)
         ApplyBackdrop(importBtn, C_ELEMENT, C_BORDER)
         local importBtnText = importBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         importBtnText:SetPoint("CENTER", 0, 0)
-        importBtnText:SetText("Import Buffs Tab Defaults")
+        importBtnText:SetText(L["Import Buffs Tab Defaults"])
         importBtnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         importBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1) end)
         importBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1) end)
@@ -2972,8 +3061,8 @@ local function BuildGlobalView(parent)
                 if buffsDB.buffStackScale then defaults.stackScale = buffsDB.buffStackScale end
                 if buffsDB.buffStackOutline then defaults.stackOutline = buffsDB.buffStackOutline end
                 DF:Debug("Aura Designer: Imported Buffs tab defaults")
-                importBtnText:SetText("Imported!")
-                C_Timer.After(1.5, function() importBtnText:SetText("Import Buffs Tab Defaults") end)
+                importBtnText:SetText(L["Imported!"])
+                C_Timer.After(1.5, function() importBtnText:SetText(L["Import Buffs Tab Defaults"]) end)
                 DF:AuraDesigner_RefreshPage()
             end
         end)
@@ -2981,18 +3070,18 @@ local function BuildGlobalView(parent)
     end)
 
     -- ── ACTIONS ──
-    AddGroup("Actions", function(g)
+    AddGroup(L["Actions"], function(g)
         -- Copy Settings to Other Mode button
         local currentMode = (GUI and GUI.SelectedMode) or "party"
         local targetMode = (currentMode == "party") and "raid" or "party"
-        local targetLabel = (targetMode == "raid") and "Raid" or "Party"
+        local targetLabel = (targetMode == "raid") and L["Raid"] or L["Party"]
 
         local copyBtn = CreateFrame("Button", nil, parent, "BackdropTemplate")
         copyBtn:SetHeight(26)
         ApplyBackdrop(copyBtn, C_ELEMENT, C_BORDER)
         local copyText = copyBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         copyText:SetPoint("CENTER", 0, 0)
-        copyText:SetText("Copy Settings to " .. targetLabel)
+        copyText:SetText(format(L["Copy Settings to %s"], targetLabel))
         copyText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         copyBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1) end)
         copyBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1) end)
@@ -3019,7 +3108,7 @@ local function BuildGlobalView(parent)
         ApplyBackdrop(resetBtn, {r = 0.3, g = 0.12, b = 0.12, a = 1}, {r = 0.5, g = 0.2, b = 0.2, a = 1})
         local resetText = resetBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         resetText:SetPoint("CENTER", 0, 0)
-        resetText:SetText("Reset All Aura Configs")
+        resetText:SetText(L["Reset All Aura Configs"])
         resetText:SetTextColor(1, 0.7, 0.7)
         resetBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.4, 0.15, 0.15, 1) end)
         resetBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.3, 0.12, 0.12, 1) end)
@@ -3092,17 +3181,17 @@ local function CreateEnableBanner(parent)
 
     local cbLabel = banner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     cbLabel:SetPoint("LEFT", cb, "RIGHT", 8, 2)
-    cbLabel:SetText("Enable Aura Designer")
+    cbLabel:SetText(L["Enable Aura Designer"])
     cbLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
     local cbSubLabel = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     cbSubLabel:SetPoint("TOPLEFT", cbLabel, "BOTTOMLEFT", 0, -1)
-    cbSubLabel:SetText("Custom buff and frame effect indicators")
+    cbSubLabel:SetText(L["Custom buff and frame effect indicators"])
     cbSubLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     local specLabel = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     specLabel:SetPoint("RIGHT", banner, "RIGHT", -145, 0)
-    specLabel:SetText("Spec:")
+    specLabel:SetText(L["Spec:"])
     specLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     local specBtn = CreateFrame("Button", nil, banner, "BackdropTemplate")
@@ -3127,10 +3216,10 @@ local function CreateEnableBanner(parent)
         if adDB.spec == "auto" then
             local autoSpec = Adapter:GetPlayerSpec()
             if autoSpec then
-                specBtn.text:SetText("Auto (" .. Adapter:GetSpecDisplayName(autoSpec) .. ")")
+                specBtn.text:SetText(format(L["Auto (%s)"], Adapter:GetSpecDisplayName(autoSpec)))
                 resolvedSpec = autoSpec
             else
-                specBtn.text:SetText("Auto (detect)")
+                specBtn.text:SetText(L["Auto (detect)"])
             end
         else
             specBtn.text:SetText(Adapter:GetSpecDisplayName(adDB.spec))
@@ -3160,7 +3249,7 @@ local function CreateEnableBanner(parent)
         end
 
         local yOffset = -4
-        local options = {{"auto", "Auto (detect spec)"}}
+        local options = {{"auto", L["Auto (detect spec)"]}}
         for _, specKey in ipairs({
             "PreservationEvoker", "AugmentationEvoker", "RestorationDruid",
             "DisciplinePriest", "HolyPriest", "MistweaverMonk",
@@ -3252,7 +3341,7 @@ local function CreateEnableBanner(parent)
 
     local muteLabel = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     muteLabel:SetPoint("RIGHT", muteCb, "LEFT", -4, 0)
-    muteLabel:SetText("Sound Alerts")
+    muteLabel:SetText(L["Sound Alerts"])
     muteLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     banner.UpdateSpecText = UpdateSpecText
@@ -3298,7 +3387,7 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
     -- "Frame Preview" label
     local previewLabel = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     previewLabel:SetPoint("TOPLEFT", 8, -4)
-    previewLabel:SetText("FRAME PREVIEW")
+    previewLabel:SetText(L["FRAME PREVIEW"])
     previewLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     -- Mock unit frame (centered in container)
@@ -3449,7 +3538,7 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
                 dragState.dropAnchor = capturedAnchorName
                 -- Update hint to show target anchor
                 if dragHintText and dragState.auraInfo then
-                    dragHintText:SetText("Place " .. dragState.auraInfo.display .. " at " .. capturedAnchorName)
+                    dragHintText:SetText(format(L["Place %s at %s"], dragState.auraInfo.display, capturedAnchorName))
                 end
             else
                 dot:SetSize(10, 10)
@@ -3465,7 +3554,7 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
                 -- Revert hint to generic drag message
                 if dragHintText and dragState.auraInfo then
                     local tc = GetThemeColor()
-                    dragHintText:SetText("Drop on an anchor point to place " .. dragState.auraInfo.display)
+                    dragHintText:SetText(format(L["Drop on an anchor point to place %s"], dragState.auraInfo.display))
                     dragHintText:SetTextColor(tc.r, tc.g, tc.b, 0.9)
                 end
             else
@@ -3481,9 +3570,9 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
 
     -- Instructions with keyboard badge styling
     local instrRows = {
-        { key = "Click",       desc = "an indicator on the frame to expand its settings" },
-        { key = "Drag",        desc = "a placed indicator to reposition it on the frame" },
-        { key = "Right-click", desc = "a placed indicator to remove it from the frame" },
+        { key = L["Click"],       desc = L["an indicator on the frame to expand its settings"] },
+        { key = L["Drag"],        desc = L["a placed indicator to reposition it on the frame"] },
+        { key = L["Right-click"], desc = L["a placed indicator to remove it from the frame"] },
     }
 
     local instrCount = #instrRows
@@ -3516,7 +3605,7 @@ local function CreateFramePreview(parent, yOffset, rightPanelRef)
     -- ========================================
     -- PREVIEW SCALE SLIDER
     -- ========================================
-    local scaleSlider = GUI:CreateSlider(container, "Preview Scale", 0.75, 2.5, 0.05, adDB, "previewScale",
+    local scaleSlider = GUI:CreateSlider(container, L["Preview Scale"], 0.75, 2.5, 0.05, adDB, "previewScale",
         -- callback (on release)
         function()
             local s = adDB.previewScale or 1.0
@@ -3598,10 +3687,10 @@ ShowSpellPicker = function(typeKey, mode)
     if tabScrollFrame then tabScrollFrame:Hide() end
 
     if spellPickerMode == "placed" then
-        spellPickerView.title:SetText("Select a spell")
+        spellPickerView.title:SetText(L["Select a spell"])
     else
         local effectLabel = FRAME_LEVEL_LABELS[typeKey] or typeKey
-        spellPickerView.title:SetText("Select trigger for " .. effectLabel)
+        spellPickerView.title:SetText(format(L["Select trigger for %s"], effectLabel))
     end
 
     local badgeColor = BADGE_COLORS[typeKey] or BADGE_COLORS.icon
@@ -3720,7 +3809,7 @@ local function CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, isSecret)
         local usedLabel = card:CreateFontString(nil, "OVERLAY")
         usedLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
         usedLabel:SetPoint("CENTER", icon, "CENTER", 0, 0)
-        usedLabel:SetText(spellPickerMode == "placed" and "Placed" or "Active")
+        usedLabel:SetText(spellPickerMode == "placed" and L["Placed"] or L["Active"])
         usedLabel:SetTextColor(0.6, 0.6, 0.6)
     end
 
@@ -3819,7 +3908,7 @@ PopulateSpellGrid = function()
             label:SetWidth(grid:GetWidth() - 32)
             label:SetJustifyH("CENTER")
             label:SetTextColor(0.55, 0.55, 0.55, 1)
-            label:SetText("Aura Designer supports healer specs and Augmentation Evoker.\n\nYou can manually select a spec using the dropdown above to configure indicators in advance.")
+            label:SetText(L["Aura Designer supports healer specs and Augmentation Evoker.\n\nYou can manually select a spec using the dropdown above to configure indicators in advance."])
             grid.unsupportedLabel = label
         end
         grid.unsupportedLabel:Show()
@@ -3851,7 +3940,7 @@ PopulateSpellGrid = function()
     local whitelistHeader = grid:CreateFontString(nil, "OVERLAY")
     whitelistHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
     whitelistHeader:SetPoint("TOPLEFT", PADDING, -4)
-    whitelistHeader:SetText("WHITELISTED")
+    whitelistHeader:SetText(L["WHITELISTED"])
     whitelistHeader:SetTextColor(0.70, 0.70, 0.70, 1)
 
     -- Render whitelisted auras
@@ -3878,7 +3967,7 @@ PopulateSpellGrid = function()
         local header = grid:CreateFontString(nil, "OVERLAY")
         header:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
         header:SetPoint("TOPLEFT", PADDING, separatorY - 2)
-        header:SetText("INFERRED TRACKING")
+        header:SetText(L["INFERRED TRACKING"])
         header:SetTextColor(0.70, 0.70, 0.78, 1)
 
         -- Subtitle explaining what inferred tracking means
@@ -3887,7 +3976,7 @@ PopulateSpellGrid = function()
         subtitle:SetPoint("TOPLEFT", PADDING, separatorY - 14)
         subtitle:SetWidth(gridWidth - PADDING * 2)
         subtitle:SetJustifyH("LEFT")
-        subtitle:SetText("Uses cast tracking to identify spells WoW marks as secret. Only tracks your own casts.")
+        subtitle:SetText(L["Uses cast tracking to identify spells WoW marks as secret. Only tracks your own casts."])
         subtitle:SetTextColor(0.58, 0.58, 0.62, 1)
 
         -- Start secret cards after separator (separator takes ~30px)
@@ -4116,7 +4205,7 @@ CreateEffectCard = function(parent, yPos, effect)
             local trigLabel = trigContainer:CreateFontString(nil, "OVERLAY")
             trigLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             trigLabel:SetPoint("TOPLEFT", 0, 0)
-            trigLabel:SetText("TRIGGERED BY")
+            trigLabel:SetText(L["TRIGGERED BY"])
             trigLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
             -- AND/OR operator toggle (only shown with 2+ triggers)
@@ -4132,7 +4221,7 @@ CreateEffectCard = function(parent, yPos, effect)
                 local opText = opBtn:CreateFontString(nil, "OVERLAY")
                 opText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
                 opText:SetPoint("CENTER", 0, 0)
-                opText:SetText(isAnd and "ALL (AND)" or "ANY (OR)")
+                opText:SetText(isAnd and L["ALL (AND)"] or L["ANY (OR)"])
                 opText:SetTextColor(isAnd and 0.9 or 0.6, isAnd and 0.7 or 0.8, isAnd and 0.5 or 0.6)
 
                 local opW = opText:GetStringWidth() + 16
@@ -4146,11 +4235,11 @@ CreateEffectCard = function(parent, yPos, effect)
                     self:SetBackdropColor(0.18, 0.18, 0.22, 1)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     if isAnd then
-                        GameTooltip:SetText("ALL triggers must be active")
+                        GameTooltip:SetText(L["ALL triggers must be active"])
                     else
-                        GameTooltip:SetText("ANY trigger activates the effect")
+                        GameTooltip:SetText(L["ANY trigger activates the effect"])
                     end
-                    GameTooltip:AddLine("Click to toggle", 0.6, 0.6, 0.6)
+                    GameTooltip:AddLine(L["Click to toggle"], 0.6, 0.6, 0.6)
                     GameTooltip:Show()
                 end)
                 opBtn:SetScript("OnLeave", function(self)
@@ -4264,7 +4353,7 @@ CreateEffectCard = function(parent, yPos, effect)
             local addTrigText = addTrigBtn:CreateFontString(nil, "OVERLAY")
             addTrigText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
             addTrigText:SetPoint("CENTER", 0, 0)
-            addTrigText:SetText("+ Add Trigger")
+            addTrigText:SetText(L["+ Add Trigger"])
             addTrigText:SetTextColor(0.5, 0.8, 0.5)
             addTrigBtn:SetScript("OnEnter", function(self)
                 self:SetBackdropColor(0.15, 0.20, 0.15, 1)
@@ -4370,7 +4459,7 @@ CreateEffectCard = function(parent, yPos, effect)
                 local bmLabel = bmContainer:CreateFontString(nil, "OVERLAY")
                 bmLabel:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
                 bmLabel:SetPoint("LEFT", 0, 0)
-                bmLabel:SetText("Border Mode:")
+                bmLabel:SetText(L["Border Mode:"])
                 bmLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
                 -- Shared button
@@ -4381,7 +4470,7 @@ CreateEffectCard = function(parent, yPos, effect)
                 local sharedText = sharedBtn:CreateFontString(nil, "OVERLAY")
                 sharedText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
                 sharedText:SetPoint("CENTER", 0, 0)
-                sharedText:SetText("Shared")
+                sharedText:SetText(L["Shared"])
                 local sharedW = sharedText:GetStringWidth() + 16
                 if sharedW < 50 then sharedW = 50 end
                 sharedBtn:SetWidth(sharedW)
@@ -4394,7 +4483,7 @@ CreateEffectCard = function(parent, yPos, effect)
                 local customText = customBtn:CreateFontString(nil, "OVERLAY")
                 customText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
                 customText:SetPoint("CENTER", 0, 0)
-                customText:SetText("Custom")
+                customText:SetText(L["Custom"])
                 local customW = customText:GetStringWidth() + 16
                 if customW < 50 then customW = 50 end
                 customBtn:SetWidth(customW)
@@ -4438,15 +4527,15 @@ CreateEffectCard = function(parent, yPos, effect)
 
                 sharedBtn:SetScript("OnEnter", function()
                     GameTooltip:SetOwner(sharedBtn, "ANCHOR_RIGHT")
-                    GameTooltip:SetText("Shared Border")
-                    GameTooltip:AddLine("Uses a single border per frame. Highest priority wins.", 0.8, 0.8, 0.8, true)
+                    GameTooltip:SetText(L["Shared Border"])
+                    GameTooltip:AddLine(L["Uses a single border per frame. Highest priority wins."], 0.8, 0.8, 0.8, true)
                     GameTooltip:Show()
                 end)
                 sharedBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
                 customBtn:SetScript("OnEnter", function()
                     GameTooltip:SetOwner(customBtn, "ANCHOR_RIGHT")
-                    GameTooltip:SetText("Custom Border")
-                    GameTooltip:AddLine("Gets its own independent border overlay. Multiple custom borders can be visible at the same time.", 0.8, 0.8, 0.8, true)
+                    GameTooltip:SetText(L["Custom Border"])
+                    GameTooltip:AddLine(L["Gets its own independent border overlay. Multiple custom borders can be visible at the same time."], 0.8, 0.8, 0.8, true)
                     GameTooltip:Show()
                 end)
                 customBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -4457,15 +4546,47 @@ CreateEffectCard = function(parent, yPos, effect)
             -- Priority slider (frame-level effects only — resolves conflicts when
             -- multiple auras set the same frame effect, e.g. two health bar colors)
             local auraProxy = CreateAuraProxy(effect.auraName)
-            local priSlider = GUI:CreateSlider(body, "Priority", 1, 10, 1, auraProxy, "priority")
+            local priSlider = GUI:CreateSlider(body, L["Priority"], 1, 10, 1, auraProxy, "priority")
             priSlider:SetPoint("TOPLEFT", body, "TOPLEFT", 5, -(triggersH + 4))
             priSlider:SetWidth(bodyWidth - 10)
             triggersH = triggersH + 54
         end
 
         local _, bodyH = BuildTypeContent(body, effect.typeKey, effect.auraName, bodyWidth, proxy, triggersH, indicatorGroup, effect.indicatorID)
-        body:SetHeight((bodyH or 50) + triggersH)
-        totalCardH = totalCardH + (bodyH or 50) + triggersH
+
+        -- Bottom collapse bar for the indicator card
+        local collapseBarH = 14
+        local collapseBar = CreateFrame("Button", nil, body)
+        collapseBar:SetHeight(collapseBarH)
+        collapseBar:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 1, 1)
+        collapseBar:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -1, 1)
+
+        local barBg = collapseBar:CreateTexture(nil, "BACKGROUND")
+        barBg:SetAllPoints()
+        barBg:SetColorTexture(1, 1, 1, 0.03)
+
+        local barIcon = collapseBar:CreateTexture(nil, "OVERLAY")
+        barIcon:SetSize(8, 8)
+        barIcon:SetPoint("CENTER", 0, 0)
+        barIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\chevron_right")
+        barIcon:SetVertexColor(1, 1, 1, 0.3)
+
+        collapseBar:SetScript("OnEnter", function()
+            barBg:SetColorTexture(1, 1, 1, 0.06)
+            barIcon:SetVertexColor(1, 1, 1, 0.6)
+        end)
+        collapseBar:SetScript("OnLeave", function()
+            barBg:SetColorTexture(1, 1, 1, 0.03)
+            barIcon:SetVertexColor(1, 1, 1, 0.3)
+        end)
+        collapseBar:SetScript("OnClick", function()
+            expandedCards[cardKey] = false
+            SwitchTab("effects")
+        end)
+
+        local contentH = (bodyH or 50) + triggersH + collapseBarH
+        body:SetHeight(contentH)
+        totalCardH = totalCardH + contentH
     end
 
     card:SetHeight(totalCardH)
@@ -4491,7 +4612,7 @@ BuildEffectsTab = function()
     local addBtnText = addBtn:CreateFontString(nil, "OVERLAY")
     addBtnText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     addBtnText:SetPoint("CENTER", 0, 0)
-    addBtnText:SetText("+ Add Indicator")
+    addBtnText:SetText(L["+ Add Indicator"])
     addBtnText:SetTextColor(tc.r, tc.g, tc.b)
 
     addBtn:SetScript("OnEnter", function(self)
@@ -4518,17 +4639,17 @@ BuildEffectsTab = function()
     menuFrame:EnableMouse(true)
 
     local PLACED_ITEMS = {
-        { label = "Icon",   type = "icon"   },
-        { label = "Square", type = "square" },
-        { label = "Bar",    type = "bar"    },
+        { label = L["Icon"],   type = "icon"   },
+        { label = L["Square"], type = "square" },
+        { label = L["Bar"],    type = "bar"    },
     }
     local FRAME_ITEMS = {
-        { label = "Border",            type = "border"     },
-        { label = "Health Bar Color",  type = "healthbar"  },
-        { label = "Name Text Color",   type = "nametext"   },
-        { label = "Health Text Color", type = "healthtext" },
-        { label = "Frame Alpha",       type = "framealpha" },
-        { label = "Sound Alert",       type = "sound"      },
+        { label = L["Border"],            type = "border"     },
+        { label = L["Health Bar Color"],  type = "healthbar"  },
+        { label = L["Name Text Color"],   type = "nametext"   },
+        { label = L["Health Text Color"], type = "healthtext" },
+        { label = L["Frame Alpha"],       type = "framealpha" },
+        { label = L["Sound Alert"],       type = "sound"      },
     }
 
     local my = -4
@@ -4537,7 +4658,7 @@ BuildEffectsTab = function()
     local placedHeader = menuFrame:CreateFontString(nil, "OVERLAY")
     placedHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
     placedHeader:SetPoint("TOPLEFT", 10, my)
-    placedHeader:SetText("PLACED ON FRAME")
+    placedHeader:SetText(L["PLACED ON FRAME"])
     placedHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     my = my - 14
 
@@ -4576,7 +4697,7 @@ BuildEffectsTab = function()
     local frameHeader = menuFrame:CreateFontString(nil, "OVERLAY")
     frameHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
     frameHeader:SetPoint("TOPLEFT", 10, my)
-    frameHeader:SetText("FRAME-LEVEL EFFECTS")
+    frameHeader:SetText(L["FRAME-LEVEL EFFECTS"])
     frameHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     my = my - 14
 
@@ -4618,7 +4739,7 @@ BuildEffectsTab = function()
     local activeHeader = parent:CreateFontString(nil, "OVERLAY")
     activeHeader:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
     activeHeader:SetPoint("TOPLEFT", 10, yPos)
-    activeHeader:SetText("ACTIVE INDICATORS")
+    activeHeader:SetText(L["ACTIVE INDICATORS"])
     activeHeader:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     yPos = yPos - 16
 
@@ -4628,15 +4749,15 @@ BuildEffectsTab = function()
     chipsFrame:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
 
     local FILTER_CHIPS = {
-        { key = "all",         label = "All"    },
-        { key = "icon",        label = "Icon"   },
-        { key = "square",      label = "Square" },
-        { key = "bar",         label = "Bar"    },
-        { key = "border",      label = "Border" },
-        { key = "healthbar",   label = "Health" },
-        { key = "nametext",    label = "Name"   },
-        { key = "healthtext",  label = "HP"     },
-        { key = "framealpha",  label = "Alpha"  },
+        { key = "all",         label = L["All"]    },
+        { key = "icon",        label = L["Icon"]   },
+        { key = "square",      label = L["Square"] },
+        { key = "bar",         label = L["Bar"]    },
+        { key = "border",      label = L["Border"] },
+        { key = "healthbar",   label = L["Health"] },
+        { key = "nametext",    label = L["Name"]   },
+        { key = "healthtext",  label = L["HP"]     },
+        { key = "framealpha",  label = L["Alpha"]  },
     }
 
     local CHIP_H = 22
@@ -4727,11 +4848,11 @@ BuildEffectsTab = function()
         local spec = ResolveSpec()
         local specAuras = spec and Adapter:GetTrackableAuras(spec)
         if not spec or not specAuras or #specAuras == 0 then
-            empty:SetText("Aura Designer supports healer specs\nand Augmentation Evoker.\n\nSelect a spec using the dropdown above\nto configure indicators in advance.")
+            empty:SetText(L["Aura Designer supports healer specs and Augmentation Evoker.\n\nYou can manually select a spec using the dropdown above to configure indicators in advance."])
         elseif activeFilter == "all" then
-            empty:SetText("No effects configured yet.\nClick '+ Add Indicator' to get started.")
+            empty:SetText(L["No effects configured yet.\nClick '+ Add Indicator' to get started."])
         else
-            empty:SetText("No " .. (PLACED_TYPE_LABELS[activeFilter] or FRAME_LEVEL_LABELS[activeFilter] or activeFilter) .. " effects configured.")
+            empty:SetText(format(L["No %s effects configured."], (PLACED_TYPE_LABELS[activeFilter] or FRAME_LEVEL_LABELS[activeFilter] or activeFilter)))
         end
         empty:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
         empty:SetJustifyH("CENTER")
@@ -4776,7 +4897,7 @@ BuildLayoutGroupsTab = function()
     local addBtnText = addBtn:CreateFontString(nil, "OVERLAY")
     addBtnText:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     addBtnText:SetPoint("CENTER", 0, 0)
-    addBtnText:SetText("+ Create Group")
+    addBtnText:SetText(L["+ Create Group"])
     addBtnText:SetTextColor(gc.r, gc.g, gc.b)
     addBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(gc.r * 0.20, gc.g * 0.20, gc.b * 0.20, 1)
@@ -4816,7 +4937,7 @@ BuildLayoutGroupsTab = function()
         local empty = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         empty:SetPoint("TOP", parent, "TOP", 0, yPos - 30)
         empty:SetWidth(220)
-        empty:SetText("No layout groups created yet.\nClick '+ Create Group' to get started.")
+        empty:SetText(L["No layout groups created yet.\nClick '+ Create Group' to get started."])
         empty:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
         empty:SetJustifyH("CENTER")
     else
@@ -4854,7 +4975,7 @@ BuildLayoutGroupsTab = function()
             nameText:SetPoint("RIGHT", header, "RIGHT", -60, 0)
             nameText:SetMaxLines(1)
             local memberCount = group.members and #group.members or 0
-            nameText:SetText(group.name .. "  -  " .. memberCount .. " indicator" .. (memberCount ~= 1 and "s" or ""))
+            nameText:SetText(group.name .. "  -  " .. memberCount .. (memberCount ~= 1 and L[" indicators"] or L[" indicator"]))
             nameText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
             -- Delete button
@@ -4918,7 +5039,7 @@ BuildLayoutGroupsTab = function()
                 local nameLabel = body:CreateFontString(nil, "OVERLAY")
                 nameLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
                 nameLabel:SetPoint("TOPLEFT", 8, by)
-                nameLabel:SetText("GROUP NAME")
+                nameLabel:SetText(L["GROUP NAME"])
                 nameLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 by = by - 16
 
@@ -4950,7 +5071,7 @@ BuildLayoutGroupsTab = function()
                 local memLabel = body:CreateFontString(nil, "OVERLAY")
                 memLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
                 memLabel:SetPoint("TOPLEFT", 8, by)
-                memLabel:SetText("MEMBERS")
+                memLabel:SetText(L["MEMBERS"])
                 memLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 by = by - 18
 
@@ -5093,7 +5214,7 @@ BuildLayoutGroupsTab = function()
                         local custText = custBtn:CreateFontString(nil, "OVERLAY")
                         custText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
                         custText:SetPoint("CENTER", 0, 0)
-                        custText:SetText("Customise")
+                        custText:SetText(L["Customise"])
                         custText:SetTextColor(custTC.r, custTC.g, custTC.b)
                         custBtn:SetScript("OnEnter", function() custText:SetTextColor(1, 1, 1) end)
                         custBtn:SetScript("OnLeave", function()
@@ -5123,7 +5244,7 @@ BuildLayoutGroupsTab = function()
                 else
                     local noMem = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                     noMem:SetPoint("TOPLEFT", 12, by)
-                    noMem:SetText("No members yet")
+                    noMem:SetText(L["No members yet"])
                     noMem:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
                     by = by - 20
                 end
@@ -5140,7 +5261,7 @@ BuildLayoutGroupsTab = function()
                 local addMemText = addMemBtn:CreateFontString(nil, "OVERLAY")
                 addMemText:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
                 addMemText:SetPoint("CENTER", 0, 0)
-                addMemText:SetText("+ Add aura")
+                addMemText:SetText(L["+ Add aura"])
                 addMemText:SetTextColor(0.5, 0.8, 0.5)
                 addMemBtn:SetScript("OnEnter", function(self)
                     self:SetBackdropColor(0.15, 0.20, 0.15, 1)
@@ -5338,12 +5459,12 @@ BuildLayoutGroupsTab = function()
                 local placeLabel = body:CreateFontString(nil, "OVERLAY")
                 placeLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
                 placeLabel:SetPoint("TOPLEFT", 8, by)
-                placeLabel:SetText("PLACEMENT")
+                placeLabel:SetText(L["PLACEMENT"])
                 placeLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 by = by - 18
 
                 -- Use GUI widgets with the group table as the proxy
-                local anchorDrop = GUI:CreateDropdown(body, "Anchor", ANCHOR_OPTIONS, group, "anchor", function()
+                local anchorDrop = GUI:CreateDropdown(body, L["Anchor"], ANCHOR_OPTIONS, group, "anchor", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end)
@@ -5351,7 +5472,7 @@ BuildLayoutGroupsTab = function()
                 if anchorDrop.SetWidth then anchorDrop:SetWidth(bodyWidth - 10) end
                 by = by - 54
 
-                local oxSlider = GUI:CreateSlider(body, "Offset X", -150, 150, 1, group, "offsetX", function()
+                local oxSlider = GUI:CreateSlider(body, L["Offset X"], -150, 150, 1, group, "offsetX", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end, function()
@@ -5361,7 +5482,7 @@ BuildLayoutGroupsTab = function()
                 if oxSlider.SetWidth then oxSlider:SetWidth(bodyWidth - 10) end
                 by = by - 54
 
-                local oySlider = GUI:CreateSlider(body, "Offset Y", -150, 150, 1, group, "offsetY", function()
+                local oySlider = GUI:CreateSlider(body, L["Offset Y"], -150, 150, 1, group, "offsetY", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end, function()
@@ -5376,7 +5497,7 @@ BuildLayoutGroupsTab = function()
                 local growLabel = body:CreateFontString(nil, "OVERLAY")
                 growLabel:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
                 growLabel:SetPoint("TOPLEFT", 8, by)
-                growLabel:SetText("GROWTH")
+                growLabel:SetText(L["GROWTH"])
                 growLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
                 by = by - 18
 
@@ -5395,7 +5516,7 @@ BuildLayoutGroupsTab = function()
                 if growthControl.SetWidth then growthControl:SetWidth(bodyWidth - 10) end
                 by = by - 158
 
-                local iprSlider = GUI:CreateSlider(body, "Icons Per Row", 1, 20, 1, group, "iconsPerRow", function()
+                local iprSlider = GUI:CreateSlider(body, L["Icons Per Row"], 1, 20, 1, group, "iconsPerRow", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end, function()
@@ -5405,7 +5526,7 @@ BuildLayoutGroupsTab = function()
                 if iprSlider.SetWidth then iprSlider:SetWidth(bodyWidth - 10) end
                 by = by - 54
 
-                local spacingSlider = GUI:CreateSlider(body, "Spacing", -5, 20, 1, group, "spacing", function()
+                local spacingSlider = GUI:CreateSlider(body, L["Spacing"], -5, 20, 1, group, "spacing", function()
                     RefreshPlacedIndicators()
                     DF.AuraDesigner.Engine:ForceRefreshAllFrames()
                 end, function()
@@ -5531,7 +5652,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
 
     local coexistText = coexistBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     coexistText:SetPoint("LEFT", 10, 0)
-    coexistText:SetText("Standard Buffs are also visible on frames.")
+    coexistText:SetText(L["Standard Buffs are also visible on frames."])
     coexistText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     local tc = GetThemeColor()
@@ -5540,7 +5661,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     disableBuffsBtn:SetPoint("LEFT", coexistText, "RIGHT", 8, 0)
     disableBuffsBtn.text = disableBuffsBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     disableBuffsBtn.text:SetAllPoints()
-    disableBuffsBtn.text:SetText("Disable Buffs")
+    disableBuffsBtn.text:SetText(L["Disable Buffs"])
     disableBuffsBtn.text:SetTextColor(tc.r, tc.g, tc.b)
     disableBuffsBtn:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
     disableBuffsBtn:SetScript("OnLeave", function(self)
@@ -5592,9 +5713,9 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     ApplyBackdrop(tabBar, {r = 0.09, g = 0.09, b = 0.09, a = 1}, {r = C_BORDER.r, g = C_BORDER.g, b = C_BORDER.b, a = 0.5})
 
     local TAB_DEFS = {
-        { key = "effects", label = "Effects",        color = GetThemeColor() },
-        { key = "layout",  label = "Layout Groups",  color = { r = 0.91, g = 0.66, b = 0.25 } },
-        { key = "global",  label = "Global",         color = { r = 0.51, g = 0.86, b = 0.51 } },
+        { key = "effects", label = L["Effects"],        color = GetThemeColor() },
+        { key = "layout",  label = L["Layout Groups"],  color = { r = 0.91, g = 0.66, b = 0.25 } },
+        { key = "global",  label = L["Global"],         color = { r = 0.51, g = 0.86, b = 0.51 } },
     }
 
     wipe(tabButtons)
@@ -5606,7 +5727,11 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
         else
             btn:SetPoint("TOPLEFT", tabButtons[TAB_DEFS[i-1].key], "TOPRIGHT", 0, 0)
         end
-        btn:SetWidth(tabBar:GetWidth() / #TAB_DEFS)  -- Equal width
+        local provW = parent:GetWidth()
+        if provW < 100 and GUI and GUI.contentFrame then provW = GUI.contentFrame:GetWidth() end
+        if provW < 100 then provW = 600 end
+        local provTabW = max(60, floor((provW / 2) / #TAB_DEFS))
+        btn:SetWidth(provTabW)
 
         -- Bottom accent line
         btn.accent = btn:CreateTexture(nil, "OVERLAY")
@@ -5645,7 +5770,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     end)
 
     -- ── TAB CONTENT (scrollable) ──
-    tabScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
+    tabScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel, "ScrollFrameTemplate")
     tabScrollFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, 0)
     tabScrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
 
@@ -5657,18 +5782,12 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     tabContentFrame:SetWidth(max(1, (earlyW / 2) - 2 - 22))
     tabContentFrame:SetHeight(800)
     tabScrollFrame:SetScrollChild(tabContentFrame)
+    DF.GUI.StyleScrollBar(tabScrollFrame)
 
     -- Match scroll child width to scroll frame
     tabScrollFrame:SetScript("OnSizeChanged", function(self, w, h)
         tabContentFrame:SetWidth(w)
     end)
-
-    local scrollBar = tabScrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:ClearAllPoints()
-        scrollBar:SetPoint("TOPLEFT", tabScrollFrame, "TOPRIGHT", 2, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", tabScrollFrame, "BOTTOMRIGHT", 2, 16)
-    end
 
     -- Smooth scroll
     local SCROLL_STEP = 30
@@ -5715,7 +5834,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
 
     spellPickerView.title = pickerHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     spellPickerView.title:SetPoint("LEFT", backBtn, "RIGHT", 4, 0)
-    spellPickerView.title:SetText("Select a spell")
+    spellPickerView.title:SetText(L["Select a spell"])
     spellPickerView.title:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
     spellPickerView.typeBadge = pickerHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -5724,11 +5843,11 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     -- Spell picker hint
     local pickerHint = spellPickerView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     pickerHint:SetPoint("TOPLEFT", pickerHeader, "BOTTOMLEFT", 12, -8)
-    pickerHint:SetText("Click or drag a spell onto the frame to place it")
+    pickerHint:SetText(L["Click or drag a spell onto the frame to place it"])
     pickerHint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     -- Spell picker scroll frame for the grid
-    local pickerScroll = CreateFrame("ScrollFrame", nil, spellPickerView, "UIPanelScrollFrameTemplate")
+    local pickerScroll = CreateFrame("ScrollFrame", nil, spellPickerView, "ScrollFrameTemplate")
     pickerScroll:SetPoint("TOPLEFT", pickerHeader, "BOTTOMLEFT", 0, -24)
     pickerScroll:SetPoint("BOTTOMRIGHT", -22, 0)
 
@@ -5741,12 +5860,7 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
         spellPickerView.gridFrame:SetWidth(w)
     end)
 
-    local pickerScrollBar = pickerScroll.ScrollBar
-    if pickerScrollBar then
-        pickerScrollBar:ClearAllPoints()
-        pickerScrollBar:SetPoint("TOPLEFT", pickerScroll, "TOPRIGHT", 2, -16)
-        pickerScrollBar:SetPoint("BOTTOMLEFT", pickerScroll, "BOTTOMRIGHT", 2, 16)
-    end
+    DF.GUI.StyleScrollBar(pickerScroll)
 
     spellPickerView.scrollFrame = pickerScroll
 
@@ -5761,13 +5875,24 @@ function DF.BuildAuraDesignerPage(guiRef, pageRef, dbRef)
     -- calculate from the parent which already has valid geometry on a mode
     -- switch (Party↔Raid).
     local parentW = parent:GetWidth()
-    if parentW < 100 then parentW = (GUI.contentFrame and GUI.contentFrame:GetWidth() or 600) - 30 end
+    if parentW < 100 and GUI and GUI.contentFrame then parentW = GUI.contentFrame:GetWidth() end
+    if parentW < 100 then parentW = UIParent:GetWidth() / 2 end
     local initW = (parentW / 2) - 2 - 22  -- half split minus gap minus scrollbar
     if initW > 50 then
         tabContentFrame:SetWidth(initW)
     end
 
     SwitchTab("effects")
+    C_Timer.After(0, function()
+        if tabBar and tabBar:IsVisible() and tabBar:GetWidth() > 10 then
+            local tabW = tabBar:GetWidth() / #TAB_DEFS
+            for _, def in ipairs(TAB_DEFS) do
+                if tabButtons[def.key] then
+                    tabButtons[def.key]:SetWidth(tabW)
+                end
+            end
+        end
+    end)
     RefreshPlacedIndicators()
     RefreshPreviewEffects()
 end
@@ -5866,12 +5991,12 @@ function DF:AuraDesigner_RefreshPage()
 
                 local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 label:SetPoint("CENTER", 0, 10)
-                label:SetText("Aura Designer is disabled")
+                label:SetText(L["Aura Designer is disabled"])
                 label:SetTextColor(0.6, 0.6, 0.6, 1)
 
                 local sublabel = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 sublabel:SetPoint("TOP", label, "BOTTOM", 0, -4)
-                sublabel:SetText("Enable the checkbox above to use")
+                sublabel:SetText(L["Enable the checkbox above to use"])
                 sublabel:SetTextColor(0.45, 0.45, 0.45, 1)
 
                 mainFrame.disabledOverlay = overlay

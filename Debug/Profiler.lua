@@ -14,6 +14,7 @@ local addonName, DF = ...
 -- ============================================================
 
 local debugprofilestop = debugprofilestop
+local collectgarbage = collectgarbage
 local format = string.format
 local sort = table.sort
 local floor = math.floor
@@ -23,6 +24,11 @@ local pairs = pairs
 local ipairs = ipairs
 local tostring = tostring
 local CreateFrame = CreateFrame
+
+-- Shared tick counter, incremented once per OnUpdate frame.
+-- Wrapped functions read this via upvalue to detect "new tick" without
+-- needing access to any timer state.
+local tickRef = { 0 }
 
 -- ============================================================
 -- STATE
@@ -34,8 +40,13 @@ local Profiler = {
     stopTime = 0,           -- debugprofilestop() ms when stopped (for accurate elapsed)
     combatAuto = false,     -- auto start/stop on combat enter/leave
     splitByFrame = false,   -- show per-frame-type breakdown
-    data = {},              -- [funcName|type] = { calls, total, max }
-    originals = {},         -- [funcName] = original function ref
+    viewMode = "functions", -- "functions" | "events"
+    data = {},              -- [funcName|type] = { calls, total, max, mem }
+    tickStats = {},         -- [funcName] = { lastTick, calls, maxPerTick }
+    originals = {},         -- [funcPath] = { table, key, original }
+    eventData = {},         -- [eventName] = { calls, total, max, mem, source }
+    eventOriginals = {},    -- [dispatcherKey] = { container, key, original }
+    updateData = {},        -- [frameLabel] = { calls, total, max, mem }
     sortColumn = "total",
     sortDesc = true,
 }
@@ -51,6 +62,158 @@ local UpdateUI  -- assigned later when UI functions are defined
 -- Combat auto-profile event frame (created once, persists)
 local combatFrame = CreateFrame("Frame")
 combatFrame:Hide()
+
+-- Per-tick driver: increments tickRef[1] every OnUpdate frame so wrapped
+-- functions can detect "new tick" and aggregate per-tick call counts.
+-- Hidden when profiler is stopped (no OnUpdate runs).
+local tickFrame = CreateFrame("Frame")
+tickFrame:Hide()
+tickFrame:SetScript("OnUpdate", function()
+    tickRef[1] = tickRef[1] + 1
+end)
+
+-- ============================================================
+-- ONUPDATE REGISTRY + SETSCRIPT HOOK
+-- ----------------------------------------------------------
+-- Tracking OnUpdate handlers requires a different mechanism than
+-- function or event wrapping. OnUpdate scripts are bound directly to
+-- frames via SetScript, so there's no DF-owned function we can swap.
+--
+-- Strategy: hook Frame:SetScript at addon load. Whenever a *DF-owned*
+-- frame installs/removes an OnUpdate handler, we record the latest
+-- handler in a registry. The registry alone has effectively zero
+-- overhead — just one table assignment per SetScript call. No wrapping,
+-- no instrumentation.
+--
+-- On Profiler:Start, we walk the registry and replace each recorded
+-- handler with a wrapped version that records timing + memory. New
+-- OnUpdate handlers installed *after* Start are wrapped on the spot
+-- by the same hook. On Stop, all originals are restored.
+--
+-- The `installingOnUpdate` guard prevents the hook from re-wrapping
+-- our own wrapper as we install it (otherwise infinite recursion).
+--
+-- CRITICAL: we must filter to DF-owned frames only. If we wrap a
+-- non-DF frame's OnUpdate (especially Blizzard's CompactRaidFrame
+-- secure frames), our wrapper closure runs inside that frame's
+-- update cascade and the execution context gets marked as
+-- "tainted by DandersFrames". That taint propagates to every
+-- UnitIsConnected / UnitHealthMax / etc. secret-value return and
+-- every protected Show()/Hide() call downstream — breaking secure
+-- Blizzard code and producing ADDON_ACTION_BLOCKED errors. This was
+-- the cause of a raid-session bug report on 2026-04-08.
+--
+-- The filter walks the frame's parent chain looking for any ancestor
+-- whose name starts with "Danders" or "DF" — DF's named containers
+-- and headers all use these prefixes (DandersPartyHeader,
+-- DandersArenaHeader, DandersRaidGroupN, DFTestHeader, etc.). If no
+-- ancestor has a DF name, the frame is foreign and must be skipped.
+-- ============================================================
+
+local onUpdateRegistry = {}      -- [frame] = handler ref currently bound (or nil)
+local onUpdateLabels = {}        -- [frame] = stable label for display
+local onUpdateDFCheck = {}       -- [frame] = true/false cached IsDFFrame result
+local onUpdateWrapped = {}       -- [frame] = { original, stats } (only while active)
+local installingOnUpdate = false -- re-entry guard for the SetScript hook
+
+-- Is this frame owned by DandersFrames? Walks up the parent chain
+-- looking for an ancestor whose name starts with "Danders" or "DF".
+-- DF's secure headers and containers are all explicitly named with
+-- one of these prefixes (see Frames/Headers.lua). Anonymous DF child
+-- frames inherit their DF-ness from a named ancestor, so the walk
+-- catches them too.
+--
+-- Results are cached per-frame because this is called from the
+-- SetScript hook on every OnUpdate (re)bind and we don't want to
+-- re-walk the parent chain every time.
+local function IsDFFrame(frame)
+    local cached = onUpdateDFCheck[frame]
+    if cached ~= nil then return cached end
+
+    local walker = frame
+    local depth = 0  -- safety cap against pathological cycles
+    while walker and depth < 32 do
+        -- pcall because some Blizzard template frames (e.g. RadialWheel
+        -- wedge buttons) error on :GetName() with "bad self".
+        local ok, name = pcall(walker.GetName, walker)
+        if ok and name then
+            local p2 = name:sub(1, 2)
+            local p7 = name:sub(1, 7)
+            if p7 == "Danders" or p2 == "DF" then
+                onUpdateDFCheck[frame] = true
+                return true
+            end
+        end
+        local ok2, parent = pcall(walker.GetParent, walker)
+        walker = (ok2 and parent) or nil
+        depth = depth + 1
+    end
+
+    onUpdateDFCheck[frame] = false
+    return false
+end
+
+-- Best-effort label for a frame. Uses GetDebugName() when available
+-- (modern WoW gives a parent-chain path), falls back to GetName(),
+-- finally a generic "<anon>". Captured once at first sighting so it
+-- stays stable across renames.
+local function ResolveFrameLabel(frame)
+    local existing = onUpdateLabels[frame]
+    if existing then return existing end
+    local label
+    if frame.GetDebugName then
+        label = frame:GetDebugName()
+    end
+    if (not label or label == "") and frame.GetName then
+        label = frame:GetName()
+    end
+    if not label or label == "" then
+        label = "<anon:" .. tostring(frame):match("0x[%x]+") .. ">"
+    end
+    onUpdateLabels[frame] = label
+    return label
+end
+
+-- Forward declaration so the SetScript hook can call WrapFrameOnUpdate
+-- before it's defined further down (it lives inside Profiler:Start's
+-- closure scope and needs to share state with this hook).
+local WrapFrameOnUpdate
+
+-- OnUpdate hook toggle. Stored in the global SavedVariables table so it
+-- persists across sessions and can be read at file-load time (before
+-- DF.db / profiles are initialized). The hook can only be installed at
+-- load time — toggling requires a /rl.
+local onUpdateHookEnabled = DandersFramesDB_v2
+    and DandersFramesDB_v2.profilerOnUpdateHook == true
+Profiler.onUpdateHookEnabled = onUpdateHookEnabled
+
+-- The hook itself. Runs after every Frame:SetScript call in the game.
+-- Only installed when the user has opted in via /df profiler hook.
+if onUpdateHookEnabled then
+    local frameMeta = getmetatable(CreateFrame("Frame")).__index
+    hooksecurefunc(frameMeta, "SetScript", function(frame, scriptType, handler)
+        if installingOnUpdate then return end
+        if scriptType ~= "OnUpdate" then return end
+        if not IsDFFrame(frame) then return end  -- skip non-DF frames (taint safety)
+
+        if handler then
+            onUpdateRegistry[frame] = handler
+            ResolveFrameLabel(frame)
+            -- If profiler is currently recording, wrap the new handler
+            -- right now so this newly added OnUpdate is visible from its
+            -- first frame.
+            if Profiler.active and WrapFrameOnUpdate then
+                WrapFrameOnUpdate(frame, handler)
+            end
+        else
+            -- nil handler = OnUpdate removed; drop bookkeeping.
+            onUpdateRegistry[frame] = nil
+            if onUpdateWrapped[frame] then
+                onUpdateWrapped[frame] = nil
+            end
+        end
+    end)
+end
 
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
@@ -88,59 +251,193 @@ end
 
 -- ============================================================
 -- PROFILED FUNCTIONS
--- Only DF:Method() style. Non-existent entries are skipped.
+-- Each entry is a path string. Plain "Name" resolves to DF[Name].
+-- Dotted "Mod.Sub.Name" resolves to DF.Mod.Sub.Name. Missing entries
+-- are silently skipped, so it's safe to list optional features here.
 -- ============================================================
 
 local PROFILED_FUNCTIONS = {
-    -- Core per-unit updates (called from event handlers)
+    -- ----------------------------------------------------------
+    -- Core per-unit updates (event hot path)
+    -- ----------------------------------------------------------
     "UpdateUnitFrame",
-    "UpdateHealthFast",        -- Lean UNIT_HEALTH hot path (subset of UpdateUnitFrame)
+    "UpdateHealthFast",        -- Lean UNIT_HEALTH hot path
     "UpdateHealth",
     "UpdatePower",
     "UpdateName",
     "UpdateFrame",
+    "UpdateResourceBar",
 
+    -- ----------------------------------------------------------
     -- Aura pipeline
+    -- ----------------------------------------------------------
     "UpdateAuras",                  -- Entry point (alias for Enhanced)
+    "UpdateAuras_Enhanced",
+    "UpdateAuraIcons",              -- Legacy path (kept for comparison)
+    "UpdateAuraIcons_Enhanced",
+    "UpdateAuraIconsDirect",        -- Merged collect+display (Tier 3)
     "CollectBuffs",
     "CollectDebuffs",
-    "UpdateAuraIcons_Enhanced",
-    "UpdateAuraIconsDirect",        -- New merged collect+display (Tier 3)
     "RepositionCenterGrowthIcons",
+    "DirectModeRosterUpdate",
+    "RebuildDirectFilterStrings",
 
+    -- ----------------------------------------------------------
     -- Dispel
+    -- ----------------------------------------------------------
     "UpdateDispelOverlay",
     "UpdateDispelGradientHealth",
     "UpdateAllDispelOverlays",
 
-    -- Absorb / Prediction
+    -- ----------------------------------------------------------
+    -- Absorb / Heal Prediction
+    -- ----------------------------------------------------------
     "UpdateAbsorb",
     "UpdateHealAbsorb",
     "UpdateHealPrediction",
 
+    -- ----------------------------------------------------------
     -- Range
+    -- ----------------------------------------------------------
     "UpdateRange",
     "UpdatePetRange",
+    "RefreshRangeSpell",
 
-    -- Visual
+    -- ----------------------------------------------------------
+    -- Visual / Highlights / Health Fade
+    -- ----------------------------------------------------------
     "UpdateHighlights",
     "UpdateAnimatedBorder",
     "ApplyDeadFade",
+    "ApplyHealthColors",
+    "ApplyBarOrientation",
+    "ApplyHealthFadeAlpha",
+    "UpdateHealthFade",
+    "UpdatePetHealthFade",
 
-    -- Icons
-    "UpdateMissingBuffIcon",
-    "UpdateExternalDefIcon",
+    -- ----------------------------------------------------------
+    -- Status icons (legacy + enhanced + per-unit)
+    -- ----------------------------------------------------------
+    "UpdateRoleIcon",
+    "UpdateLeaderIcon",
     "UpdateRaidTargetIcon",
     "UpdateReadyCheckIcon",
+    "UpdateCenterStatusIcon",
+    "UpdateRoleIconEnhanced",
+    "UpdateLeaderIconEnhanced",
+    "UpdateRaidTargetIconEnhanced",
+    "UpdateReadyCheckIconEnhanced",
+    "UpdateSummonIcon",
+    "UpdateResurrectionIcon",
+    "UpdatePhasedIcon",
+    "UpdateAFKIcon",
+    "UpdateVehicleIcon",
+    "UpdateRaidRoleIcon",
+    "UpdateAllStatusIcons",         -- per-frame sweep of all icons
+    "UpdateRestedIndicator",
 
-    -- Layout / Style
+    -- ----------------------------------------------------------
+    -- Defensive / external def icons + missing-buff
+    -- ----------------------------------------------------------
+    "UpdateMissingBuffIcon",
+    "UpdateExternalDefIcon",
+    "UpdateDefensiveBar",
+
+    -- ----------------------------------------------------------
+    -- My-Buff Indicators
+    -- ----------------------------------------------------------
+    "UpdateMyBuffIndicator",
+    "UpdateMyBuffGradientHealth",
+
+    -- ----------------------------------------------------------
+    -- Aura Designer (per-frame)
+    -- ----------------------------------------------------------
+    "UpdateADTintHealth",
+
+    -- ----------------------------------------------------------
+    -- Targeted Spells
+    -- ----------------------------------------------------------
+    "UpdateTargetedSpellAnimatedBorder",
+    "UpdateTargetedSpellLayout",
+
+    -- ----------------------------------------------------------
+    -- Pets
+    -- ----------------------------------------------------------
+    "UpdatePetFrame",
+    "UpdatePetHealth",
+    "UpdatePetName",
+    "ApplyPetFrameStyle",
+
+    -- ----------------------------------------------------------
+    -- Layout / Style (called per-frame on layout changes)
+    -- ----------------------------------------------------------
     "ApplyFrameLayout",
     "ApplyFrameStyle",
     "ApplyAuraLayout",
+    "FullFrameRefresh",
 
+    -- ----------------------------------------------------------
+    -- Bulk sweeps (called on roster / settings events)
+    -- ----------------------------------------------------------
+    "UpdateAllFrames",
+    "UpdateAllPetFrames",
+    "UpdateAllRaidPetFrames",
+    "UpdateAllPetFramePositions",
+    "UpdateAllAuras",
+    "UpdateAllMissingBuffIcons",
+    "UpdateAllFramesStatusIcons",
+    "UpdateAllRoleIcons",
+    "UpdateAllMyBuffIndicators",
+    "UpdateAllDefensiveBars",
+    "UpdateAllExternalDefIcons",
+    "UpdateAllElementAppearances",
+    "UpdateAllFrameAppearances",
+    "RefreshLiveFrames",
+    "RefreshAllVisibleFrames",
+    "RefreshRaidGroupFrames",
+    "RefreshPartyFrames",
+    "RefreshAllHeaderChildFrames",
+    "RefreshRaidFlatFrames",
+    "UpdateLiveRaidFrames",
+
+    -- ----------------------------------------------------------
+    -- Roster handling (called on GROUP_ROSTER_UPDATE)
+    -- ----------------------------------------------------------
+    "ProcessRosterUpdate",
+    "ProcessRoleUpdate",
+    "RebuildUnitFrameMap",
+    "UpdateHeaderFrameCount",
+    "UpdateRaidGroupOrderAttributes",
+    "ApplyRaidGroupSorting",
+    "ApplyPartyGroupSorting",
+
+    -- ----------------------------------------------------------
+    -- Power event registration (changes when role/spec/group changes)
+    -- ----------------------------------------------------------
+    "UpdatePowerEventRegistration",
+    "UpdateAllPowerEventRegistration",
+
+    -- ----------------------------------------------------------
     -- Blizzard integration
+    -- ----------------------------------------------------------
     "CaptureAurasFromBlizzardFrame",
     "UpdateBlizzardFrameVisibility",
+}
+
+-- ============================================================
+-- PROFILED EVENT DISPATCHERS
+-- Each entry points at a function on DF that the addon's event frames
+-- call through. Wrapping these gives us per-event timing for everything
+-- those frames receive — without touching individual modules.
+-- ============================================================
+
+local PROFILED_EVENT_DISPATCHERS = {
+    -- Roster UNIT_* events: every UNIT_AURA / UNIT_HEALTH / UNIT_POWER
+    -- for every roster member flows through this single trampoline.
+    { container = DF, key = "_RouteRosterEvent",   source = "Roster" },
+    -- Main eventFrame: ADDON_LOADED, GROUP_ROSTER_UPDATE,
+    -- PLAYER_REGEN_*, PLAYER_SPECIALIZATION_CHANGED, etc.
+    { container = DF, key = "_MainEventDispatcher", source = "Main" },
 }
 
 -- ============================================================
@@ -169,6 +466,27 @@ local function FormatUs(ms)
     else return format("%.2f", us) end
 end
 
+-- Bytes per call: small numbers as raw bytes, larger as KB.
+-- "0" -> "·" so the row reads cleanly when there's no allocation.
+local function FormatBytes(b)
+    if b <= 0 then return "·" end
+    if b >= 1024 * 10 then
+        return format("%.0fk", b / 1024)
+    elseif b >= 1024 then
+        return format("%.1fk", b / 1024)
+    elseif b >= 100 then
+        return format("%.0f", b)
+    else
+        return format("%.0f", b)
+    end
+end
+
+local function FormatPeak(n)
+    if n <= 0 then return "·" end
+    if n >= 1000 then return format("%.1fk", n / 1000) end
+    return tostring(n)
+end
+
 local function FormatElapsed(seconds)
     if seconds >= 60 then
         return format("%dm %ds", floor(seconds / 60), floor(seconds % 60))
@@ -181,6 +499,59 @@ end
 -- CORE PROFILING
 -- ============================================================
 
+-- Resolve a dotted path like "Mod.Sub.Name" against the DF table.
+-- Returns: container_table, leaf_key, current_value (or nil if anything is missing).
+local function ResolveFunctionPath(path)
+    local container = DF
+    local lastDot = 1
+    while true do
+        local dot = path:find(".", lastDot, true)
+        if not dot then
+            local key = path:sub(lastDot)
+            return container, key, container[key]
+        end
+        local segment = path:sub(lastDot, dot - 1)
+        container = container[segment]
+        if type(container) ~= "table" then return nil end
+        lastDot = dot + 1
+    end
+end
+
+-- Wrap a single frame's OnUpdate handler. Idempotent: a second call on
+-- the same frame is a no-op so prospective wrapping from the SetScript
+-- hook can't double-instrument. Stats are keyed by the frame's label,
+-- which means multiple frames sharing a name (rare, e.g. pooled frames)
+-- aggregate into one row — usually what you want.
+WrapFrameOnUpdate = function(frame, original)
+    if onUpdateWrapped[frame] then return end
+
+    local label = ResolveFrameLabel(frame)
+    local stats = Profiler.updateData[label]
+    if not stats then
+        stats = { calls = 0, total = 0, max = 0, mem = 0 }
+        Profiler.updateData[label] = stats
+    end
+
+    local wrapped = function(self, elapsed, ...)
+        local m0 = collectgarbage("count")
+        local t0 = debugprofilestop()
+        original(self, elapsed, ...)
+        local elapsedMs = debugprofilestop() - t0
+        local mDelta = collectgarbage("count") - m0
+        if mDelta < 0 then mDelta = 0 end
+        stats.calls = stats.calls + 1
+        stats.total = stats.total + elapsedMs
+        stats.mem = stats.mem + mDelta
+        if elapsedMs > stats.max then stats.max = elapsedMs end
+    end
+
+    onUpdateWrapped[frame] = { original = original, wrapped = wrapped }
+
+    installingOnUpdate = true
+    frame:SetScript("OnUpdate", wrapped)
+    installingOnUpdate = false
+end
+
 function Profiler:Start()
     if self.active then
         print("|cff00ff00DF Profiler:|r Already recording.")
@@ -191,36 +562,66 @@ function Profiler:Start()
     self.startTime = debugprofilestop()
     self.stopTime = 0
     wipe(self.data)
+    wipe(self.tickStats)
     wipe(self.originals)
+    wipe(self.eventData)
+    wipe(self.eventOriginals)
+    wipe(self.updateData)
+    tickRef[1] = 0
 
     local wrapped = 0
     local typeCheck = type  -- cache as upvalue
 
-    for _, name in ipairs(PROFILED_FUNCTIONS) do
-        local original = DF[name]
-        if original and type(original) == "function" then
-            self.originals[name] = original
+    for _, path in ipairs(PROFILED_FUNCTIONS) do
+        local container, key, original = ResolveFunctionPath(path)
+        if container and type(original) == "function" then
+            -- Save originals so Stop() can fully restore.
+            self.originals[path] = { container = container, key = key, original = original }
 
-            -- Pre-allocate a bucket for each frame type (upvalues = zero hash lookup per call)
-            -- P=Party, R=Raid, HP=Highlight Party, HR=Highlight Raid, ?=Other/no frame arg
-            local dP  = { calls = 0, total = 0, max = 0 }
-            local dR  = { calls = 0, total = 0, max = 0 }
-            local dHP = { calls = 0, total = 0, max = 0 }
-            local dHR = { calls = 0, total = 0, max = 0 }
-            local dU  = { calls = 0, total = 0, max = 0 }
+            -- Per-frame-type buckets. Each entry tracks: calls, total ms,
+            -- max single-call ms, and total memory delta (KB).
+            local dP  = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dR  = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dHP = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dHR = { calls = 0, total = 0, max = 0, mem = 0 }
+            local dU  = { calls = 0, total = 0, max = 0, mem = 0 }
 
-            self.data[name .. "|P"]  = dP
-            self.data[name .. "|R"]  = dR
-            self.data[name .. "|HP"] = dHP
-            self.data[name .. "|HR"] = dHR
-            self.data[name .. "|?"]  = dU
+            self.data[path .. "|P"]  = dP
+            self.data[path .. "|R"]  = dR
+            self.data[path .. "|HP"] = dHP
+            self.data[path .. "|HR"] = dHR
+            self.data[path .. "|?"]  = dU
+
+            -- Per-function tick stats: how many times has this function been
+            -- called within the current frame tick? Tracks the worst tick.
+            local ts = { lastTick = -1, calls = 0, maxPerTick = 0 }
+            self.tickStats[path] = ts
 
             local orig = original
+            local tref = tickRef  -- upvalue cache
 
-            DF[name] = function(selfArg, a1, ...)
-                local t = debugprofilestop()
+            container[key] = function(selfArg, a1, ...)
+                -- Tick spike accounting (cheap: 1 table read + 2 compares)
+                local cur = tref[1]
+                if ts.lastTick ~= cur then
+                    ts.lastTick = cur
+                    ts.calls = 0
+                end
+                ts.calls = ts.calls + 1
+                if ts.calls > ts.maxPerTick then
+                    ts.maxPerTick = ts.calls
+                end
+
+                -- Time + memory delta around the call.
+                -- collectgarbage("count") returns kilobytes; deltas are exact
+                -- between calls, but a GC cycle running mid-call shows as
+                -- negative — we clamp to 0 to avoid skew.
+                local m0 = collectgarbage("count")
+                local t0 = debugprofilestop()
                 local r1, r2, r3, r4, r5 = orig(selfArg, a1, ...)
-                local elapsed = debugprofilestop() - t
+                local elapsed = debugprofilestop() - t0
+                local mDelta = collectgarbage("count") - m0
+                if mDelta < 0 then mDelta = 0 end
 
                 -- Classify: 2-3 field lookups on the first argument
                 local bucket
@@ -235,6 +636,7 @@ function Profiler:Start()
                 end
                 bucket.calls = bucket.calls + 1
                 bucket.total = bucket.total + elapsed
+                bucket.mem = bucket.mem + mDelta
                 if elapsed > bucket.max then bucket.max = elapsed end
 
                 return r1, r2, r3, r4, r5
@@ -244,7 +646,84 @@ function Profiler:Start()
         end
     end
 
-    print(format("|cff00ff00DF Profiler:|r Recording. %d functions instrumented.", wrapped))
+    -- ----------------------------------------------------------
+    -- Wrap event dispatchers. Each wrapped dispatcher records into
+    -- self.eventData[eventName], indexed by the event name (the second
+    -- argument the dispatcher receives). One dispatcher feeds many
+    -- event names, so the bucket is created lazily on first occurrence.
+    -- ----------------------------------------------------------
+    local eventData = self.eventData
+    local eventsWrapped = 0
+    for _, dispatcher in ipairs(PROFILED_EVENT_DISPATCHERS) do
+        local container = dispatcher.container
+        local key = dispatcher.key
+        local original = container[key]
+        if type(original) == "function" then
+            self.eventOriginals[key] = { container = container, key = key, original = original }
+            local orig = original
+            local source = dispatcher.source
+
+            container[key] = function(selfArg, event, ...)
+                local m0 = collectgarbage("count")
+                local t0 = debugprofilestop()
+                local r1, r2, r3, r4, r5 = orig(selfArg, event, ...)
+                local elapsed = debugprofilestop() - t0
+                local mDelta = collectgarbage("count") - m0
+                if mDelta < 0 then mDelta = 0 end
+
+                local bucket = eventData[event]
+                if not bucket then
+                    bucket = { calls = 0, total = 0, max = 0, mem = 0, source = source }
+                    eventData[event] = bucket
+                end
+                bucket.calls = bucket.calls + 1
+                bucket.total = bucket.total + elapsed
+                bucket.mem = bucket.mem + mDelta
+                if elapsed > bucket.max then bucket.max = elapsed end
+
+                return r1, r2, r3, r4, r5
+            end
+            eventsWrapped = eventsWrapped + 1
+        end
+    end
+
+    -- ----------------------------------------------------------
+    -- Wrap all currently-known DF OnUpdate handlers. The SetScript
+    -- hook has been recording these since addon load, so this catches
+    -- every handler installed before the profiler started. Handlers
+    -- added AFTER this point are wrapped on the spot by the same hook.
+    --
+    -- Defense in depth: re-run IsDFFrame on each registry entry here.
+    -- The filter was added partway through the profiler's life, so the
+    -- registry may contain stale non-DF frames recorded before the
+    -- filter existed. Scrub them out instead of wrapping them, which
+    -- would cause taint errors in Blizzard's secure frame updates.
+    -- ----------------------------------------------------------
+    local updatesWrapped = 0
+    local toRemove
+    for frame, handler in pairs(onUpdateRegistry) do
+        if frame == tickFrame then
+            -- don't profile our own tick driver
+        elseif not IsDFFrame(frame) then
+            -- Stale non-DF entry (recorded pre-filter). Drop it.
+            toRemove = toRemove or {}
+            toRemove[#toRemove + 1] = frame
+        else
+            WrapFrameOnUpdate(frame, handler)
+            updatesWrapped = updatesWrapped + 1
+        end
+    end
+    if toRemove then
+        for i = 1, #toRemove do
+            onUpdateRegistry[toRemove[i]] = nil
+        end
+    end
+
+    -- Start the per-tick OnUpdate that drives spike detection.
+    tickFrame:Show()
+
+    print(format("|cff00ff00DF Profiler:|r Recording. %d functions, %d events, %d OnUpdate handlers instrumented.",
+        wrapped, eventsWrapped, updatesWrapped))
 end
 
 function Profiler:Stop()
@@ -252,10 +731,25 @@ function Profiler:Stop()
     self.stopTime = debugprofilestop()
     self.active = false
 
-    -- Restore all original functions immediately
-    for name, original in pairs(self.originals) do
-        DF[name] = original
+    -- Restore originals on their actual container tables (supports dotted paths)
+    for _, entry in pairs(self.originals) do
+        entry.container[entry.key] = entry.original
     end
+    for _, entry in pairs(self.eventOriginals) do
+        entry.container[entry.key] = entry.original
+    end
+
+    -- Restore OnUpdate handlers. The installingOnUpdate guard suppresses
+    -- the SetScript hook so it doesn't immediately re-wrap them.
+    for frame, entry in pairs(onUpdateWrapped) do
+        installingOnUpdate = true
+        frame:SetScript("OnUpdate", entry.original)
+        installingOnUpdate = false
+    end
+    wipe(onUpdateWrapped)
+
+    -- Stop the per-tick OnUpdate so profiler has zero idle cost when stopped.
+    tickFrame:Hide()
 
     print(format("|cff00ff00DF Profiler:|r Stopped after %s.", FormatElapsed(self:GetElapsedSeconds())))
 end
@@ -265,6 +759,20 @@ function Profiler:Reset()
         d.calls = 0
         d.total = 0
         d.max = 0
+        d.mem = 0
+    end
+    for _, ts in pairs(self.tickStats) do
+        ts.lastTick = -1
+        ts.calls = 0
+        ts.maxPerTick = 0
+    end
+    -- Event + update buckets are created lazily so just wipe them.
+    wipe(self.eventData)
+    for _, d in pairs(self.updateData) do
+        d.calls = 0
+        d.total = 0
+        d.max = 0
+        d.mem = 0
     end
     if self.active then
         self.startTime = debugprofilestop()
@@ -281,15 +789,21 @@ function Profiler:GetElapsedSeconds()
     return (endTime - self.startTime) / 1000
 end
 
+local function GetActiveSource(self)
+    if self.viewMode == "events" then return self.eventData end
+    if self.viewMode == "updates" then return self.updateData end
+    return self.data
+end
+
 function Profiler:GetTotalCalls()
     local total = 0
-    for _, d in pairs(self.data) do total = total + d.calls end
+    for _, d in pairs(GetActiveSource(self)) do total = total + d.calls end
     return total
 end
 
 function Profiler:GetGrandTotalMs()
     local total = 0
-    for _, d in pairs(self.data) do total = total + d.total end
+    for _, d in pairs(GetActiveSource(self)) do total = total + d.total end
     return total
 end
 
@@ -303,8 +817,16 @@ local TYPE_LABELS = {
 }
 
 function Profiler:GetSortedResults()
+    if self.viewMode == "events" then
+        return self:GetSortedEventResults()
+    end
+    if self.viewMode == "updates" then
+        return self:GetSortedUpdateResults()
+    end
+
     local results = {}
     local grandTotal = 0
+    local tickStats = self.tickStats
 
     if self.splitByFrame then
         -- Split mode: one row per function+type combination (only those with calls)
@@ -318,12 +840,18 @@ function Profiler:GetSortedResults()
                     suffix = ""
                 end
                 local displayName = baseName .. (TYPE_LABELS[suffix] or suffix)
+                local ts = tickStats[baseName]
                 results[#results + 1] = {
                     name = displayName,
                     calls = d.calls,
                     total = d.total,
                     avg = d.total / d.calls,
                     max = d.max,
+                    -- Memory: bytes per call (KB delta * 1024 / calls)
+                    mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                    -- Peak/tick is per-function, not per-bucket; show the same
+                    -- value on every split row for that function.
+                    peak = ts and ts.maxPerTick or 0,
                 }
             end
         end
@@ -335,12 +863,13 @@ function Profiler:GetSortedResults()
             if d.calls > 0 then
                 local baseName = key:match("^(.+)|") or key
                 if not aggregated[baseName] then
-                    aggregated[baseName] = { calls = 0, total = 0, max = 0 }
+                    aggregated[baseName] = { calls = 0, total = 0, max = 0, mem = 0 }
                     aggOrder[#aggOrder + 1] = baseName
                 end
                 local agg = aggregated[baseName]
                 agg.calls = agg.calls + d.calls
                 agg.total = agg.total + d.total
+                agg.mem = agg.mem + d.mem
                 if d.max > agg.max then agg.max = d.max end
             end
         end
@@ -348,12 +877,98 @@ function Profiler:GetSortedResults()
         for _, baseName in ipairs(aggOrder) do
             local agg = aggregated[baseName]
             grandTotal = grandTotal + agg.total
+            local ts = tickStats[baseName]
             results[#results + 1] = {
                 name = baseName,
                 calls = agg.calls,
                 total = agg.total,
                 avg = agg.total / agg.calls,
                 max = agg.max,
+                mem = agg.calls > 0 and (agg.mem * 1024 / agg.calls) or 0,
+                peak = ts and ts.maxPerTick or 0,
+            }
+        end
+    end
+
+    for _, r in ipairs(results) do
+        r.pct = grandTotal > 0 and (r.total / grandTotal * 100) or 0
+    end
+
+    local col = self.sortColumn
+    local desc = self.sortDesc
+    sort(results, function(a, b)
+        if col == "name" then
+            if desc then return a.name > b.name else return a.name < b.name end
+        end
+        if desc then return a[col] > b[col] else return a[col] < b[col] end
+    end)
+
+    return results, grandTotal
+end
+
+-- Build sorted rows from OnUpdate handler data. Same shape as the
+-- function/event variants. Frame label is shortened to avoid blowing
+-- out the name column when GetDebugName returns a long parent chain.
+function Profiler:GetSortedUpdateResults()
+    local results = {}
+    local grandTotal = 0
+
+    for label, d in pairs(self.updateData) do
+        if d.calls > 0 then
+            grandTotal = grandTotal + d.total
+            -- Trim very long parent-chain labels: keep the last segment.
+            local short = label
+            if #label > 36 then
+                local tail = label:match("([^%.]+)$")
+                short = tail and ("…" .. tail) or label:sub(-36)
+            end
+            results[#results + 1] = {
+                name = short,
+                calls = d.calls,
+                total = d.total,
+                avg = d.total / d.calls,
+                max = d.max,
+                mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                peak = 0,
+            }
+        end
+    end
+
+    for _, r in ipairs(results) do
+        r.pct = grandTotal > 0 and (r.total / grandTotal * 100) or 0
+    end
+
+    local col = self.sortColumn
+    local desc = self.sortDesc
+    sort(results, function(a, b)
+        if col == "name" then
+            if desc then return a.name > b.name else return a.name < b.name end
+        end
+        if desc then return a[col] > b[col] else return a[col] < b[col] end
+    end)
+
+    return results, grandTotal
+end
+
+-- Build sorted rows from event dispatcher data. The shape matches the
+-- function results so the existing UI code can render either without a
+-- branch, except that the "peak" column is unused (always 0) for events
+-- and the "name" carries the event name plus a small source tag.
+function Profiler:GetSortedEventResults()
+    local results = {}
+    local grandTotal = 0
+
+    for eventName, d in pairs(self.eventData) do
+        if d.calls > 0 then
+            grandTotal = grandTotal + d.total
+            results[#results + 1] = {
+                name = eventName .. (d.source and ("  [" .. d.source .. "]") or ""),
+                calls = d.calls,
+                total = d.total,
+                avg = d.total / d.calls,
+                max = d.max,
+                mem = d.calls > 0 and (d.mem * 1024 / d.calls) or 0,
+                peak = 0,
             }
         end
     end
@@ -411,8 +1026,8 @@ function Profiler:PrintResults()
     end
 
     print(" ")
-    print(format("|cff00ff00DF Profiler:|r %s | %s calls | %sms profiled CPU",
-        FormatElapsed(elapsed), CommaNumber(totalCalls), FormatMs(grandTotal)))
+    print(format("|cff00ff00DF Profiler:|r [%s] %s | %s calls | %sms profiled CPU",
+        self.viewMode, FormatElapsed(elapsed), CommaNumber(totalCalls), FormatMs(grandTotal)))
     print("|cffaaaaaa------------------------------------------------------------|r")
 
     for i, r in ipairs(results) do
@@ -421,15 +1036,81 @@ function Profiler:PrintResults()
         elseif r.pct >= 10 then color = "|cffffff88"
         else color = "|cff88ff88" end
 
-        print(format("  %s%2d. %-36s|r  %s calls  %sms  %sus avg  %sus max  %s%5.1f%%|r",
+        print(format("  %s%2d. %-36s|r  %s calls  %sms  %sus avg  %sus max  pk %s  %sB  %s%5.1f%%|r",
             color, i, r.name,
             CommaNumber(r.calls),
             FormatMs(r.total),
             FormatUs(r.avg),
             FormatUs(r.max),
+            FormatPeak(r.peak),
+            FormatBytes(r.mem),
             color, r.pct
         ))
     end
+
+    print("|cffaaaaaa------------------------------------------------------------|r")
+    print(" ")
+end
+
+-- ============================================================
+-- SUMMARY (top-N across all three categories)
+-- ============================================================
+
+-- Helper: temporarily switch viewMode, run GetSortedResults, restore.
+-- Used by PrintSummary so it can collect results from each category
+-- without permanently flipping the user's UI view.
+local function TopN(self, mode, n)
+    local prev = self.viewMode
+    self.viewMode = mode
+    local results, grand = self:GetSortedResults()
+    self.viewMode = prev
+    local out = {}
+    for i = 1, math.min(n, #results) do
+        out[i] = results[i]
+    end
+    return out, grand
+end
+
+function Profiler:PrintSummary()
+    local elapsed = self:GetElapsedSeconds()
+    if elapsed <= 0 then
+        print("|cff00ff00DF Profiler:|r No data collected.")
+        return
+    end
+
+    -- Aggregate totals across all three sources independently. Note
+    -- these will overlap (events drive functions which drive OnUpdate
+    -- ticks) — they're shown as separate lenses, not sums.
+    local _,  funcGrand = TopN(self, "functions", 0)
+    local _,  evtGrand  = TopN(self, "events", 0)
+    local _,  updGrand  = TopN(self, "updates", 0)
+
+    print(" ")
+    print(format("|cff00ff00DF Profiler Summary:|r %s elapsed", FormatElapsed(elapsed)))
+    print(format("  Functions: %sms total CPU across wrapped DF methods", FormatMs(funcGrand)))
+    print(format("  Events:    %sms total CPU across event handlers", FormatMs(evtGrand)))
+    print(format("  OnUpdate:  %sms total CPU across every-frame handlers", FormatMs(updGrand)))
+    print("|cffaaaaaa------------------------------------------------------------|r")
+
+    local function dump(label, mode)
+        local rows = TopN(self, mode, 5)
+        if #rows == 0 then
+            print(format("  |cffaaaaaaTop 5 %s:|r (none)", label))
+            return
+        end
+        print(format("  |cffffd700Top 5 %s:|r", label))
+        for i, r in ipairs(rows) do
+            print(format("    %d. %-34s  %s calls  %sms  %sus avg  %s%%",
+                i, r.name,
+                CommaNumber(r.calls),
+                FormatMs(r.total),
+                FormatUs(r.avg),
+                format("%.1f", r.pct)))
+        end
+    end
+    dump("Functions (by total ms)", "functions")
+    dump("Events (by total ms)",    "events")
+    dump("OnUpdate (by total ms)",  "updates")
 
     print("|cffaaaaaa------------------------------------------------------------|r")
     print(" ")
@@ -441,7 +1122,7 @@ end
 
 local ROW_HEIGHT = 18
 local MAX_ROWS = 30
-local FRAME_WIDTH = 600
+local FRAME_WIDTH = 720
 local CONTENT_LEFT = 10
 local CONTENT_RIGHT = -10
 local HEADER_Y = -66
@@ -449,12 +1130,14 @@ local DATA_START_Y = -86
 
 -- Column layout
 local COLUMNS = {
-    { key = "name",  label = "Function",  width = 220, align = "LEFT" },
-    { key = "calls", label = "Calls",     width = 56,  align = "RIGHT" },
-    { key = "total", label = "Total ms", width = 62,  align = "RIGHT" },
-    { key = "avg",   label = "Avg us",    width = 56,  align = "RIGHT" },
-    { key = "max",   label = "Max us",    width = 56,  align = "RIGHT" },
-    { key = "pct",   label = "%",         width = 48,  align = "RIGHT" },
+    { key = "name",  label = "Function",  width = 210, align = "LEFT" },
+    { key = "calls", label = "Calls",     width = 54,  align = "RIGHT" },
+    { key = "total", label = "Total ms",  width = 60,  align = "RIGHT" },
+    { key = "avg",   label = "Avg us",    width = 52,  align = "RIGHT" },
+    { key = "max",   label = "Max us",    width = 52,  align = "RIGHT" },
+    { key = "peak",  label = "Peak/tk",   width = 52,  align = "RIGHT" },
+    { key = "mem",   label = "Bytes",     width = 56,  align = "RIGHT" },
+    { key = "pct",   label = "%",         width = 46,  align = "RIGHT" },
 }
 
 local CONTENT_WIDTH = 0
@@ -581,6 +1264,25 @@ UpdateUI = function()
             row.cols.max:SetText(FormatUs(r.max))
             row.cols.max:SetTextColor(0.7, 0.7, 0.7)
 
+            row.cols.peak:SetText(FormatPeak(r.peak))
+            -- Tint Peak/tick yellow when it's high (>=20 calls in one frame)
+            -- — that's the cascade signal we're hunting.
+            if r.peak >= 20 then
+                row.cols.peak:SetTextColor(1, 0.85, 0.4)
+            else
+                row.cols.peak:SetTextColor(0.7, 0.7, 0.7)
+            end
+
+            row.cols.mem:SetText(FormatBytes(r.mem))
+            -- Tint Mem yellow when bytes/call >= 256, red when >= 1024
+            if r.mem >= 1024 then
+                row.cols.mem:SetTextColor(1, 0.5, 0.5)
+            elseif r.mem >= 256 then
+                row.cols.mem:SetTextColor(1, 0.85, 0.4)
+            else
+                row.cols.mem:SetTextColor(0.7, 0.7, 0.7)
+            end
+
             row.cols.pct:SetText(format("%.1f%%", r.pct))
             row.cols.pct:SetTextColor(cr, cg, cb)
 
@@ -605,6 +1307,17 @@ UpdateUI = function()
             profilerFrame.splitBtn:SetText("|cff00ff00Split|r")
         else
             profilerFrame.splitBtn:SetText("Split")
+        end
+    end
+
+    -- Keep view button text in sync
+    if profilerFrame.viewBtn then
+        if Profiler.viewMode == "events" then
+            profilerFrame.viewBtn:SetText("|cff00ff00Events|r")
+        elseif Profiler.viewMode == "updates" then
+            profilerFrame.viewBtn:SetText("|cff00ff00OnUpdate|r")
+        else
+            profilerFrame.viewBtn:SetText("Functions")
         end
     end
 end
@@ -682,9 +1395,22 @@ function Profiler:CreateUI()
     printBtn:SetSize(88, btnH)
     printBtn:SetPoint("LEFT", resetBtn, "RIGHT", 4, 0)
     printBtn:SetText("Print to Chat")
-    printBtn:SetScript("OnClick", function()
-        Profiler:PrintResults()
+    printBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    printBtn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            Profiler:PrintSummary()
+        else
+            Profiler:PrintResults()
+        end
     end)
+    printBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Print to Chat", 1, 1, 1)
+        GameTooltip:AddLine("Left-click: dump the current view (functions/events/onupdate)", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Right-click: print Top 5 across all categories (summary)", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    printBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Custom duration input box
     local durationInput = CreateFrame("EditBox", nil, f, "BackdropTemplate")
@@ -758,6 +1484,41 @@ function Profiler:CreateUI()
     f.combatBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     UpdateCombatBtnText()
 
+    -- View cycle button (Functions / Events / OnUpdate). Top-right, left of Split.
+    f.viewBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.viewBtn:SetSize(82, btnH)
+    f.viewBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -84, btnY)
+    local VIEW_LABELS = {
+        functions = "Functions",
+        events    = "|cff00ff00Events|r",
+        updates   = "|cff00ff00OnUpdate|r",
+    }
+    local VIEW_NEXT = {
+        functions = "events",
+        events    = "updates",
+        updates   = "functions",
+    }
+    local function UpdateViewBtnText()
+        f.viewBtn:SetText(VIEW_LABELS[Profiler.viewMode] or "Functions")
+    end
+    f.viewBtn:SetScript("OnClick", function()
+        Profiler.viewMode = VIEW_NEXT[Profiler.viewMode] or "functions"
+        UpdateViewBtnText()
+        UpdateUI()
+        UpdateColumnHeaders()
+    end)
+    f.viewBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("View Mode", 1, 1, 1)
+        GameTooltip:AddLine("Click to cycle: Functions → Events → OnUpdate.", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Functions: time per DF method", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Events: time per WoW event (UNIT_AURA, etc.)", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("OnUpdate: time per OnUpdate handler (every-frame ticks)", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    f.viewBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    UpdateViewBtnText()
+
     -- Split by Frame Type toggle button
     f.splitBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.splitBtn:SetSize(50, btnH)
@@ -786,6 +1547,63 @@ function Profiler:CreateUI()
     end)
     f.splitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     UpdateSplitBtnText()
+
+    -- OnUpdate Hook warning banner (shown when hook is disabled)
+    -- Positioned at the bottom of the profiler window, above the data rows
+    local hookBanner = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    hookBanner:SetHeight(28)
+    hookBanner:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 6)
+    hookBanner:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 6)
+    hookBanner:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    hookBanner:SetBackdropColor(0.3, 0.15, 0, 0.9)
+    hookBanner:SetBackdropBorderColor(0.8, 0.5, 0, 1)
+    f.hookBanner = hookBanner
+
+    local hookText = hookBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hookText:SetPoint("LEFT", 8, 0)
+    hookText:SetTextColor(1, 0.8, 0.2)
+    f.hookBannerText = hookText
+
+    local hookCheckbox = CreateFrame("CheckButton", nil, hookBanner, "UICheckButtonTemplate")
+    hookCheckbox:SetSize(22, 22)
+    hookCheckbox:SetPoint("RIGHT", -6, 0)
+    hookCheckbox:SetChecked(self.onUpdateHookEnabled)
+    hookCheckbox:SetScript("OnClick", function(cb)
+        if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
+        local newState = cb:GetChecked()
+        DandersFramesDB_v2.profilerOnUpdateHook = newState
+        -- Update banner to show pending state
+        if newState == self.onUpdateHookEnabled then
+            -- Back to current state, no reload needed
+            UpdateHookBanner()
+        else
+            hookText:SetText(newState
+                and "OnUpdate hook enabled — type /rl to apply"
+                or "OnUpdate hook disabled — type /rl to apply")
+        end
+    end)
+    f.hookCheckbox = hookCheckbox
+
+    local hookLabel = hookBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hookLabel:SetPoint("RIGHT", hookCheckbox, "LEFT", -2, 0)
+    hookLabel:SetText("Enable")
+    hookLabel:SetTextColor(1, 0.8, 0.2)
+
+    local function UpdateHookBanner()
+        if self.onUpdateHookEnabled then
+            hookBanner:Hide()
+        else
+            hookText:SetText("OnUpdate tracking is disabled. Enable and /rl to use the OnUpdate tab.")
+            hookCheckbox:SetChecked(DandersFramesDB_v2 and DandersFramesDB_v2.profilerOnUpdateHook or false)
+            hookBanner:Show()
+        end
+    end
+    f.UpdateHookBanner = UpdateHookBanner
+    UpdateHookBanner()
 
     -- Column headers
     local xOffset = CONTENT_LEFT + 2
@@ -843,7 +1661,7 @@ function Profiler:CreateUI()
     local infoLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     infoLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
     infoLabel:SetTextColor(0.4, 0.4, 0.4)
-    infoLabel:SetText("Times inclusive (include sub-calls)  |  1ms = 1000us")
+    infoLabel:SetText("Inclusive times  |  Peak/tk = max calls in one frame  |  Bytes = avg alloc per call")
 
     -- Live refresh via OnUpdate
     f.elapsed = 0

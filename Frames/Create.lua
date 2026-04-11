@@ -421,6 +421,12 @@ end
 -- Added: 2025-01-20 for performance optimization
 
 -- List of events that should use RegisterUnitEvent (have unit as first arg)
+-- Events registered per-frame via RegisterUnitEvent (C++-level filtering).
+-- Must be true unit events — i.e. events that deliver a unit token as the
+-- first OnEvent arg. Non-unit events like INCOMING_SUMMON_CHANGED and
+-- INCOMING_RESURRECT_CHANGED do NOT belong here; RegisterUnitEvent silently
+-- fails on them. They're handled globally on headerChildEventFrame in
+-- Headers.lua instead.
 local UNIT_EVENTS_TO_FILTER = {
     "UNIT_HEALTH",
     "UNIT_MAXHEALTH",
@@ -430,8 +436,6 @@ local UNIT_EVENTS_TO_FILTER = {
     "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
     "UNIT_HEAL_PREDICTION",
     "UNIT_CONNECTION",
-    "INCOMING_SUMMON_CHANGED",
-    "INCOMING_RESURRECT_CHANGED",
 }
 
 -- Register unit-specific events for a frame
@@ -2249,8 +2253,8 @@ function DF:CreateAuraIcon(parent, index, auraType)
     -- Border - use BACKGROUND layer so icon texture draws ON TOP of it
     -- This creates a visible border around the edges where the icon doesn't cover
     icon.border = icon:CreateTexture(nil, "BACKGROUND")
-    icon.border:SetPoint("TOPLEFT", -1, 1)
-    icon.border:SetPoint("BOTTOMRIGHT", 1, -1)
+    PixelUtil.SetPoint(icon.border, "TOPLEFT", icon, "TOPLEFT", -1, 1)
+    PixelUtil.SetPoint(icon.border, "BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
     icon.border:SetColorTexture(0, 0, 0, 0.8)
     
     -- Normal texture - Masque expects this for proper button structure
@@ -2262,8 +2266,8 @@ function DF:CreateAuraIcon(parent, index, auraType)
     -- Masque border texture - only used when user enables "Masque Border Control"
     -- This is a separate texture that Masque can skin, kept hidden by default
     icon.masqueBorder = icon:CreateTexture(nil, "OVERLAY")
-    icon.masqueBorder:SetPoint("TOPLEFT", -1, 1)
-    icon.masqueBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+    PixelUtil.SetPoint(icon.masqueBorder, "TOPLEFT", icon, "TOPLEFT", -1, 1)
+    PixelUtil.SetPoint(icon.masqueBorder, "BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
     icon.masqueBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     icon.masqueBorder:SetBlendMode("BLEND")  -- Use BLEND, not ADD - ADD causes dimming issues
     icon.masqueBorder:Hide()  -- Hidden by default, shown only if Masque border control enabled

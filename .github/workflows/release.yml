@@ -82,12 +82,32 @@ jobs:
       - name: Package and Release
         if: steps.guard.outputs.skip != 'true'
         uses: BigWigsMods/packager@v2
+        with:
+          args: -S
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate locale files
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          ERRORS=0
+          for f in .release/DandersFrames/Locales/*.lua; do
+            # Check for CurseForge API error responses injected as raw text
+            if grep -qP '^error code:|^<!DOCTYPE|^<html|^\{"error' "$f" 2>/dev/null; then
+              echo "::error::Locale file contains API error response: $(basename $f)"
+              head -5 "$f"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::$ERRORS locale file(s) have CurseForge API errors. The build was uploaded but contains broken locale files — rebuild required."
+            exit 1
+          fi
+          echo "All locale files validated OK"
+
       - name: Notify Discord (dev channel — alpha/beta)
-        if: steps.guard.outputs.skip != 'true' && success() && steps.changelog.outputs.channel != 'release'
+        if: steps.guard.outputs.skip != 'true' && success() && steps.changelog.outputs.channel != 'release' && startsWith(github.ref, 'refs/tags/')
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_DEV }}
           VERSION: ${{ steps.changelog.outputs.version }}

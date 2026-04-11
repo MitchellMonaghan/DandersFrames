@@ -1,5 +1,7 @@
 local addonName, DF = ...
 
+local format = string.format
+
 -- ============================================================
 -- HELPER: DEEP COPY TABLE
 -- ============================================================
@@ -25,21 +27,24 @@ end
 
 -- Resets Party or Raid settings within the CURRENT profile
 function DF:ResetProfile(mode)
+    local L = DF.L
     if not DF.db or not DF.db[mode] then return end
     local defaults = (mode == "party" and DF.PartyDefaults or DF.RaidDefaults)
     DF.db[mode] = DF:DeepCopy(defaults)
     DF:FullProfileRefresh()
-    print("|cff00ff00DandersFrames:|r " .. (mode == "party" and "Party" or "Raid") .. " settings reset to defaults.")
+    local modeLabel = mode == "party" and "Party" or "Raid"
+    print("|cff00ff00DandersFrames:|r " .. format(L["%s settings reset to defaults."], modeLabel))
 end
 
 -- Copies Party->Raid or Raid->Party within CURRENT profile
 function DF:CopyProfile(srcMode, destMode)
+    local L = DF.L
     if not DF.db or not DF.db[srcMode] or not DF.db[destMode] then return end
     DF.db[destMode] = DF:DeepCopy(DF.db[srcMode])
     DF:FullProfileRefresh()
     local s = srcMode == "party" and "Party" or "Raid"
     local d = destMode == "party" and "Party" or "Raid"
-    print("|cff00ff00DandersFrames:|r Copied settings from " .. s .. " to " .. d .. ".")
+    print("|cff00ff00DandersFrames:|r " .. format(L["Copied settings from %s to %s."], s, d))
 end
 
 -- Copies matching settings between Party and Raid (no refresh, no print)
@@ -105,11 +110,12 @@ function DF:CopySectionSettings(prefixes, srcMode)
 
     -- Full refresh - these buttons aren't used often so a complete refresh is fine
     DF:FullProfileRefresh()
-    
+
+    local L = DF.L
     local s = srcMode == "party" and "Party" or "Raid"
     local d = destMode == "party" and "Party" or "Raid"
-    print("|cff00ff00DandersFrames:|r Copied " .. count .. " settings from " .. s .. " to " .. d .. ".")
-    
+    print("|cff00ff00DandersFrames:|r " .. format(L["Copied %d settings from %s to %s."], count, s, d))
+
     return srcMode, destMode
 end
 
@@ -152,14 +158,25 @@ end
 
 -- Set/create a profile
 function DF:SetProfile(name)
+    local L = DF.L
     if not name or name == "" then return end
-    
+
     -- Initialize profiles table if needed
     if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
     if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
-    
+
     -- Save current profile before switching (strips runtime overrides)
     DF:SaveCurrentProfile()
+
+    -- Clear auto-profile runtime state and overlay BEFORE switching profiles
+    -- so FullProfileRefresh reads the clean new profile with no stale overlay
+    if DF.AutoProfilesUI then
+        DF.AutoProfilesUI.activeRuntimeProfile = nil
+        DF.AutoProfilesUI.activeRuntimeContentKey = nil
+        DF.AutoProfilesUI.pendingAutoProfileEval = false
+    end
+    DF.raidOverrides = nil
+    DF:Debug("PROFILE", "SetProfile: cleared runtime state before switching to " .. name)
 
     -- Create new profile if doesn't exist
     if not DandersFramesDB_v2.profiles[name] then
@@ -171,9 +188,9 @@ function DF:SetProfile(name)
             powerColors = {},
             linkedSections = {},
         }
-        print("|cff00ff00DandersFrames:|r Created new profile: " .. name)
+        print("|cff00ff00DandersFrames:|r " .. format(L["Created new profile: %s"], name))
     end
-    
+
     -- Switch to the profile (update both account-wide and per-character)
     DandersFramesDB_v2.currentProfile = name
     if DandersFramesCharDB then
@@ -182,34 +199,11 @@ function DF:SetProfile(name)
     DF.db = DandersFramesDB_v2.profiles[name]
     DF:WrapDB()
 
-    -- Apply the profile with full refresh BEFORE clearing runtime state,
-    -- so the raid proxy system has consistent state during secure frame ops
+    -- Apply the profile — runtime state is already clear so the proxy reads
+    -- the new profile directly with no stale overlay
     DF:FullProfileRefresh()
 
-    -- Clear auto-profile runtime state AFTER refresh completes
-    -- (old profile's data is now stale and safe to remove)
-    if DF.AutoProfilesUI then
-        DF.AutoProfilesUI.activeRuntimeProfile = nil
-        DF.AutoProfilesUI.activeRuntimeContentKey = nil
-        DF.AutoProfilesUI.pendingAutoProfileEval = false
-    end
-
-    -- Guard raidOverrides clearing behind combat check — secure header
-    -- attributes may still be in flight during combat lockdown
-    if InCombatLockdown() then
-        DF:Debug("PROFILE", "SetProfile: deferring raidOverrides clear until combat ends")
-        local regenFrame = CreateFrame("Frame")
-        regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        regenFrame:SetScript("OnEvent", function(self)
-            self:UnregisterAllEvents()
-            DF.raidOverrides = nil
-            DF:Debug("PROFILE", "SetProfile: raidOverrides cleared after combat")
-        end)
-    else
-        DF.raidOverrides = nil
-    end
-
-    print("|cff00ff00DandersFrames:|r Switched to profile: " .. name)
+    print("|cff00ff00DandersFrames:|r " .. format(L["Switched to profile: %s"], name))
 
     -- Re-evaluate auto-profiles for the new profile after a short delay
     -- to allow secure frame operations to settle
@@ -222,21 +216,23 @@ end
 
 -- Delete a profile
 function DF:DeleteProfile(name)
+    local L = DF.L
     if name == "Default" then
-        print("|cffff6666DandersFrames:|r Cannot delete Default profile.")
+        print("|cffff6666DandersFrames:|r " .. L["Cannot delete Default profile."])
         return
     end
-    
+
     if DandersFramesDB_v2 and DandersFramesDB_v2.profiles and DandersFramesDB_v2.profiles[name] then
         DandersFramesDB_v2.profiles[name] = nil
-        print("|cff00ff00DandersFrames:|r Deleted profile: " .. name)
+        print("|cff00ff00DandersFrames:|r " .. format(L["Deleted profile: %s"], name))
     end
 end
 
 -- Duplicate current profile to a new name
 function DF:DuplicateProfile(newName)
+    local L = DF.L
     if not newName or newName == "" then
-        print("|cffff6666DandersFrames:|r Please enter a profile name.")
+        print("|cffff6666DandersFrames:|r " .. L["Please enter a profile name."])
         return false
     end
 
@@ -245,10 +241,10 @@ function DF:DuplicateProfile(newName)
     -- Initialize profiles table if needed
     if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
     if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
-    
+
     -- Check if profile already exists
     if DandersFramesDB_v2.profiles[newName] then
-        print("|cffff6666DandersFrames:|r Profile '" .. newName .. "' already exists.")
+        print("|cffff6666DandersFrames:|r " .. format(L["Profile '%s' already exists."], newName))
         return false
     end
     
@@ -269,7 +265,7 @@ function DF:DuplicateProfile(newName)
     -- Apply the profile with full refresh
     DF:FullProfileRefresh()
     
-    print("|cff00ff00DandersFrames:|r Duplicated profile '" .. currentName .. "' to '" .. newName .. "'")
+    print("|cff00ff00DandersFrames:|r " .. format(L["Duplicated profile '%s' to '%s'."], currentName, newName))
     return true
 end
 
@@ -334,9 +330,10 @@ end
 
 -- Export profile with optional category filtering
 function DF:ExportProfile(categories, frameTypes, profileName)
+    local L = DF.L
     local LibSerialize = LibStub and LibStub("LibSerialize", true)
     local LibDeflate = LibStub and LibStub("LibDeflate", true)
-    
+
     if not LibSerialize or not LibDeflate then
         print("|cffff0000DandersFrames:|r Missing required libraries")
         return nil
@@ -414,7 +411,7 @@ function DF:ExportProfile(categories, frameTypes, profileName)
     end
 
     if not exportData.party and not exportData.raid then
-        print("|cffff0000DandersFrames:|r No data to export")
+        print("|cffff0000DandersFrames:|r " .. L["No data to export"])
         return nil
     end
     
@@ -567,6 +564,7 @@ end
 -- createNewProfile: if true, creates a new profile instead of overwriting current
 -- allowOverwrite: if true, allow overwriting an existing profile with the same name (used by Wago API)
 function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTypes, newProfileName, createNewProfile, allowOverwrite)
+    local L = DF.L
     if not importData then return false end
 
     local importInfo = self:GetImportInfo(importData)
@@ -619,9 +617,9 @@ function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTy
         DF.db = DandersFramesDB_v2.profiles[profileName]
         DF:WrapDB()
         
-        print("|cff00ff00DandersFrames:|r Created new profile: " .. profileName)
+        print("|cff00ff00DandersFrames:|r " .. format(L["Created new profile: %s"], profileName))
     end
-    
+
     -- If it's a full export (legacy or "all categories"), use direct replacement
     if importInfo.isFullExport and not selectedCategories then
         -- Legacy behavior: replace entire profile sections
@@ -670,28 +668,29 @@ function DF:ApplyImportedProfile(importData, selectedCategories, selectedFrameTy
     end
     
     DF:FullProfileRefresh()
-    print("|cff00ff00DandersFrames:|r Profile imported successfully!")
+    print("|cff00ff00DandersFrames:|r " .. L["Profile imported successfully!"])
     return true
 end
 
 function DF:ImportProfile(str)
+    local L = DF.L
     -- Use ValidateImportString which handles both compressed and legacy formats
     local newProfile, errMsg = DF:ValidateImportString(str)
     if not newProfile then
-        print("|cffff0000DandersFrames:|r " .. (errMsg or "Import failed"))
+        print("|cffff0000DandersFrames:|r " .. (errMsg or L["Import failed"]))
         return false
     end
-    
+
     -- Import party and raid settings
-    if newProfile.party then 
-        DF.db.party = newProfile.party 
+    if newProfile.party then
+        DF.db.party = newProfile.party
     end
-    if newProfile.raid then 
-        DF.db.raid = newProfile.raid 
+    if newProfile.raid then
+        DF.db.raid = newProfile.raid
     end
-    
+
     DF:FullProfileRefresh()
-    print("|cff00ff00DandersFrames:|r Profile imported successfully!")
+    print("|cff00ff00DandersFrames:|r " .. L["Profile imported successfully!"])
     return true
 end
 
@@ -722,8 +721,9 @@ function DF:CheckProfileAutoSwitch()
         end
         
         if exists then
+            local L = DF.L
             DF:SetProfile(profileName)
-            print("|cff00ff00DandersFrames:|r Auto-switched to profile: " .. profileName)
+            print("|cff00ff00DandersFrames:|r " .. format(L["Auto-switched to profile: %s"], profileName))
             -- Note: SetProfile now calls FullProfileRefresh which handles GUI refresh
         end
     end

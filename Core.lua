@@ -12,6 +12,30 @@ _G[addonName] = DF
 local GetAddOnMetadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
 DF.VERSION = GetAddOnMetadata(addonName, "Version") or "Unknown"
 
+-- Localization
+DF.L = LibStub("AceLocale-3.0"):GetLocale("DandersFrames")
+local L = DF.L
+
+-- Locale warnings: silent by default (see Locales/enUS.lua for rationale).
+-- Call DF:SetLocaleWarnings(true) — or use /df localewarn — to enable
+-- error-handler warnings on missing L["..."] keys for the current session.
+DF.localeWarningsEnabled = false
+function DF:SetLocaleWarnings(enabled)
+    if enabled then
+        setmetatable(DF.L, { __index = function(self, key)
+            rawset(self, key, key)
+            geterrorhandler()(("AceLocale-3.0: DandersFrames: Missing entry for '%s'"):format(tostring(key)))
+            return key
+        end })
+    else
+        setmetatable(DF.L, { __index = function(self, key)
+            rawset(self, key, key)
+            return key
+        end })
+    end
+    DF.localeWarningsEnabled = enabled and true or false
+end
+
 -- Debug flags
 DF.debugEnabled = false
 DF.demoMode = false
@@ -2778,20 +2802,20 @@ end
 SLASH_DFARENA1 = "/dfarena"
 SlashCmdList["DFARENA"] = function(msg)
     if InCombatLockdown() then
-        print("|cffff8033DandersFrames:|r Cannot toggle arena mode during combat")
+        print("|cffff8033DandersFrames:|r " .. L["Cannot toggle arena mode during combat"])
         return
     end
     
     DF.forceArenaMode = not DF.forceArenaMode
     
     if DF.forceArenaMode then
-        print("|cffff8033DandersFrames:|r Arena mode |cff00ff00ENABLED|r for testing")
-        print("  - Join a raid group (2-5 players works best)")
-        print("  - Arena header will show using raid1-5 unit IDs")
-        print("  - Uses party frame settings/position")
-        print("  - Type /dfarena again to disable")
+        print("|cffff8033DandersFrames:|r " .. format(L["Arena mode %sENABLED%s for testing"], "|cff00ff00", "|r"))
+        print("  - " .. L["Join a raid group (2-5 players works best)"])
+        print("  - " .. L["Arena header will show using raid1-5 unit IDs"])
+        print("  - " .. L["Uses party frame settings/position"])
+        print("  - " .. L["Type /dfarena again to disable"])
     else
-        print("|cffff8033DandersFrames:|r Arena mode |cffff0000DISABLED|r")
+        print("|cffff8033DandersFrames:|r " .. format(L["Arena mode %sDISABLED%s"], "|cffff0000", "|r"))
     end
     
     -- Apply full header settings (includes orientation, grow from center, etc.)
@@ -3066,13 +3090,13 @@ function DF:CheckElvUICompatibility()
         popup:Hide()
         -- Print the path to chat so they have a reference
         print(" ")
-        print("|cff00ff00DandersFrames:|r To fix the ElvUI compatibility issue:")
-        print("|cff00ff00DandersFrames:|r 1. Open ElvUI config with |cff1784d1/ec|r")
-        print("|cff00ff00DandersFrames:|r 2. Go to |cffffffffUnitFrames|r (left sidebar)")
-        print("|cff00ff00DandersFrames:|r 3. Click |cffffffffGeneral|r at the top")
-        print("|cff00ff00DandersFrames:|r 4. Scroll down to |cffffffffDisabled Blizzard Frames|r")
-        print("|cff00ff00DandersFrames:|r 5. Under |cffffffffGroup Units|r, uncheck |cffff6666Party|r and |cffff6666Raid|r")
-        print("|cff00ff00DandersFrames:|r 6. Click the reload button when prompted")
+        print("|cff00ff00DandersFrames:|r " .. L["To fix the ElvUI compatibility issue:"])
+        print("|cff00ff00DandersFrames:|r " .. format(L["1. Open ElvUI config with %s/ec%s"], "|cff1784d1", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["2. Go to %sUnitFrames%s (left sidebar)"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["3. Click %sGeneral%s at the top"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["4. Scroll down to %sDisabled Blizzard Frames%s"], "|cffffffff", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["5. Under %sGroup Units%s, uncheck %sParty%s and %sRaid%s"], "|cffffffff", "|r", "|cffff6666", "|r", "|cffff6666", "|r"))
+        print("|cff00ff00DandersFrames:|r " .. L["6. Click the reload button when prompted"])
         print(" ")
     end)
     
@@ -3190,7 +3214,11 @@ eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")  -- Fires when talents change
 eventFrame:RegisterEvent("UNIT_PET")  -- Fires when a pet is summoned/dismissed
 eventFrame:RegisterEvent("PLAYER_UPDATE_RESTING")  -- Fires when entering/leaving rested area
 
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
+-- The handler body is stored on DF as _MainEventDispatcher so the profiler
+-- can swap it for an instrumented version at runtime. The frame's actual
+-- script is a thin trampoline that calls through DF — re-binding takes
+-- effect immediately without re-running SetScript.
+DF._MainEventDispatcher = function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         -- Initialize saved variables with profile support
         if not DandersFramesDB_v2 then
@@ -3201,7 +3229,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                         party = DF:DeepCopy(DF.PartyDefaults),
                         raid = DF:DeepCopy(DF.RaidDefaults),
                     }
-                }
+                },
+                wizardConfigs = {},
+                seenAuraSetupWizard = true,  -- New users don't need the wizard
+                seenOverlaySetupWizard = true,  -- New users don't need the overlay wizard
             }
         end
         
@@ -3244,6 +3275,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Ensure structure exists
         if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
         if not DandersFramesDB_v2.currentProfile then DandersFramesDB_v2.currentProfile = "Default" end
+        if not DandersFramesDB_v2.wizardConfigs then DandersFramesDB_v2.wizardConfigs = {} end
 
         -- Track last seen version for auto-showing changelog on update
         if not DandersFramesDB_v2.lastSeenVersion then
@@ -3358,23 +3390,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if modeDb.externalDefShowDuration ~= nil then modeDb.defensiveIconShowDuration = modeDb.externalDefShowDuration end
                 if modeDb.externalDefFrameLevel then modeDb.defensiveIconFrameLevel = modeDb.externalDefFrameLevel end
                 modeDb._defensiveIconMigrated = true
-            end
-        end
-        
-        -- Force bossDebuffsScaleText = true (scale text is now always-on, no longer user-configurable)
-        for _, mode in ipairs({"party", "raid"}) do
-            local modeDb = DF.db[mode]
-            if modeDb then
-                modeDb.bossDebuffsScaleText = true
-            end
-        end
-        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
-            for profileName, profile in pairs(DandersFramesDB_v2.profiles) do
-                for _, mode in ipairs({"party", "raid"}) do
-                    if profile[mode] then
-                        profile[mode].bossDebuffsScaleText = true
-                    end
-                end
             end
         end
         
@@ -3683,6 +3698,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end
         end
 
+        -- Force auraSourceMode to DIRECT for all existing profiles (v4.2.x)
+        -- One-time migration: users who prefer BLIZZARD can switch back manually
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for profileName, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] and not profile[mode]._auraSourceModeDirectForced then
+                        profile[mode].auraSourceMode = "DIRECT"
+                        profile[mode]._auraSourceModeDirectForced = true
+                    end
+                end
+            end
+        end
+
         -- Recover from crash/disconnect during auto layout editing.
         -- If the recovery flag exists, the previous session was editing an auto layout
         -- when it crashed — _realRaidDB may still contain override values baked in.
@@ -3715,7 +3743,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     end
                 end
                 if recovered > 0 then
-                    print("|cff00ff00DandersFrames:|r Recovered " .. recovered .. " raid settings from interrupted auto layout editing session.")
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Recovered %d raid settings from interrupted auto layout editing session."], recovered))
                 end
             end
             DF.db.raidAutoEditingRecovery = nil
@@ -3771,7 +3799,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF.DebugConsole:Init()
         end
 
-        print("|cff00ff00DandersFrames|r v" .. DF.VERSION .. " loaded. Type |cffeda55f/df|r for settings, |cffeda55f/df resetgui|r if window is offscreen.")
+        print("|cff00ff00DandersFrames|r " .. format(L["v%s loaded. Type %s/df%s for settings, %s/df resetgui%s if window is offscreen."], DF.VERSION, "|cffeda55f", "|r", "|cffeda55f", "|r"))
 
         -- ============================================================
         -- CRITICAL: Initialize frames HERE at ADDON_LOADED
@@ -4035,7 +4063,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                     end
                     DF.GUIFrame:Show()
                 end
-                print("|cff00ff00DandersFrames:|r GUI reset to default size, scale, and position.")
+                print("|cff00ff00DandersFrames:|r " .. L["GUI reset to default size, scale, and position."])
             elseif msg == "overrides" then
                 if DF.AutoProfilesUI and DF.AutoProfilesUI.PrintOverrides then
                     DF.AutoProfilesUI:PrintOverrides()
@@ -4050,10 +4078,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 if DF.DebugConsole then
                     local newState = not DF.DebugConsole:IsEnabled()
                     DF.DebugConsole:SetEnabled(newState)
-                    print("|cff00ff00DandersFrames:|r Debug logging " .. (newState and "enabled" or "disabled"))
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Debug logging %s"], newState and L["enabled"] or L["disabled"]))
                 else
                     DF.debugEnabled = not DF.debugEnabled
-                    print("|cff00ff00DandersFrames:|r Debug mode " .. (DF.debugEnabled and "enabled" or "disabled"))
+                    print("|cff00ff00DandersFrames:|r " .. format(L["Debug mode %s"], DF.debugEnabled and L["enabled"] or L["disabled"]))
                 end
             elseif msg == "console" then
                 -- Open settings directly to Debug Console tab
@@ -4067,14 +4095,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             elseif msg == "debugrole" then
                 DF.debugRoleIcons = not DF.debugRoleIcons
-                print("|cff00ff00DandersFrames:|r Role icon debug " .. (DF.debugRoleIcons and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format("Role icon debug %s", DF.debugRoleIcons and L["enabled"] or L["disabled"]))
                 print("  Enter/leave combat to see role icon update logs")
             elseif msg == "debugslider" then
                 DF.debugSliderUpdates = not DF.debugSliderUpdates
-                print("|cff00ff00DandersFrames:|r Slider update debug " .. (DF.debugSliderUpdates and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format("Slider update debug %s", DF.debugSliderUpdates and L["enabled"] or L["disabled"]))
                 if DF.debugSliderUpdates then
                     print("  Drag any slider to see update function calls")
-                    print("  |cff88ff88Green|r = lightweight update, |cffffff00Yellow|r = full update")
+                    print("  " .. format("%sGreen%s = lightweight update, %sYellow%s = full update", "|cff88ff88", "|r", "|cffffff00", "|r"))
                 end
             elseif msg == "debugrested" then
                 if DF.DebugRestedIndicator then
@@ -4181,7 +4209,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif msg == "debugheaders" then
                 -- Toggle header debug mode
                 DF.debugHeaders = not DF.debugHeaders
-                print("|cff00ff00DandersFrames:|r Header debug " .. (DF.debugHeaders and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format("Header debug %s", DF.debugHeaders and L["enabled"] or L["disabled"]))
             elseif msg == "raidbg" then
                 -- Toggle raid group debug backgrounds
                 if DF.ToggleRaidDebugBackgrounds then
@@ -4203,12 +4231,126 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 else
                     print("|cffff0000DandersFrames:|r Aura timer not available")
                 end
+            elseif msg == "testwizard" then
+                if DF.TestPopupWizard then
+                    DF:TestPopupWizard()
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
+            elseif msg == "testhighlight" then
+                -- Debug: open settings to Frame tab and highlight width/height
+                if not DF.GUIFrame or not DF.GUIFrame:IsShown() then
+                    DF:ToggleGUI()
+                end
+                if DF.GUI and DF.GUI.Tabs and DF.GUI.Tabs["general_frame"] then
+                    DF.GUI.Tabs["general_frame"]:Click()
+                end
+                C_Timer.After(0.3, function()
+                    -- Debug: dump page children info
+                    local page = DF.GUI and DF.GUI.Pages and DF.GUI.Pages["general_frame"]
+                    if page then
+                        print("|cff00ff00DandersFrames:|r Page found, children: " .. (page.children and #page.children or "nil"))
+                        if page.children then
+                            local found = 0
+                            for i, w in ipairs(page.children) do
+                                -- Check direct children
+                                if w.searchEntry and (w.searchEntry.dbKey == "frameWidth" or w.searchEntry.dbKey == "frameHeight") then
+                                    found = found + 1
+                                    print("  [" .. i .. "] dbKey=" .. w.searchEntry.dbKey)
+                                end
+                                -- Check settings group children
+                                if w.isSettingsGroup and w.groupChildren then
+                                    for j, entry in ipairs(w.groupChildren) do
+                                        if entry.widget and entry.widget.searchEntry then
+                                            local dk = entry.widget.searchEntry.dbKey
+                                            if dk == "frameWidth" or dk == "frameHeight" then
+                                                found = found + 1
+                                                print("  [" .. i .. "].group[" .. j .. "] dbKey=" .. dk .. " visible=" .. tostring(entry.widget:IsVisible()))
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                            print("  Found " .. found .. " matching widgets")
+                        end
+                    else
+                        print("|cffff0000DandersFrames:|r Page 'general_frame' not found")
+                        if DF.GUI and DF.GUI.Pages then
+                            print("  Available pages:")
+                            for k, _ in pairs(DF.GUI.Pages) do
+                                print("  - " .. tostring(k))
+                            end
+                        end
+                    end
+                    DF:HighlightSettings("general_frame", {"frameWidth", "frameHeight"})
+                end)
+            elseif msg == "testalert" then
+                if DF.TestPopupAlert then
+                    DF:TestPopupAlert()
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
+            elseif msg:match("^importwizard ") then
+                local str = msg:match("^importwizard (.+)$")
+                if str and DF.WizardBuilder then
+                    DF.WizardBuilder:HandleImportCommand(str)
+                else
+                    print("|cffff0000DandersFrames:|r Usage: /df importwizard <string>")
+                end
+            elseif msg == "aurasetup" then
+                -- Launch the Aura Filter Setup wizard
+                if DF.WizardBuilder then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Aura Filter Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
+                    end
+                else
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                end
+            elseif msg == "testbuilder" then
+                -- Test the wizard builder popup
+                if DF.ShowWizardBuilder then
+                    DF:ShowWizardBuilder("Test Builder Wizard", function(name)
+                        DF:Debug("Builder saved wizard: " .. tostring(name))
+                        print("|cff00ff00DandersFrames:|r " .. format(L["Wizard '%s' saved!"], tostring(name)))
+                    end)
+                else
+                    print("|cffff0000DandersFrames:|r WizardBuilder not loaded")
+                end
+            elseif msg == "testpicker" then
+                -- Test the settings picker mode
+                if DF.EnterSettingsPickerMode then
+                    DF:EnterSettingsPickerMode(function(tabName, dbKey, controlType)
+                        DF:Debug("Picker selected: tab=" .. tostring(tabName) .. " key=" .. tostring(dbKey) .. " type=" .. tostring(controlType))
+                        print("|cff00ff00DandersFrames:|r " .. format(L["Picked setting: %s%s%s from tab %s%s%s"], "|cffffffff", tostring(dbKey), "|r", "|cffffffff", tostring(tabName), "|r"))
+                    end)
+                else
+                    print("|cffff0000DandersFrames:|r Popup module not loaded")
+                end
+            elseif msg == "localewarn" or msg == "localewarnings" then
+                -- Toggle AceLocale missing-key warnings for this session
+                DF:SetLocaleWarnings(not DF.localeWarningsEnabled)
+                print("|cff00ff00DandersFrames:|r Locale warnings " .. (DF.localeWarningsEnabled and "|cff00ff00ENABLED|r" or "|cffff9900DISABLED|r") .. " for this session")
             elseif msg == "profiler" then
                 -- Toggle the function profiler UI
                 if DF.Profiler then
                     DF.Profiler:ToggleUI()
                 else
                     print("|cffff0000DandersFrames:|r Profiler not loaded")
+                end
+            elseif msg == "profiler hook" then
+                -- Toggle the OnUpdate hook (requires /rl)
+                if not DandersFramesDB_v2 then DandersFramesDB_v2 = {} end
+                local newState = not DandersFramesDB_v2.profilerOnUpdateHook
+                DandersFramesDB_v2.profilerOnUpdateHook = newState
+                if newState then
+                    print("|cff00ff00DandersFrames:|r Profiler OnUpdate hook |cff00ff00ENABLED|r. Type |cffeda55f/rl|r to apply.")
+                else
+                    print("|cff00ff00DandersFrames:|r Profiler OnUpdate hook |cffff9900DISABLED|r. Type |cffeda55f/rl|r to apply.")
                 end
             elseif msg == "profile" or msg:match("^profile %d") then
                 -- Quick profile run: /df profile [seconds]
@@ -4315,7 +4457,56 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 DF:UpdateRaidGroupLabels()
             end
         end)
-        
+
+        -- Show Aura Filter Setup wizard for existing users on first login after update.
+        -- Skip entirely when Blizzard's aura pipeline has been removed (12.0.5+):
+        -- the wizard walks users through migrating from Blizzard → Direct API
+        -- filtering, which is meaningless when Blizzard source no longer exists.
+        -- The API-block popup already tells users what happened and points them
+        -- at the Aura Filters tab.
+        local blizzardAuraSourceGone =
+            DandersFramesDB_v2 and DandersFramesDB_v2.apiBlocked
+            and DandersFramesDB_v2.apiBlocked.blizzardAuraSource
+        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenAuraSetupWizard
+           and not blizzardAuraSourceGone then
+            DandersFramesDB_v2.seenAuraSetupWizard = true
+            C_Timer.After(3, function()
+                if DF.WizardBuilder and not InCombatLockdown() then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Aura Filter Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
+                    end
+                end
+            end)
+        elseif blizzardAuraSourceGone and DandersFramesDB_v2 then
+            -- Mark as "seen" so that if/when Blizzard reverses the change and
+            -- this block stops catching, we don't suddenly pop the wizard on a
+            -- user who's been running for months without it.
+            DandersFramesDB_v2.seenAuraSetupWizard = true
+        end
+
+        -- Show Private Aura Overlay Setup wizard for existing users on first login after update
+        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenOverlaySetupWizard then
+            DandersFramesDB_v2.seenOverlaySetupWizard = true
+            -- Delay to avoid colliding with other startup wizards
+            C_Timer.After(5, function()
+                if DF.WizardBuilder and not InCombatLockdown() and not DF:IsPopupShown() then
+                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
+                    for _, entry in ipairs(builtins) do
+                        if entry.name == "Private Aura Overlay Setup" and entry.build then
+                            local config = entry.build()
+                            if config then DF:ShowPopupWizard(config) end
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+
     elseif event == "GROUP_ROSTER_UPDATE" then
         if DF.RosterDebugEvent then DF:RosterDebugEvent("Core.lua:GROUP_ROSTER_UPDATE") end
         
@@ -4337,6 +4528,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Update all frames (resource bar colors may change)
         if DF.UpdateAllFrames then
             DF:UpdateAllFrames()
+        end
+        -- Re-anchor raid container — spec switch can change layout dimensions
+        -- Must be outside combat: SetScale on the container is protected
+        if DF.UpdateRaidContainerPosition and not InCombatLockdown() then
+            DF:UpdateRaidContainerPosition()
         end
         -- Refresh Aura Designer (per-spec aura lists may differ)
         if DF.AuraDesigner and DF.AuraDesigner.Engine and DF.AuraDesigner.Engine.ForceRefreshAllFrames then
@@ -4422,6 +4618,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Refresh auras now that we're out of combat
         if DF.UpdateAllAuras then
             DF:UpdateAllAuras()
+        end
+        -- Re-configure any AD indicators that were created during combat
+        -- (SetPropagateMouseMotion/Clicks are protected and can't be called in combat)
+        if DF.AuraDesigner and DF.AuraDesigner.Engine then
+            DF.adConfigVersion = (DF.adConfigVersion or 0) + 1
+            local adEngine = DF.AuraDesigner.Engine
+            local function preWarmFrame(frame)
+                if frame and DF:IsAuraDesignerEnabled(frame) then
+                    adEngine:PreWarmIndicators(frame)
+                end
+            end
+            if DF.IteratePartyFrames then DF:IteratePartyFrames(preWarmFrame) end
+            if DF.IterateRaidFrames then DF:IterateRaidFrames(preWarmFrame) end
         end
         -- Re-apply mouse settings on aura icons created during combat
         if DF.auraIconsNeedMouseFix then
@@ -4549,7 +4758,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
             
-            print("|cffff9900DandersFrames:|r Test mode ended — entering combat.")
+            print("|cffff9900DandersFrames:|r " .. L["Test mode ended — entering combat."])
             
             -- Switch from test mode state drivers ([combat] conditions) to group
             -- transition drivers ([group:raid] conditions) so frames stay visible
@@ -4595,6 +4804,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             DF:UpdateRestedIndicator()
         end
     end
+end
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    return DF._MainEventDispatcher(self, event, arg1)
 end)
 
 -- ============================================================
@@ -4734,6 +4947,16 @@ function DF:FullProfileRefresh()
         DF:RebuildDirectFilterStrings()
     end
 
+    -- Re-initialize aura source mode for the new profile
+    -- Uses SetAuraSourceMode which forces a full teardown + reinit, clearing
+    -- stale caches and restoring Blizzard frame events when switching modes.
+    if DF.SetAuraSourceMode then
+        local partyMode = DF.db.party and DF.db.party.auraSourceMode
+        local raidMode = DF.db.raid and DF.db.raid.auraSourceMode
+        local needsDirect = (partyMode == "DIRECT") or (raidMode == "DIRECT")
+        DF:SetAuraSourceMode(needsDirect and "DIRECT" or "BLIZZARD")
+    end
+
     -- Clear color curves (colors may have changed)
     if DF.UpdateColorCurve then
         DF:UpdateColorCurve()
@@ -4766,6 +4989,9 @@ function DF:FullProfileRefresh()
     -- === UPDATE RAID CONTAINER POSITION ===
     if DF.raidContainer then
         local scale = raidDB.frameScale or 1.0
+        DF:Debug("RAIDPOS", "FullProfileRefresh: applying raid container pos (%.1f,%.1f) scale=%.3f autoActive=%s",
+            raidDB.raidAnchorX or 0, raidDB.raidAnchorY or 0, scale,
+            tostring(DF.AutoProfilesUI and DF.AutoProfilesUI.activeRuntimeProfile and DF.AutoProfilesUI.activeRuntimeProfile.name or "none"))
         DF.raidContainer:SetScale(scale)
         DF.raidContainer:ClearAllPoints()
         DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", (raidDB.raidAnchorX or 0) / scale, (raidDB.raidAnchorY or 0) / scale)
@@ -4827,6 +5053,7 @@ function DF:FullProfileRefresh()
             local raidDb = DF:GetRaidDB()
             if not raidDb.raidUseGroups then
                 DF.FlatRaidFrames:ApplyLayoutSettings()
+                DF.FlatRaidFrames:ResizeInnerContainer()
             end
         end
     end
@@ -4850,7 +5077,33 @@ function DF:FullProfileRefresh()
     if DF.UpdateHeaderVisibility then
         DF:UpdateHeaderVisibility()
     end
-    
+
+    -- === POST-SWITCH LAYOUT SETTLE ===
+    -- After a profile switch the headers are shown/hidden correctly, but their
+    -- sorting attributes (groupFilter, nameList, sortMethod) may reflect the old
+    -- profile. ApplyRaidGroupSorting rebuilds them from the new profile's settings.
+    -- The deferred TriggerRaidPosition fires after SecureGroupHeaderTemplate has
+    -- finished processing all attribute changes, giving a clean final reposition.
+    local raidDbSettle = DF:GetRaidDB()
+    if IsInRaid() or DF.raidTestMode then
+        if raidDbSettle and raidDbSettle.raidUseGroups then
+            if DF.ApplyRaidGroupSorting then
+                DF:ApplyRaidGroupSorting()
+            end
+            C_Timer.After(0, function()
+                if not InCombatLockdown() and DF.TriggerRaidPosition then
+                    DF:TriggerRaidPosition()
+                end
+            end)
+        elseif DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
+            C_Timer.After(0, function()
+                if not InCombatLockdown() then
+                    DF.FlatRaidFrames:UpdateNameList()
+                end
+            end)
+        end
+    end
+
     -- === UPDATE TEST FRAMES IF ACTIVE ===
     -- Use full layout refresh so test frames re-read all settings through the
     -- proxy — picks up runtime auto-layout overrides or restored base values.
@@ -4875,6 +5128,9 @@ function DF:FullProfileRefresh()
         DF:UpdateAllFrameAppearances()
     end
     
+    -- Bump AD config version so indicators reconfigure with new profile settings
+    DF.adConfigVersion = (DF.adConfigVersion or 0) + 1
+
     -- === REFRESH AURAS ===
     if DF.UpdateAllAuras then
         DF:UpdateAllAuras()
@@ -4899,6 +5155,65 @@ function DF:FullProfileRefresh()
 end
 
 -- ============================================================
+-- WIZARD SETTINGS APPLICATION
+-- Used by the popup wizard system to apply data-driven settings
+-- maps from user-created wizards (WizardBuilder)
+-- ============================================================
+
+local strsplit = strsplit
+
+-- Set a DB value using dot-notation path (e.g., "party.frameWidth")
+function DF:SetDBKeyByPath(path, value)
+    local mode, key = path:match("^(%w+)%.(.+)$")
+    if mode and key and DF.db and DF.db[mode] then
+        DF.db[mode][key] = value
+    end
+end
+
+-- Get a DB value using dot-notation path
+function DF:GetDBKeyByPath(path)
+    local mode, key = path:match("^(%w+)%.(.+)$")
+    if mode and key and DF.db and DF.db[mode] then
+        return DF.db[mode][key]
+    end
+    return nil
+end
+
+-- Apply a wizard's settingsMap based on collected answers
+-- settingsMap format: { stepId = { answerValue = { ["mode.dbKey"] = newValue, ... } } }
+function DF:ApplyWizardSettingsMap(settingsMap, answers)
+    if not settingsMap or not answers then return end
+
+    for stepId, answerValue in pairs(answers) do
+        local stepMap = settingsMap[stepId]
+        if stepMap then
+            if type(answerValue) == "table" then
+                -- Multi-select: apply settings for each selected value
+                for _, val in ipairs(answerValue) do
+                    local changes = stepMap[val]
+                    if changes then
+                        for dbKeyPath, newValue in pairs(changes) do
+                            DF:SetDBKeyByPath(dbKeyPath, newValue)
+                        end
+                    end
+                end
+            else
+                -- Single-select: apply settings for the selected value
+                local changes = stepMap[answerValue]
+                if changes then
+                    for dbKeyPath, newValue in pairs(changes) do
+                        DF:SetDBKeyByPath(dbKeyPath, newValue)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Refresh everything after applying settings
+    DF:UpdateAll("WizardApply")
+end
+
+-- ============================================================
 -- MINIMAP BUTTON (using LibDBIcon)
 -- ============================================================
 
@@ -4919,7 +5234,7 @@ local LDB = LibStub("LibDataBroker-1.1"):NewDataObject("DandersFrames", {
             if db.soloMode ~= nil then
                 db.soloMode = not db.soloMode
                 DF:UpdateAllFrames()
-                print("|cff00ff00DandersFrames:|r Solo mode " .. (db.soloMode and "enabled" or "disabled"))
+                print("|cff00ff00DandersFrames:|r " .. format(L["Solo mode %s"], db.soloMode and L["enabled"] or L["disabled"]))
             end
         end
     end,

@@ -5,20 +5,46 @@ local addonName, DF = ...
 -- Animated/styled borders for selection and aggro highlights
 -- ============================================================
 
--- Animation settings
-local ANIMATION_SPEED = 40
+-- Animation settings.
+--
+-- ANIMATION_SPEED paired with UPDATE_INTERVAL determines the visual
+-- smoothness. The per-sample pixel delta is ANIMATION_SPEED / Hz.
+-- When that delta exceeds ~1 pixel the eye perceives discrete stepping
+-- rather than continuous motion — the LCD persistence/blur trick that
+-- sells sub-pixel motion as smooth flow breaks down.
+--
+-- The original code ran at 60 Hz with speed 40 → 0.67 px/sample.
+-- That's sub-pixel and looks smooth. When the throttle dropped redraw
+-- to 30 Hz it became 1.33 px/sample (super-pixel) which looks choppy.
+--
+-- Solution: halve the speed. 30 Hz × 20 px/sec = 0.67 px/sample, the
+-- same per-sample delta as the original. Visually identical smoothness
+-- to pre-throttle. The only behavioral change is the full pattern
+-- cycle now takes 0.6s instead of 0.3s — ants march at half speed,
+-- which a lot of users actually prefer over the more frenetic original.
+local ANIMATION_SPEED = 20
 local DASH_LENGTH = 6
 local GAP_LENGTH = 6
 local PATTERN_LENGTH = DASH_LENGTH + GAP_LENGTH
 
+-- Redraw throttle. At 30 Hz with ANIMATION_SPEED 20 the per-sample
+-- delta is 0.67 px, matching the original 60 Hz × 40 smoothness exactly.
+-- `elapsed` still accumulates every WoW tick so the offset stays
+-- smooth when we do sample.
+local UPDATE_INTERVAL = 1 / 30
+
 -- Global animator for marching ants effect
 local SelectionAnimator = CreateFrame("Frame")
 SelectionAnimator.elapsed = 0
+SelectionAnimator.accum = 0
 SelectionAnimator.frames = {}
 SelectionAnimator.hasFrames = false  -- Track whether any frames are registered
 
 local function SelectionAnimator_OnUpdate(self, elapsed)
     self.elapsed = self.elapsed + elapsed
+    self.accum = self.accum + elapsed
+    if self.accum < UPDATE_INTERVAL then return end
+    self.accum = 0
     local offset = (self.elapsed * ANIMATION_SPEED) % PATTERN_LENGTH
     for highlightFrame in pairs(self.frames) do
         if highlightFrame:IsShown() then
@@ -30,6 +56,10 @@ end
 -- Add/remove frames and auto-enable/disable the OnUpdate
 local function SelectionAnimator_Add(frame)
     SelectionAnimator.frames[frame] = true
+    -- Prime the throttle so the first tick after a frame is added draws
+    -- immediately. Without this, there's up to 33ms of empty border on
+    -- first appearance.
+    SelectionAnimator.accum = UPDATE_INTERVAL
     if not SelectionAnimator.hasFrames then
         SelectionAnimator.hasFrames = true
         SelectionAnimator:SetScript("OnUpdate", SelectionAnimator_OnUpdate)
@@ -71,49 +101,84 @@ local function InitAnimatedBorder(ch)
 end
 
 -- PERFORMANCE FIX: These functions are defined at module level to avoid creating
--- new closures every frame when UpdateAnimatedBorder runs
+-- new closures every frame when UpdateAnimatedBorder runs.
+--
+-- Additional per-dash optimization (2026-04-08):
+--   * Only hide the *trailing* dashes past numDashes. The leading ones
+--     will be Show()'d again immediately, so hiding them was wasted work.
+--   * Cache r/g/b/a on each dash and skip SetColorTexture when the color
+--     hasn't changed. Highlight colors only change on state transition
+--     (selection / aggro / hover), not per animation tick.
+--   * Cache width/height on each dash and skip SetSize when unchanged.
+--     Sizes only change when an edge length changes or a dash rolls past
+--     an edge boundary — most ticks they stay constant.
+--
+-- ClearAllPoints + SetPoint still run every tick because that IS the
+-- marching animation (dashes shift position each frame). Show() also
+-- still runs because previously-hidden dashes can become visible as the
+-- ants march across the edge.
+
 local function DrawHorizontalEdge(ch, border, dashes, isTop, edgeOffset, width, thick, inset, r, g, b, a)
     local numDashes = math.ceil(width / PATTERN_LENGTH) + 2
-    for i, dash in ipairs(dashes) do dash:Hide() end
+    -- Hide only the trailing dashes we won't touch this frame
+    for i = numDashes + 1, #dashes do dashes[i]:Hide() end
     local startPos = -(edgeOffset % PATTERN_LENGTH)
     for i = 1, numDashes do
         local dashStart = startPos + (i - 1) * PATTERN_LENGTH
         local dashEnd = dashStart + DASH_LENGTH
         local visStart, visEnd = math.max(0, dashStart), math.min(width, dashEnd)
-        if visEnd > visStart and dashes[i] then
-            local dash = dashes[i]
+        local dash = dashes[i]
+        if visEnd > visStart and dash then
+            local dashW = visEnd - visStart
             dash:ClearAllPoints()
-            dash:SetSize(visEnd - visStart, thick)
+            if dash.dfLastW ~= dashW or dash.dfLastH ~= thick then
+                dash:SetSize(dashW, thick)
+                dash.dfLastW, dash.dfLastH = dashW, thick
+            end
             if isTop then
                 dash:SetPoint("TOPLEFT", ch, "TOPLEFT", inset + visStart, -inset)
             else
                 dash:SetPoint("BOTTOMLEFT", ch, "BOTTOMLEFT", inset + visStart, inset)
             end
-            dash:SetColorTexture(r, g, b, a)
+            if dash.dfLastR ~= r or dash.dfLastG ~= g or dash.dfLastB ~= b or dash.dfLastA ~= a then
+                dash:SetColorTexture(r, g, b, a)
+                dash.dfLastR, dash.dfLastG, dash.dfLastB, dash.dfLastA = r, g, b, a
+            end
             dash:Show()
+        elseif dash then
+            dash:Hide()
         end
     end
 end
 
 local function DrawVerticalEdge(ch, border, dashes, isRight, edgeOffset, height, thick, inset, r, g, b, a)
     local numDashes = math.ceil(height / PATTERN_LENGTH) + 2
-    for i, dash in ipairs(dashes) do dash:Hide() end
+    for i = numDashes + 1, #dashes do dashes[i]:Hide() end
     local startPos = -(edgeOffset % PATTERN_LENGTH)
     for i = 1, numDashes do
         local dashStart = startPos + (i - 1) * PATTERN_LENGTH
         local dashEnd = dashStart + DASH_LENGTH
         local visStart, visEnd = math.max(0, dashStart), math.min(height, dashEnd)
-        if visEnd > visStart and dashes[i] then
-            local dash = dashes[i]
+        local dash = dashes[i]
+        if visEnd > visStart and dash then
+            local dashH = visEnd - visStart
             dash:ClearAllPoints()
-            dash:SetSize(thick, visEnd - visStart)
+            if dash.dfLastW ~= thick or dash.dfLastH ~= dashH then
+                dash:SetSize(thick, dashH)
+                dash.dfLastW, dash.dfLastH = thick, dashH
+            end
             if isRight then
                 dash:SetPoint("TOPRIGHT", ch, "TOPRIGHT", -inset, -inset - visStart)
             else
                 dash:SetPoint("TOPLEFT", ch, "TOPLEFT", inset, -inset - visStart)
             end
-            dash:SetColorTexture(r, g, b, a)
+            if dash.dfLastR ~= r or dash.dfLastG ~= g or dash.dfLastB ~= b or dash.dfLastA ~= a then
+                dash:SetColorTexture(r, g, b, a)
+                dash.dfLastR, dash.dfLastG, dash.dfLastB, dash.dfLastA = r, g, b, a
+            end
             dash:Show()
+        elseif dash then
+            dash:Hide()
         end
     end
 end
@@ -384,6 +449,86 @@ end
 
 -- Expose for reuse by the Aura Designer border indicator
 DF.ApplyHighlightStyle = ApplyHighlightStyle
+
+-- ============================================================
+-- UPDATE HIGHLIGHT STYLE COLOR (lightweight recolor)
+-- ============================================================
+--
+-- Changes the color/alpha of a highlight without touching geometry.
+-- Used by the Aura Designer expiring ticker (~3 Hz) so it can animate
+-- a color curve as an aura approaches expiration without calling the
+-- full ApplyHighlightStyle each tick.
+--
+-- ApplyHighlightStyle is expensive because it tears everything down:
+-- hides all edge textures, hides every dash in the animated border
+-- (80 Hide ops), removes the frame from the shared animator, and then
+-- rebuilds whichever style was requested — even if the only thing that
+-- changed was the color. For an animated border with expiring enabled,
+-- that tear-down happens 3 times per second per frame on top of the
+-- 30 Hz animation, which is pure waste.
+--
+-- This helper matches each style exactly and only calls the subset of
+-- APIs needed to change colors:
+--
+--   NONE:     no-op
+--   SOLID:    4x SetColorTexture on the edge lines
+--   GLOW:     4x SetBackdropBorderColor on the glow layers (same per-
+--             layer alpha falloff as the original style code)
+--   CORNERS:  8x SetColorTexture on the corner textures
+--   ANIMATED: just mutate ch.animR/G/B/A. The next animator tick picks
+--             up the new color via the per-dash color cache in
+--             DrawHorizontalEdge / DrawVerticalEdge and calls
+--             SetColorTexture only on dashes whose cached color differs.
+--             Zero work on *this* tick.
+--   DASHED:   same as ANIMATED but there's no animator redrawing it,
+--             so we call UpdateAnimatedBorder(ch, 0) once to push the
+--             new colors to the dashes. Still far cheaper than the
+--             full tear-down.
+--
+-- IMPORTANT: only call this when the style has NOT changed from what
+-- was last set via ApplyHighlightStyle. If the style changes, call
+-- ApplyHighlightStyle instead — this helper does not create, move,
+-- or resize geometry.
+local function UpdateHighlightStyleColor(ch, mode, r, g, b, alpha)
+    if not ch or mode == "NONE" then return end
+
+    if mode == "SOLID" then
+        if ch.topLine    then ch.topLine:SetColorTexture(r, g, b, alpha) end
+        if ch.bottomLine then ch.bottomLine:SetColorTexture(r, g, b, alpha) end
+        if ch.leftLine   then ch.leftLine:SetColorTexture(r, g, b, alpha) end
+        if ch.rightLine  then ch.rightLine:SetColorTexture(r, g, b, alpha) end
+
+    elseif mode == "ANIMATED" then
+        -- Animator picks up the new color on its next tick. Zero ops here.
+        ch.animR, ch.animG, ch.animB, ch.animA = r, g, b, alpha
+
+    elseif mode == "DASHED" then
+        -- No animator; push the new color through via a one-shot redraw.
+        ch.animR, ch.animG, ch.animB, ch.animA = r, g, b, alpha
+        DF:UpdateAnimatedBorder(ch, 0)
+
+    elseif mode == "GLOW" then
+        if ch.glowLayers then
+            for i, layer in ipairs(ch.glowLayers) do
+                -- Matches the alpha falloff in ApplyHighlightStyle's GLOW branch
+                local layerAlpha = alpha * (1.1 - (i * 0.25))
+                layer:SetBackdropBorderColor(r, g, b, math.max(0, layerAlpha))
+            end
+        end
+
+    elseif mode == "CORNERS" then
+        if ch.topLine     then ch.topLine:SetColorTexture(r, g, b, alpha) end
+        if ch.leftLine    then ch.leftLine:SetColorTexture(r, g, b, alpha) end
+        if ch.topRight    then ch.topRight:SetColorTexture(r, g, b, alpha) end
+        if ch.rightTop    then ch.rightTop:SetColorTexture(r, g, b, alpha) end
+        if ch.bottomLeft  then ch.bottomLeft:SetColorTexture(r, g, b, alpha) end
+        if ch.leftBottom  then ch.leftBottom:SetColorTexture(r, g, b, alpha) end
+        if ch.bottomRight then ch.bottomRight:SetColorTexture(r, g, b, alpha) end
+        if ch.rightBottom then ch.rightBottom:SetColorTexture(r, g, b, alpha) end
+    end
+end
+
+DF.UpdateHighlightStyleColor = UpdateHighlightStyleColor
 
 -- ============================================================
 -- UPDATE HIGHLIGHTS FOR A FRAME

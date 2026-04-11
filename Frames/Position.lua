@@ -1,9 +1,128 @@
 local addonName, DF = ...
+local L = DF.L
+local format = string.format
 
 -- ============================================================
 -- FRAMES POSITION MODULE
 -- Contains mover, grid overlay, and position panel
 -- ============================================================
+
+-- ============================================================
+-- RAIDPOS DIAGNOSTIC HELPERS
+-- Targeted instrumentation for the "raid frames jump on roster
+-- change and stay stuck" bug. Output goes through DF:Debug under
+-- the "RAIDPOS" category so users can copy/paste from the Debug
+-- Console. Logging cost is one boolean check when disabled.
+-- ============================================================
+
+local function ShortCaller(level)
+    -- Returns "filename:line" of the caller `level` frames up.
+    -- level=2 -> direct caller of the function that calls ShortCaller.
+    local info = debugstack(level or 2, 1, 0)
+    if not info then return "?" end
+    -- debugstack format: "...\Frames\Position.lua:1841: in function 'NudgePosition'\n"
+    local file, line = info:match("([^\\/]+):(%d+):")
+    if file then return file .. ":" .. line end
+    return "?"
+end
+
+-- Log a write to db.raidAnchorX/Y. Call BEFORE the assignment so
+-- we can capture the old value, then perform the assignment.
+function DF:LogRaidAnchorWrite(reason, newX, newY)
+    if not DF.Debug then return end
+    local db = DF:GetRaidDB()
+    local oldX, oldY = db and db.raidAnchorX or 0, db and db.raidAnchorY or 0
+    DF:Debug("RAIDPOS", "raidAnchor WRITE [%s] @ %s : (%.1f,%.1f) -> (%.1f,%.1f)",
+        tostring(reason), ShortCaller(3), oldX, oldY, newX or 0, newY or 0)
+end
+
+-- ============================================================
+-- POSITION PANEL MODE DESCRIPTORS
+-- ============================================================
+-- The position panel (the floating nudge UI shown while unlocking
+-- frames) supports multiple targets: party frames, raid frames, the
+-- personal targeted spells container, and the Targeted List. Each
+-- target has its own db fields and its own "apply" function. The
+-- descriptor table below encapsulates those differences so the panel
+-- code can stay target-agnostic.
+--
+-- DF.positionPanelMode selects which descriptor is active. Clicking
+-- any mover switches the mode; the panel then re-reads from the
+-- descriptor's db fields and nudge operations write back to them.
+
+local POSITION_MODES = {
+    party = {
+        title = "Party Position",
+        getDB = function() return DF:GetDB() end,
+        xField = "anchorX",
+        yField = "anchorY",
+        apply = function() if DF.UpdateContainerPosition then DF:UpdateContainerPosition() end end,
+        useAccentColor = "accent",  -- main theme color
+    },
+    raid = {
+        title = "Raid Position",
+        getDB = function() return DF:GetRaidDB() end,
+        xField = "raidAnchorX",
+        yField = "raidAnchorY",
+        apply = function() if DF.UpdateRaidContainerPosition then DF:UpdateRaidContainerPosition() end end,
+        logWrites = true,
+        autoProfileX = "raidAnchorX",  -- matches xField; AutoProfilesUI key
+        autoProfileY = "raidAnchorY",
+        useAccentColor = "raid",
+    },
+    personal = {
+        title = "Personal Targeted",
+        getDB = function() return DF:GetDB() end,
+        xField = "personalTargetedSpellX",
+        yField = "personalTargetedSpellY",
+        apply = function()
+            if DF.UpdatePersonalTargetedSpellsPosition then
+                DF:UpdatePersonalTargetedSpellsPosition()
+            end
+            -- Also reposition the personal mover to match
+            if DF.personalTargetedSpellsMover and DF.personalTargetedSpellsMover:IsShown() then
+                local db = DF:GetDB()
+                DF.personalTargetedSpellsMover:ClearAllPoints()
+                DF.personalTargetedSpellsMover:SetPoint("CENTER", UIParent, "CENTER",
+                    db.personalTargetedSpellX or 0, db.personalTargetedSpellY or -150)
+            end
+        end,
+        useAccentColor = "accent",
+    },
+    targetedList = {
+        title = "Targeted List",
+        getDB = function() return DF:GetDB() end,
+        xField = "targetedListX",
+        yField = "targetedListY",
+        apply = function()
+            if DF.UpdateTargetedListLayout then DF:UpdateTargetedListLayout() end
+            -- Also reposition the mover to match
+            if DF.targetedListMoverFrame and DF.targetedListMoverFrame:IsShown() then
+                local db = DF:GetDB()
+                DF.targetedListMoverFrame:ClearAllPoints()
+                DF.targetedListMoverFrame:SetPoint("CENTER", UIParent, "CENTER",
+                    db.targetedListX or 0, db.targetedListY or -10)
+            end
+        end,
+        useAccentColor = "accent",
+    },
+}
+
+-- Accessor helper. Defaults to party mode if something's off.
+local function GetPositionMode()
+    return POSITION_MODES[DF.positionPanelMode] or POSITION_MODES.party
+end
+
+-- Exposed so the movers (personal targeted spells, targeted list)
+-- can switch the panel target when clicked.
+function DF:SetPositionPanelMode(mode)
+    if not POSITION_MODES[mode] then return end
+    DF.positionPanelMode = mode
+    if DF.positionPanel then
+        if DF.positionPanel.UpdateTheme then DF.positionPanel:UpdateTheme() end
+        DF:UpdatePositionPanel()
+    end
+end
 
 function DF:CreateMoverFrame()
     -- Cannot create UI elements during combat
@@ -46,7 +165,22 @@ function DF:CreateMoverFrame()
     -- Shared drag state between OnDragStart/OnUpdate/OnDragStop
     local dragOffsetX, dragOffsetY = 0, 0
 
+    -- Left-click switches the shared position panel to party mode.
+    -- This is necessary because clicking the personal or targeted-list
+    -- mover switches the panel away from party — clicking the party
+    -- mover should bring it back.
+    mover:HookScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("party")
+        end
+    end)
+
     mover:SetScript("OnDragStart", function(self)
+        -- Switch the position panel to party mode so nudge buttons
+        -- affect the party container.
+        if DF.SetPositionPanelMode then
+            DF:SetPositionPanelMode("party")
+        end
         DF.isDragging = true
         -- Use saved db position as truth — avoids all GetCenter/GetLeft
         -- ambiguity on scaled frames. Cursor position in UIParent coords.
@@ -156,27 +290,27 @@ local InCombatLockdown = InCombatLockdown
 
 -- Quick action dispatch table
 local PERM_MOVER_ACTIONS = {
-    NONE              = { label = "None",                         combatSafe = true },
-    OPEN_SETTINGS     = { label = "Open Settings",                combatSafe = true,  fn = function() DF:ToggleGUI() end },
-    UNLOCK_FRAMES     = { label = "Unlock Frames",                combatSafe = false, fn = function(mode)
+    NONE              = { label = L["None"],                       combatSafe = true },
+    OPEN_SETTINGS     = { label = L["Open Settings"],              combatSafe = true,  fn = function() DF:ToggleGUI() end },
+    UNLOCK_FRAMES     = { label = L["Unlock Frames"],              combatSafe = false, fn = function(mode)
         if mode == "raid" then DF:UnlockRaidFrames() else DF:UnlockFrames() end
     end },
-    TOGGLE_TEST       = { label = "Toggle Test Mode",             combatSafe = false, fn = function() if DF.ToggleTestMode then DF:ToggleTestMode() end end },
-    SWITCH_PROFILE    = { label = "Quick Switch Profile",         combatSafe = false, fn = function(mode, handle) DF:ShowPermanentMoverProfilePopup(handle) end },
-    SWITCH_CC_PROFILE = { label = "Quick Switch CC Profile",      combatSafe = false, fn = function(mode, handle) DF:ShowPermanentMoverCCProfilePopup(handle) end },
-    CYCLE_PROFILE     = { label = "Cycle Next Profile",           combatSafe = false, fn = function() DF:CycleNextProfile() end },
-    CYCLE_CC_PROFILE  = { label = "Cycle Next CC Profile",        combatSafe = false, fn = function() DF:CycleNextCCProfile() end },
-    TOGGLE_SOLO       = { label = "Toggle Solo Mode",             combatSafe = false, fn = function()
+    TOGGLE_TEST       = { label = L["Toggle Test Mode"],           combatSafe = false, fn = function() if DF.ToggleTestMode then DF:ToggleTestMode() end end },
+    SWITCH_PROFILE    = { label = L["Quick Switch Profile"],       combatSafe = false, fn = function(mode, handle) DF:ShowPermanentMoverProfilePopup(handle) end },
+    SWITCH_CC_PROFILE = { label = L["Quick Switch CC Profile"],    combatSafe = false, fn = function(mode, handle) DF:ShowPermanentMoverCCProfilePopup(handle) end },
+    CYCLE_PROFILE     = { label = L["Cycle Next Profile"],         combatSafe = false, fn = function() DF:CycleNextProfile() end },
+    CYCLE_CC_PROFILE  = { label = L["Cycle Next CC Profile"],      combatSafe = false, fn = function() DF:CycleNextCCProfile() end },
+    TOGGLE_SOLO       = { label = L["Toggle Solo Mode"],           combatSafe = false, fn = function()
         local db = DF:GetDB()
         db.soloMode = not db.soloMode
         DF:UpdateAllFrames()
         if DF.UpdateDefaultPlayerFrame then DF:UpdateDefaultPlayerFrame() end
-        print("|cff00ff00DandersFrames:|r Solo mode " .. (db.soloMode and "enabled" or "disabled"))
+        print("|cff00ff00DandersFrames:|r " .. format(L["Solo mode %s"], db.soloMode and L["enabled"] or L["disabled"]))
     end },
-    RELOAD_UI         = { label = "Reload UI",                    combatSafe = true,  fn = function() ReloadUI() end },
-    RESET_POSITION    = { label = "Reset Position",               combatSafe = false, fn = function() DF:ResetPosition() end },
-    READY_CHECK       = { label = "Ready Check",                  combatSafe = true,  fn = function() DoReadyCheck() end },
-    PULL_TIMER        = { label = "Pull Timer",                   combatSafe = true,  fn = function()
+    RELOAD_UI         = { label = L["Reload UI"],                  combatSafe = true,  fn = function() ReloadUI() end },
+    RESET_POSITION    = { label = L["Reset Position"],             combatSafe = false, fn = function() DF:ResetPosition() end },
+    READY_CHECK       = { label = L["Ready Check"],                combatSafe = true,  fn = function() DoReadyCheck() end },
+    PULL_TIMER        = { label = L["Pull Timer"],                 combatSafe = true,  fn = function()
         local db = DF:GetDB()
         C_PartyInfo.DoCountdown(db.permanentMoverPullTimerDuration or 10)
     end },
@@ -207,7 +341,7 @@ function DF:CycleNextCCProfile()
             local nextName = profiles[(i % #profiles) + 1]
             CC:SetActiveProfile(nextName)
             CC:ApplyBindings()
-            print("|cff00ff00DandersFrames:|r Click-cast profile: " .. nextName)
+            print("|cff00ff00DandersFrames:|r " .. format(L["Click-cast profile: %s"], nextName))
             return
         end
     end
@@ -364,7 +498,7 @@ function DF:ShowPermanentMoverCCProfilePopup(anchorFrame)
     popup:Populate("Click-Cast Profiles", profiles, current, function(name)
         CC:SetActiveProfile(name)
         CC:ApplyBindings()
-        print("|cff00ff00DandersFrames:|r Click-cast profile: " .. name)
+        print("|cff00ff00DandersFrames:|r " .. format(L["Click-cast profile: %s"], name))
     end, ar, ag, ab)
 
     popup:ClearAllPoints()
@@ -558,6 +692,7 @@ function DF:CreatePermanentMover(container, mode)
 
         if isRaid then
             local stopDb = DF:GetRaidDB()
+            DF:LogRaidAnchorWrite("DragMover:OnDragStop", x, y)
             stopDb.raidAnchorX = x
             stopDb.raidAnchorY = y
             DF:UpdateRaidContainerPosition()
@@ -600,7 +735,7 @@ function DF:CreatePermanentMover(container, mode)
         local action = actionKey and DF.PERM_MOVER_ACTIONS[actionKey]
         if action and action.fn then
             if InCombatLockdown() and not action.combatSafe then
-                print("|cff00ff00DandersFrames:|r Cannot use this action in combat.")
+                print("|cff00ff00DandersFrames:|r " .. L["Cannot use this action in combat."])
                 return
             end
             action.fn(mode, self)
@@ -878,7 +1013,7 @@ function DF:UpdatePermanentMoverVisibility()
     if DF.permanentPartyMover then
         local db = DF:GetDB()
         -- Show if enabled and locked, but hide if raid test mode is active
-        local show = db.permanentMover and db.locked and not DF.raidTestMode
+        local show = db.permanentMover and db.locked and not DF.raidTestMode and not IsInRaid()
         DF:Debug("POSITION", "  Party mover: enabled=%s locked=%s show=%s",
             tostring(db.permanentMover), tostring(db.locked), tostring(show))
         if show then
@@ -1139,18 +1274,22 @@ function DF:HideSnapPreview()
 end
 
 function DF:SnapToGrid(x, y)
-    -- Get db based on current position panel mode
-    local db, container
+    -- Grid settings are party-wide; edge-snap container depends on mode.
+    local db = DF:GetDB()
+    local container
     if DF.positionPanelMode == "raid" then
-        db = DF:GetRaidDB()
         container = DF.raidContainer
+    elseif DF.positionPanelMode == "personal" then
+        container = DF.personalTargetedSpellsMover or DF.container
+    elseif DF.positionPanelMode == "targetedList" then
+        container = DF.targetedListMoverFrame or DF.container
     else
-        db = DF:GetDB()
         container = DF.container
     end
+    if not container then return x, y end
     local gridSize = db.gridSize or 20
     local snapThreshold = gridSize / 2
-    
+
     -- Get frame dimensions for edge/center snapping (account for scale)
     local frameScale = container:GetScale() or 1
     local frameWidth = container:GetWidth() * frameScale
@@ -1217,21 +1356,23 @@ function DF:CreatePositionPanel()
     local C_HOVER      = {r = 0.22, g = 0.22, b = 0.22, a = 1}
     local C_TEXT       = {r = 0.9, g = 0.9, b = 0.9, a = 1}
     
-    -- Use positionPanelMode to determine which mode we're in
+    -- Theme color per mode. Raid uses a distinct color; everything
+    -- else shares the party accent.
     local function GetAccentColor()
-        if DF.positionPanelMode == "raid" then return C_RAID else return C_ACCENT end
+        local mode = GetPositionMode()
+        if mode.useAccentColor == "raid" then return C_RAID end
+        return C_ACCENT
     end
-    
-    -- Helper to get the correct DB based on mode
+
+    -- Helper to get the correct DB based on mode (now delegates to
+    -- the descriptor; retained for minimal-diff in the panel code).
     local function GetPositionDB()
-        if DF.positionPanelMode == "raid" then
-            return DF:GetRaidDB()
-        else
-            return DF:GetDB()
-        end
+        return GetPositionMode().getDB()
     end
-    
-    -- Helper to lock the correct frames based on mode
+
+    -- Helper to lock the correct frames based on mode. Personal and
+    -- Targeted List don't have separate lock paths — they go through
+    -- the regular LockFrames which also hides their movers.
     local function LockCurrentFrames()
         if DF.positionPanelMode == "raid" then
             DF:LockRaidFrames()
@@ -1286,13 +1427,9 @@ function DF:CreatePositionPanel()
                 elem:UpdateThemeColor(c)
             end
         end
-        -- Update title text based on mode
+        -- Update title text based on mode (read from descriptor)
         if panel.title then
-            if DF.positionPanelMode == "raid" then
-                panel.title:SetText("Raid Position")
-            else
-                panel.title:SetText("Position")
-            end
+            panel.title:SetText(GetPositionMode().title or "Position")
         end
     end
     panel.UpdateTheme = UpdateTheme
@@ -1334,20 +1471,20 @@ function DF:CreatePositionPanel()
     xInput:SetScript("OnEnterPressed", function(self)
         local val = tonumber(self:GetText())
         if val then
-            local db = GetPositionDB()
-            if DF.positionPanelMode == "raid" then
-                db.raidAnchorX = val
-                -- If editing profile, save as override
-                if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
-                    DF.AutoProfilesUI:SetProfileSetting("raidAnchorX", val)
+            local mode = GetPositionMode()
+            local db = mode.getDB()
+            if db then
+                if mode.logWrites then
+                    DF:LogRaidAnchorWrite("PositionPanel:xInput", val, db[mode.yField] or 0)
+                end
+                db[mode.xField] = val
+                if mode.autoProfileX and DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
+                    DF.AutoProfilesUI:SetProfileSetting(mode.autoProfileX, val)
                     if DF.GUI and DF.GUI.UpdatePositionOverrideIndicator then
                         DF.GUI.UpdatePositionOverrideIndicator()
                     end
                 end
-                DF:UpdateRaidContainerPosition()
-            else
-                db.anchorX = val
-                DF:UpdateContainerPosition()
+                mode.apply()
             end
             -- Update override indicator in position panel
             if DF.positionPanel and DF.positionPanel.UpdatePositionOverride then
@@ -1398,20 +1535,20 @@ function DF:CreatePositionPanel()
     yInput:SetScript("OnEnterPressed", function(self)
         local val = tonumber(self:GetText())
         if val then
-            local db = GetPositionDB()
-            if DF.positionPanelMode == "raid" then
-                db.raidAnchorY = val
-                -- If editing profile, save as override
-                if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
-                    DF.AutoProfilesUI:SetProfileSetting("raidAnchorY", val)
+            local mode = GetPositionMode()
+            local db = mode.getDB()
+            if db then
+                if mode.logWrites then
+                    DF:LogRaidAnchorWrite("PositionPanel:yInput", db[mode.xField] or 0, val)
+                end
+                db[mode.yField] = val
+                if mode.autoProfileY and DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
+                    DF.AutoProfilesUI:SetProfileSetting(mode.autoProfileY, val)
                     if DF.GUI and DF.GUI.UpdatePositionOverrideIndicator then
                         DF.GUI.UpdatePositionOverrideIndicator()
                     end
                 end
-                DF:UpdateRaidContainerPosition()
-            else
-                db.anchorY = val
-                DF:UpdateContainerPosition()
+                mode.apply()
             end
             -- Update override indicator in position panel
             if DF.positionPanel and DF.positionPanel.UpdatePositionOverride then
@@ -1511,9 +1648,10 @@ function DF:CreatePositionPanel()
             local globalY = DF.AutoProfilesUI:GetGlobalValue("raidAnchorY") or 0
             
             local db = GetPositionDB()
+            DF:LogRaidAnchorWrite("PositionPanel:resetOverride", globalX, globalY)
             db.raidAnchorX = globalX
             db.raidAnchorY = globalY
-            
+
             -- Update container position
             DF:UpdateRaidContainerPosition()
             
@@ -1631,7 +1769,20 @@ function DF:CreatePositionPanel()
 
     hideOverlayCheck:SetScript("OnClick", function(self)
         DF.hideDragOverlay = self:GetChecked()
-        local mover = DF.positionPanelMode == "raid" and DF.raidMoverFrame or DF.moverFrame
+        -- Store on the party db (grid / overlay settings are party-wide)
+        local partyDB = DF:GetDB()
+        if partyDB then partyDB.hideDragOverlay = DF.hideDragOverlay end
+        -- Apply alpha to whichever mover matches the current mode.
+        local mover
+        if DF.positionPanelMode == "raid" then
+            mover = DF.raidMoverFrame
+        elseif DF.positionPanelMode == "personal" then
+            mover = DF.personalTargetedSpellsMover
+        elseif DF.positionPanelMode == "targetedList" then
+            mover = DF.targetedListMoverFrame
+        else
+            mover = DF.moverFrame
+        end
         if mover then
             mover:SetAlpha(DF.hideDragOverlay and 0 or 1)
         end
@@ -1776,27 +1927,26 @@ end
 
 function DF:UpdatePositionPanel()
     if not DF.positionPanel then return end
-    
-    local db
-    local anchorX, anchorY
-    
-    if DF.positionPanelMode == "raid" then
-        db = DF:GetRaidDB()
-        anchorX = db.raidAnchorX or 0
-        anchorY = db.raidAnchorY or 0
-    else
-        db = DF:GetDB()
-        anchorX = db.anchorX or 0
-        anchorY = db.anchorY or 0
-    end
-    
+
+    local mode = GetPositionMode()
+    local db = mode.getDB()
+    if not db then return end
+
+    local anchorX = db[mode.xField] or 0
+    local anchorY = db[mode.yField] or 0
+
     DF.positionPanel.xInput:SetText(string.format("%.0f", anchorX))
     DF.positionPanel.yInput:SetText(string.format("%.0f", anchorY))
-    DF.positionPanel.snapCheck:SetChecked(db.snapToGrid)
-    DF.positionPanel.gridSlider:SetValue(db.gridSize or 20)
-    DF.positionPanel.gridInput:SetText(tostring(db.gridSize or 20))
+
+    -- Grid / snap / hideOverlay settings are party-wide and always
+    -- read from the party db regardless of panel mode. Personal and
+    -- Targeted List share the party profile's grid config.
+    local partyDB = DF:GetDB()
+    DF.positionPanel.snapCheck:SetChecked(partyDB.snapToGrid)
+    DF.positionPanel.gridSlider:SetValue(partyDB.gridSize or 20)
+    DF.positionPanel.gridInput:SetText(tostring(partyDB.gridSize or 20))
     if DF.positionPanel.hideOverlayCheck then
-        DF.positionPanel.hideOverlayCheck:SetChecked(DF.hideDragOverlay or false)
+        DF.positionPanel.hideOverlayCheck:SetChecked(partyDB.hideDragOverlay or false)
     end
 
     -- Update position override indicator if editing profile
@@ -1809,54 +1959,85 @@ function DF:ResetPosition()
     if DF.positionPanelMode == "raid" then
         if DF.savedRaidPositionX and DF.savedRaidPositionY then
             local db = DF:GetRaidDB()
+            DF:LogRaidAnchorWrite("ResetPosition:savedRaid", DF.savedRaidPositionX, DF.savedRaidPositionY)
             db.raidAnchorX = DF.savedRaidPositionX
             db.raidAnchorY = DF.savedRaidPositionY
             DF:UpdateRaidContainerPosition()
             DF:UpdatePositionPanel()
-            print("|cff00ff00DandersFrames:|r Raid position reset.")
+            print("|cff00ff00DandersFrames:|r " .. L["Raid position reset."])
         else
-            print("|cffff0000DandersFrames:|r No saved position to reset to.")
+            print("|cffff0000DandersFrames:|r " .. L["No saved position to reset to."])
         end
-    else
+    elseif DF.positionPanelMode == "party" or DF.positionPanelMode == nil then
         if DF.savedPositionX and DF.savedPositionY then
             local db = DF:GetDB()
             db.anchorX = DF.savedPositionX
             db.anchorY = DF.savedPositionY
             DF:UpdateContainerPosition()
             DF:UpdatePositionPanel()
-            print("|cff00ff00DandersFrames:|r Position reset.")
+            print("|cff00ff00DandersFrames:|r " .. L["Position reset."])
         else
-            print("|cffff0000DandersFrames:|r No saved position to reset to.")
+            print("|cffff0000DandersFrames:|r " .. L["No saved position to reset to."])
+        end
+    else
+        -- personal / targetedList: no "previous" saved state to
+        -- revert to, so reset simply zeroes the position.
+        local mode = GetPositionMode()
+        local db = mode.getDB()
+        if db then
+            db[mode.xField] = 0
+            db[mode.yField] = 0
+            mode.apply()
+            DF:UpdatePositionPanel()
         end
     end
 end
 
 function DF:NudgePosition(dx, dy)
-    if DF.positionPanelMode == "raid" then
-        local db = DF:GetRaidDB()
-        db.raidAnchorX = (db.raidAnchorX or 0) + dx
-        db.raidAnchorY = (db.raidAnchorY or 0) + dy
-        -- If editing profile, save as override
-        if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
-            DF.AutoProfilesUI:SetProfileSetting("raidAnchorX", db.raidAnchorX)
-            DF.AutoProfilesUI:SetProfileSetting("raidAnchorY", db.raidAnchorY)
-            if DF.GUI and DF.GUI.UpdatePositionOverrideIndicator then
-                DF.GUI.UpdatePositionOverrideIndicator()
-            end
-        end
-        DF:UpdateRaidContainerPosition()
-    else
-        local db = DF:GetDB()
-        db.anchorX = (db.anchorX or 0) + dx
-        db.anchorY = (db.anchorY or 0) + dy
-        DF:UpdateContainerPosition()
+    local mode = GetPositionMode()
+    local db = mode.getDB()
+    if not db then return end
+
+    local newX = (db[mode.xField] or 0) + dx
+    local newY = (db[mode.yField] or 0) + dy
+
+    if mode.logWrites then
+        DF:LogRaidAnchorWrite("NudgePosition", newX, newY)
     end
+
+    db[mode.xField] = newX
+    db[mode.yField] = newY
+
+    -- Auto-profile override tracking (currently only raid mode uses this)
+    if mode.autoProfileX and DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() then
+        DF.AutoProfilesUI:SetProfileSetting(mode.autoProfileX, newX)
+        DF.AutoProfilesUI:SetProfileSetting(mode.autoProfileY, newY)
+        if DF.GUI and DF.GUI.UpdatePositionOverrideIndicator then
+            DF.GUI.UpdatePositionOverrideIndicator()
+        end
+    end
+
+    mode.apply()
     DF:UpdatePositionPanel()
 end
 
 function DF:CenterFrames()
+    -- Personal / targetedList: simple reset to 0,0 since these don't
+    -- have growth geometry to account for.
+    if DF.positionPanelMode == "personal" or DF.positionPanelMode == "targetedList" then
+        local mode = GetPositionMode()
+        local db = mode.getDB()
+        if db then
+            db[mode.xField] = 0
+            db[mode.yField] = 0
+            mode.apply()
+            DF:UpdatePositionPanel()
+        end
+        return
+    end
     if DF.positionPanelMode == "raid" then
         local db = DF:GetRaidDB()
+        DF:LogRaidAnchorWrite("CenterFrames", 0, 0)
         db.raidAnchorX = 0
         db.raidAnchorY = 0
         -- If editing profile, save as override
@@ -1869,7 +2050,7 @@ function DF:CenterFrames()
         end
         DF:UpdateRaidContainerPosition()
         DF:UpdatePositionPanel()
-        print("|cff00ff00DandersFrames:|r Raid frames centered.")
+        print("|cff00ff00DandersFrames:|r " .. L["Raid frames centered."])
     else
         local db = DF:GetDB()
         local horizontal = db.growDirection == "HORIZONTAL"
@@ -1928,7 +2109,7 @@ function DF:CenterFrames()
         DF:UpdatePositionPanel()
         DF:UpdateAllFrames()
         
-        print("|cff00ff00DandersFrames:|r Frames centered on screen.")
+        print("|cff00ff00DandersFrames:|r " .. L["Frames centered on screen."])
     end
 end
 
@@ -1963,6 +2144,11 @@ function DF:UpdateRaidContainerPosition()
     local x, y = db.raidAnchorX or 0, db.raidAnchorY or 0
     local scale = db.frameScale or 1.0
 
+    if DF.Debug then
+        DF:Debug("RAIDPOS", "UpdateRaidContainerPosition @ %s : applying (%.1f,%.1f) scale=%.3f combat=%s",
+            ShortCaller(3), x, y, scale, tostring(InCombatLockdown()))
+    end
+
     DF.raidContainer:SetScale(scale)
     DF.raidContainer:ClearAllPoints()
     DF.raidContainer:SetPoint("CENTER", UIParent, "CENTER", x / scale, y / scale)
@@ -1985,26 +2171,26 @@ end
 
 function DF:UnlockFrames()
     if InCombatLockdown() then
-        print("|cffff0000DandersFrames:|r Cannot unlock frames during combat.")
+        print("|cffff0000DandersFrames:|r " .. L["Cannot unlock frames during combat."])
         return
     end
-    
+
     local db = DF:GetDB()
-    
+
     -- Ensure container exists
     if not DF.container then
-        print("|cffff0000DandersFrames:|r Cannot unlock - container doesn't exist!")
+        print("|cffff0000DandersFrames:|r " .. L["Cannot unlock - container doesn't exist!"])
         return
     end
-    
+
     -- Ensure mover frame exists (create if needed)
     if not DF.moverFrame then
         DF:CreateMoverFrame()
     end
-    
+
     -- Safety check - if mover still doesn't exist, abort
     if not DF.moverFrame then
-        print("|cffff0000DandersFrames:|r Cannot unlock - failed to create mover frame!")
+        print("|cffff0000DandersFrames:|r " .. L["Cannot unlock - failed to create mover frame!"])
         return
     end
     
@@ -2014,7 +2200,7 @@ function DF:UnlockFrames()
     
     db.locked = false
     DF.positionPanelMode = "party"  -- Set mode for position panel
-    DF.hideDragOverlay = false  -- Reset overlay toggle on unlock
+    DF.hideDragOverlay = db.hideDragOverlay or false
     
     local scale = db.frameScale or 1.0
     DF.container:SetScale(scale)
@@ -2075,6 +2261,12 @@ function DF:UnlockFrames()
     if db.personalTargetedSpellEnabled and DF.ShowPersonalTargetedSpellsMover then
         DF:ShowPersonalTargetedSpellsMover()
     end
+
+    -- Show Targeted List mover if enabled (alpha/beta only — the
+    -- function is gated internally on DF.RELEASE_CHANNEL)
+    if db.targetedListEnabled and DF.ShowTargetedListMover then
+        DF:ShowTargetedListMover()
+    end
     
     -- Always refresh grid state from db when unlocking
     if DF.gridFrame then
@@ -2102,22 +2294,22 @@ function DF:UnlockFrames()
     
     -- Update Display tab button if it exists
     if DF.displayLockButton and DF.displayLockButton.Text then
-        DF.displayLockButton.Text:SetText("Lock Frames")
+        DF.displayLockButton.Text:SetText(L["Lock Frames"])
     end
-    
+
     -- Enable test mode so user can position with full group visible
     DF:ShowTestFrames(true)
-    
+
     -- Sync GUI toolbar buttons
     if DF.GUI then
         if DF.GUI.UpdateLockButtonState then DF.GUI.UpdateLockButtonState() end
         if DF.GUI.UpdateTestButtonState then DF.GUI.UpdateTestButtonState() end
     end
-    
+
     -- Hide permanent mover while full overlay is active
     if DF.permanentPartyMover then DF.permanentPartyMover:Hide() end
 
-    print("|cff00ff00DandersFrames:|r Frames unlocked. Drag to move, right-click to lock.")
+    print("|cff00ff00DandersFrames:|r " .. L["Frames unlocked. Drag to move, right-click to lock."])
 end
 
 function DF:LockFrames()
@@ -2133,6 +2325,11 @@ function DF:LockFrames()
     -- Hide personal targeted spells mover
     if DF.HidePersonalTargetedSpellsMover then
         DF:HidePersonalTargetedSpellsMover()
+    end
+
+    -- Hide Targeted List mover
+    if DF.HideTargetedListMover then
+        DF:HideTargetedListMover()
     end
     
     -- Stop any OnUpdate for snap preview
@@ -2157,18 +2354,18 @@ function DF:LockFrames()
     
     -- Update Display tab button if it exists
     if DF.displayLockButton and DF.displayLockButton.Text then
-        DF.displayLockButton.Text:SetText("Unlock Frames")
+        DF.displayLockButton.Text:SetText(L["Unlock Frames"])
     end
-    
+
     -- Sync GUI toolbar buttons
     if DF.GUI then
         if DF.GUI.UpdateLockButtonState then DF.GUI.UpdateLockButtonState() end
         if DF.GUI.UpdateTestButtonState then DF.GUI.UpdateTestButtonState() end
     end
-    
+
     -- Disable test mode
     DF:HideTestFrames(true)
-    
-    print("|cff00ff00DandersFrames:|r Frames locked.")
+
+    print("|cff00ff00DandersFrames:|r " .. L["Frames locked."])
 end
 

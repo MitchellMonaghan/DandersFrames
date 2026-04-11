@@ -1,4 +1,5 @@
 local addonName, DF = ...
+local L = DF.L
 
 -- ============================================================
 -- FRAMES TEST MODE MODULE
@@ -2161,72 +2162,58 @@ end
 -- is a pixel-perfect preview of live behavior.
 function DF:UpdateTestBossDebuffs(frame)
     if not frame then return end
-    
+
     local db = DF:GetFrameDB(frame)
-    
+
     -- Check if boss debuffs are enabled (both feature and test mode toggle)
     if not db.bossDebuffsEnabled or not db.testShowBossDebuffs then
         DF:HideTestBossDebuffs(frame)
         return
     end
-    
+
     -- Use the real private aura system for positioning.
     -- Override unit to "player" so the API call succeeds (player always exists).
-    -- Since the player has no boss debuff private auras outside encounters,
-    -- Blizzard renders nothing inside the containers - our test icons sit on top.
     local savedUnit = frame.unit
+    local savedHideTooltip = db.bossDebuffsHideTooltip
+    db.bossDebuffsHideTooltip = false  -- prevent 0.001px sizing; test icons are real frames, not C-side rendered
     frame.unit = "player"
     DF:SetupPrivateAuraAnchors(frame)
     frame.unit = savedUnit
-    
-    -- Now frame.bossDebuffContainers has positioned containers.
-    -- Parent test icon visuals to each container.
-    
+    db.bossDebuffsHideTooltip = savedHideTooltip
+
+    -- Now frame.bossDebuffFrames has positioned frames.
+    -- Parent test icon visuals to each frame.
+
     local maxIcons = db.bossDebuffsMax or 4
     local showCountdown = db.bossDebuffsShowCountdown ~= false
     local showNumbers = db.bossDebuffsShowNumbers ~= false
-    local textScale = db.bossDebuffsTextScale or 1.0
-    local textOffsetX = db.bossDebuffsTextOffsetX or 0
-    local textOffsetY = db.bossDebuffsTextOffsetY or 0
-    
+
     -- Create test icon frames if they don't exist
     if not frame.testBossDebuffIcons then
         frame.testBossDebuffIcons = {}
     end
-    
-    -- Show boss debuffs based on max icons setting
+
     local displayCount = math.min(maxIcons, #DF.TestData.bossDebuffs)
-    
+
     for i = 1, maxIcons do
-        local container = frame.bossDebuffContainers and frame.bossDebuffContainers[i]
+        local container = frame.bossDebuffFrames and frame.bossDebuffFrames[i]
         local bossDebuffData = DF.TestData.bossDebuffs[i]
-        
+
         if container and i <= displayCount and bossDebuffData then
-            -- Create icon frame if it doesn't exist
             local icon = frame.testBossDebuffIcons[i]
             if not icon then
                 icon = CreateFrame("Frame", nil, container)
-                
+
                 -- Icon texture
                 icon.texture = icon:CreateTexture(nil, "ARTWORK")
                 icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                
+
                 -- Cooldown
                 icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
                 icon.cooldown:SetDrawEdge(false)
                 icon.cooldown:SetDrawSwipe(true)
                 icon.cooldown:SetReverse(true)
-                icon.cooldown:SetHideCountdownNumbers(false)
-                
-                -- Scaled duration text overlay
-                icon.scaledDurFrame = CreateFrame("Frame", nil, icon)
-                icon.scaledDurFrame:SetSize(0.001, 0.001)
-                icon.scaledDurFrame:SetFrameLevel(icon:GetFrameLevel() + 5)
-                icon.scaledDurText = icon.scaledDurFrame:CreateFontString(nil, "OVERLAY")
-                icon.scaledDurText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
-                icon.scaledDurText:SetTextColor(1, 0.82, 0)
-                icon.scaledDurFrame:Hide()
-                
+
                 -- Debug background
                 icon.debugBg = icon:CreateTexture(nil, "BORDER")
                 icon.debugBg:SetAllPoints()
@@ -2234,150 +2221,176 @@ function DF:UpdateTestBossDebuffs(frame)
                 local c = colors[i] or colors[1]
                 icon.debugBg:SetColorTexture(c[1], c[2], c[3], c[4])
                 icon.debugBg:Hide()
-                
+
                 frame.testBossDebuffIcons[i] = icon
             end
-            
-            -- Re-parent to this container (container may have changed from pool recycling)
+
+            -- Re-parent to this container
             icon:SetParent(container)
             icon:ClearAllPoints()
             icon:SetAllPoints(container)
-            
+
             -- Anchor sub-elements to fill the icon frame
             icon.texture:SetAllPoints()
             icon.cooldown:SetAllPoints(icon.texture)
-            
-            -- Anchor scaled text elements to the icon
-            icon.scaledDurFrame:ClearAllPoints()
-            icon.scaledDurFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
-            icon.scaledDurText:ClearAllPoints()
-            icon.scaledDurText:SetPoint("CENTER", icon, "CENTER", 0, 0)
-            
+
             -- Set icon texture
             icon.texture:SetTexture(bossDebuffData.icon)
-            
+
             -- Set cooldown
             if showCountdown and bossDebuffData.duration then
-                local useScaledText = showNumbers
-                
-                -- Clear existing cooldown first so state is clean
                 icon.cooldown:Clear()
-                
-                -- Must set hide BEFORE SetCooldown so Blizzard doesn't create countdown text
-                icon.cooldown:SetHideCountdownNumbers(useScaledText or (not showNumbers))
-                
+                icon.cooldown:SetHideCountdownNumbers(not showNumbers)
+
                 local startTime = GetTime() - (bossDebuffData.duration * 0.3)
                 icon.cooldown:SetCooldown(startTime, bossDebuffData.duration)
                 icon.cooldown:Show()
-                
-                -- Forcibly hide/show Blizzard's countdown text (it can be in regions or child frames)
-                local shouldHideNumbers = useScaledText or (not showNumbers)
-                for _, region in ipairs({icon.cooldown:GetRegions()}) do
-                    if region.GetText and region:IsObjectType("FontString") then
-                        if shouldHideNumbers then region:Hide() else region:Show() end
-                    end
-                end
-                for _, child in ipairs({icon.cooldown:GetChildren()}) do
-                    -- Blizzard's countdown is typically a child frame with a FontString
-                    if child.GetText then
-                        if shouldHideNumbers then child:Hide() else child:Show() end
-                    end
-                    for _, region in ipairs({child:GetRegions()}) do
-                        if region.GetText and region:IsObjectType("FontString") then
-                            if shouldHideNumbers then region:Hide() else region:Show() end
-                        end
-                    end
-                end
-                
-                -- Handle scaled duration text
-                if useScaledText then
-                    -- Test mode compensation: Blizzard's native countdown renders slightly
-                    -- differently than our custom fontstring, so nudge to match
-                    local testCompX = -2
-                    local testCompY = -2
-                    local testScaleComp = 0.1
-                    
-                    local effectiveScale = textScale + testScaleComp
-                    icon.scaledDurFrame:ClearAllPoints()
-                    icon.scaledDurFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
-                    icon.scaledDurFrame:SetScale(effectiveScale)
-                    icon.scaledDurFrame:Show()
-                    -- Offset the text with scale compensation (fontstring is inside scaled frame)
-                    local compOffX = (textOffsetX + testCompX) / effectiveScale
-                    local compOffY = (textOffsetY + testCompY) / effectiveScale
-                    icon.scaledDurText:ClearAllPoints()
-                    icon.scaledDurText:SetPoint("CENTER", icon, "CENTER", compOffX, compOffY)
-                    -- Show simulated remaining time
-                    local remaining = bossDebuffData.duration * 0.7
-                    icon.scaledDurText:SetText(math.floor(remaining))
-                    icon.scaledDurText:Show()
-                    -- Tick it down with OnUpdate
-                    icon.scaledDurFrame.expirationTime = GetTime() + remaining
-                    icon.scaledDurFrame:SetScript("OnUpdate", function(self, elapsed)
-                        local timeLeft = self.expirationTime - GetTime()
-                        if timeLeft <= 0 then
-                            icon.scaledDurText:SetText("")
-                            self:SetScript("OnUpdate", nil)
-                        else
-                            icon.scaledDurText:SetText(math.floor(timeLeft + 0.5))
-                        end
-                    end)
-                else
-                    icon.scaledDurFrame:Hide()
-                    icon.scaledDurFrame:SetScript("OnUpdate", nil)
-                end
             else
                 icon.cooldown:Hide()
-                icon.scaledDurFrame:Hide()
-                icon.scaledDurFrame:SetScript("OnUpdate", nil)
             end
-            
+
             icon:Show()
         else
             -- Hide icon if no container or no data
             local icon = frame.testBossDebuffIcons[i]
             if icon then
                 icon:Hide()
-                if icon.scaledDurFrame then
-                    icon.scaledDurFrame:Hide()
-                    icon.scaledDurFrame:SetScript("OnUpdate", nil)
-                end
             end
         end
     end
-    
+
     -- Hide any extra icons beyond maxIcons
     if frame.testBossDebuffIcons then
         for i = maxIcons + 1, #frame.testBossDebuffIcons do
             frame.testBossDebuffIcons[i]:Hide()
         end
     end
+
+    -- Show overlay border preview in test mode
+    DF:UpdateTestOverlayBorder(frame)
+end
+
+-- Create or update the overlay border preview for test mode.
+-- Uses the same iconW / bScale math as the real overlay so slider
+-- changes are reflected immediately.  We approximate the Blizzard
+-- circular glow ring as a sized rectangle with a backdrop edge —
+-- it won't look identical but the dimensions respond to the same
+-- settings, which is what matters for tuning.
+function DF:UpdateTestOverlayBorder(frame)
+    if not frame then return end
+
+    local db = DF:GetFrameDB(frame)
+
+    -- Only show if overlay is enabled and we have the container
+    if not db.bossDebuffsOverlayEnabled or not frame.overlayContainer then
+        DF:HideTestOverlayBorder(frame)
+        return
+    end
+
+    local container = frame.overlayContainer
+    local maxSlots = db.bossDebuffsOverlayMaxSlots or 3
+    local overlayScale = db.bossDebuffsOverlayScale or 1.05
+    local iconRatio = db.bossDebuffsOverlayIconRatio or 2.6
+    local clipBorder = db.bossDebuffsOverlayClipBorder ~= false
+
+    -- Replicate the same math from SetupOverlayAnchors
+    local fw = frame:GetWidth()
+    local fh = frame:GetHeight()
+    if not fw or not fh or fw <= 0 or fh <= 0 then return end
+
+    local iconW = fw * iconRatio / 10
+    local bScale = 10 * overlayScale
+
+    -- The Blizzard border ring extends outward from the icon center.
+    -- Approximate the rendered border width/height from iconW * bScale.
+    -- Multipliers calibrated against live overlay screenshots.
+    -- Multipliers calibrated to match Blizzard's private aura border ring
+    local borderW = iconW * bScale * 0.10
+    local borderH = fh * bScale * 0.06
+
+    -- Edge thickness scales with the border size
+    local edgeSize = math.max(2, math.min(borderW, borderH) * 0.08)
+
+    if not frame.testOverlayBorders then
+        frame.testOverlayBorders = {}
+    end
+
+    for i = 1, maxSlots do
+        local sub = frame.overlaySubContainers and frame.overlaySubContainers[i]
+        if not sub then break end
+
+        local border = frame.testOverlayBorders[i]
+        if not border then
+            border = CreateFrame("Frame", nil, sub, "BackdropTemplate")
+            border:EnableMouse(false)
+            if border.SetMouseClickEnabled then border:SetMouseClickEnabled(false) end
+            frame.testOverlayBorders[i] = border
+        end
+
+        border:SetParent(sub)
+        border:ClearAllPoints()
+        border:SetPoint("CENTER", container, "CENTER", 0, 0)
+        border:SetSize(borderW, borderH)
+        border:SetFrameLevel(sub:GetFrameLevel() + 1)
+
+        local borderColors = {
+            {1.0, 0.0, 0.6, 0.9},  -- magenta-pink
+            {0.0, 0.8, 1.0, 0.9},  -- cyan
+            {1.0, 0.6, 0.0, 0.9},  -- orange
+        }
+        local c = borderColors[i] or borderColors[1]
+
+        border:SetBackdrop({
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = edgeSize,
+        })
+        border:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
+        border:Show()
+    end
+
+    -- Hide extra borders if maxSlots shrank
+    for i = maxSlots + 1, #frame.testOverlayBorders do
+        frame.testOverlayBorders[i]:Hide()
+    end
+
+    -- Show a warning label on the first border (once per frame)
+    local firstBorder = frame.testOverlayBorders[1]
+    if firstBorder then
+        if not firstBorder.warningText then
+            firstBorder.warningText = firstBorder:CreateFontString(nil, "OVERLAY")
+            firstBorder.warningText:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
+            firstBorder.warningText:SetTextColor(1, 0.2, 0.2, 1)
+            firstBorder.warningText:SetPoint("TOP", firstBorder, "BOTTOM", 0, -2)
+            firstBorder.warningText:SetText("Rough estimate only")
+        end
+        firstBorder.warningText:Show()
+    end
+end
+
+-- Hide overlay border previews
+function DF:HideTestOverlayBorder(frame)
+    if not frame or not frame.testOverlayBorders then return end
+    for _, border in ipairs(frame.testOverlayBorders) do
+        border:Hide()
+    end
 end
 
 -- Hide test boss debuffs when exiting test mode
 function DF:HideTestBossDebuffs(frame)
     if not frame then return end
-    
+
     -- Hide test icons
     if frame.testBossDebuffIcons then
-        for i, icon in ipairs(frame.testBossDebuffIcons) do
+        for _, icon in ipairs(frame.testBossDebuffIcons) do
             icon:Hide()
-            -- Clear cooldown
             if icon.cooldown then
                 icon.cooldown:Clear()
             end
-            -- Clear scaled duration
-            if icon.scaledDurFrame then
-                icon.scaledDurFrame:Hide()
-                icon.scaledDurFrame:SetScript("OnUpdate", nil)
-            end
         end
     end
-    
-    -- Release private aura containers back to the pool
-    if DF.ClearPrivateAuraAnchors then
-        DF:ClearPrivateAuraAnchors(frame)
-    end
+
+    -- Hide overlay border preview
+    DF:HideTestOverlayBorder(frame)
 end
 
 -- Update all test boss debuffs (for live preview during slider dragging)
@@ -3538,8 +3551,14 @@ function DF:UpdateTestPowerBar(frame, testData)
     else
         powerToken = "ENERGY"
     end
-    local powerColor = DF:GetPowerColor(powerToken)
-    bar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+
+    local classColor = db.resourceBarClassColor and testData.class and DF:GetClassColor(testData.class)
+    if classColor then
+        bar:SetStatusBarColor(classColor.r, classColor.g, classColor.b, 1)
+    else
+        local powerColor = DF:GetPowerColor(powerToken)
+        bar:SetStatusBarColor(powerColor.r, powerColor.g, powerColor.b, 1)
+    end
     
     -- Background visibility and color
     if bar.bg then
@@ -3584,7 +3603,7 @@ end
 
 function DF:ShowTestFrames(silent)
     if InCombatLockdown() then
-        print("|cffff9900DandersFrames:|r Cannot enter test mode during combat.")
+        print("|cffff9900DandersFrames:|r " .. L["Cannot enter test mode during combat."])
         return
     end
     
@@ -3618,6 +3637,7 @@ function DF:ShowTestFrames(silent)
         if frame then
             if i < testFrameCount then
                 frame:Show()
+                DF:ApplyTestFrameLayout(frame)
                 DF:UpdateTestFrame(frame, i, true)  -- true = apply layout
             else
                 frame:Hide()
@@ -3666,7 +3686,7 @@ function DF:ShowTestFrames(silent)
     end
     
     if not silent then
-        print("|cff00ff00DandersFrames:|r Test mode enabled.")
+        print("|cff00ff00DandersFrames:|r " .. L["Test mode enabled."])
     end
 
     -- Update permanent mover for party test mode
@@ -3956,6 +3976,11 @@ function DF:HideTestFrames(silent)
     if DF.HideTestPersonalTargetedSpells then
         DF:HideTestPersonalTargetedSpells()
     end
+
+    -- Hide Targeted List demo bars
+    if DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
+    end
     
     -- Restore live frame visibility
     -- Clear state drivers so UpdateHeaderVisibility manages normally
@@ -3993,7 +4018,7 @@ function DF:HideTestFrames(silent)
     end
     
     if not silent then
-        print("|cff00ff00DandersFrames:|r Test mode disabled.")
+        print("|cff00ff00DandersFrames:|r " .. L["Test mode disabled."])
     end
 
     -- Update permanent mover after exiting party test mode
@@ -4007,20 +4032,20 @@ end
 function DF:ToggleTestMode()
     -- Cannot toggle test mode during combat (secure frame restrictions)
     if InCombatLockdown() then
-        print("|cffff9900DandersFrames:|r Cannot toggle test mode during combat.")
+        print("|cffff9900DandersFrames:|r " .. L["Cannot toggle test mode during combat."])
         return
     end
-    
+
     local isRaidMode = DF.GUI and DF.GUI.SelectedMode == "raid"
-    
+
     if isRaidMode then
         local db = DF:GetRaidDB()
         -- Don't allow toggling test mode off while frames are unlocked
         if not db.raidLocked and DF.raidTestMode then
-            print("|cffff9900DandersFrames:|r Cannot disable test mode while frames are unlocked. Lock frames first.")
+            print("|cffff9900DandersFrames:|r " .. L["Cannot disable test mode while frames are unlocked. Lock frames first."])
             return
         end
-        
+
         -- Toggle raid test mode
         if DF.raidTestMode then
             DF:HideRaidTestFrames()
@@ -4031,7 +4056,7 @@ function DF:ToggleTestMode()
         local db = DF:GetDB()
         -- Don't allow toggling test mode off while frames are unlocked
         if not db.locked and DF.testMode then
-            print("|cffff9900DandersFrames:|r Cannot disable test mode while frames are unlocked. Lock frames first.")
+            print("|cffff9900DandersFrames:|r " .. L["Cannot disable test mode while frames are unlocked. Lock frames first."])
             return
         end
 
@@ -4047,7 +4072,7 @@ end
 -- Show raid test frames
 function DF:ShowRaidTestFrames()
     if InCombatLockdown() then
-        print("|cffff9900DandersFrames:|r Cannot enter test mode during combat.")
+        print("|cffff9900DandersFrames:|r " .. L["Cannot enter test mode during combat."])
         return
     end
     
@@ -4188,6 +4213,11 @@ function DF:HideRaidTestFrames()
         DF:HideTestPersonalTargetedSpells()
     end
 
+    -- Hide Targeted List demo bars
+    if DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
+    end
+
     -- Hide group labels (they will be re-shown by UpdateRaidLayout if needed)
     if DF.raidGroupLabels then
         for g = 1, 8 do
@@ -4268,6 +4298,7 @@ function DF:UpdateRaidTestFrames()
         local frame = DF.testRaidFrames[i]
         if frame then
             -- Use unified UpdateTestFrame with layout (true = apply aura layout)
+            DF:ApplyTestFrameLayout(frame)
             DF:UpdateTestFrame(frame, i, true)
         end
     end
@@ -4783,7 +4814,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = false
         db.testShowMissingBuff = false
         db.testShowExternalDef = false
-        db.testShowTargetedSpell = false
+        db.testShowTargetedList = false
         db.testShowBossDebuffs = false
         db.testShowIcons = true
     elseif preset == "COMBAT" then
@@ -4794,7 +4825,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = false
         db.testShowExternalDef = false
-        db.testShowTargetedSpell = false
+        db.testShowTargetedList = false
         db.testShowBossDebuffs = true
         db.testShowIcons = true
     elseif preset == "HEALER" then
@@ -4805,7 +4836,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = true
         db.testShowExternalDef = true
-        db.testShowTargetedSpell = true
+        db.testShowTargetedList = true
         db.testShowBossDebuffs = true
         db.testShowIcons = true
     elseif preset == "FULL" then
@@ -4816,7 +4847,7 @@ function DF:ApplyTestPreset(preset)
         db.testShowDispelGlow = true
         db.testShowMissingBuff = true
         db.testShowExternalDef = true
-        db.testShowTargetedSpell = true
+        db.testShowTargetedList = true
         db.testShowIcons = true
     end
     
@@ -5825,11 +5856,24 @@ function DF:UpdateTestTargetedSpell(frame, testData)
     end
 end
 
+-- Targeted List demo bars in test mode. This is a single global
+-- container (not per-frame), so the update function just toggles the
+-- show/hide helpers on the feature module. Safe to call with the
+-- feature gate off — both helpers are no-ops on stable builds.
+function DF:UpdateAllTestTargetedList()
+    local db = DF:GetDB()
+    if db and db.testShowTargetedList and DF.ShowTestTargetedList then
+        DF:ShowTestTargetedList()
+    elseif DF.HideTestTargetedList then
+        DF:HideTestTargetedList()
+    end
+end
+
 function DF:UpdateAllTestTargetedSpell()
     local function UpdateFrame(frame, testData)
         if not frame then return end
         local db = DF:GetFrameDB(frame)
-        
+
         if db.testShowTargetedSpell then
             DF:UpdateTestTargetedSpell(frame, testData)
         else
@@ -5874,8 +5918,13 @@ function DF:UpdateAllTestTargetedSpell()
         elseif DF.HideTestPersonalTargetedSpells then
             DF:HideTestPersonalTargetedSpells()
         end
+
+        -- Update Targeted List demo bars in test mode
+        if DF.UpdateAllTestTargetedList then
+            DF:UpdateAllTestTargetedList()
+        end
     end
-    
+
     -- Update raid test frames
     if DF.raidTestMode then
         local raidDb = DF:GetRaidDB()
@@ -6707,9 +6756,15 @@ function DF:CreateTestPanel()
     panel.showExternalDefCheck = secIndicators:AddCheckbox("Defensive Icon", "testShowExternalDef", function()
         if DF.testMode or DF.raidTestMode then DF:UpdateAllTestDefensiveBar() end
     end, "auras_defensiveicon")
-    panel.showTargetedSpellCheck = secIndicators:AddCheckbox("Targeted Spell", "testShowTargetedSpell", function()
-        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedSpell() end
-    end, "indicators_targetedspells")
+    -- "Targeted Spell" was the old group-frame icon display that
+    -- Blizzard's 2026-04-07 hotfix killed. The checkbox slot is now
+    -- repurposed for the Targeted List (alpha/beta-only feature).
+    panel.showTargetedListCheck = secIndicators:AddCheckbox("Targeted List", "testShowTargetedList", function()
+        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedList() end
+    end, "indicators_targetedlist")
+    panel.animTargetedListCheck = secIndicators:AddCheckbox("Animate Targeted List", "testAnimateTargetedList", function()
+        if DF.testMode or DF.raidTestMode then DF:UpdateAllTestTargetedList() end
+    end)
     panel.showStatusIconsCheck = secIndicators:AddCheckbox("Status / Ready", "testShowStatusIcons", function()
         if DF.testMode or DF.raidTestMode then DF:RefreshTestFrames() end
     end, "indicators_icons")
@@ -6861,7 +6916,8 @@ function DF:CreateTestPanel()
         self.showMissingBuffCheck:SetChecked(db.testShowMissingBuff)
         self.showADCheck:SetChecked(db.testShowAuraDesigner)
         self.showExternalDefCheck:SetChecked(db.testShowExternalDef)
-        self.showTargetedSpellCheck:SetChecked(db.testShowTargetedSpell)
+        self.showTargetedListCheck:SetChecked(db.testShowTargetedList)
+        self.animTargetedListCheck:SetChecked(db.testAnimateTargetedList)
         self.showStatusIconsCheck:SetChecked(db.testShowStatusIcons ~= false)
         self.showIconsCheck:SetChecked(db.testShowIcons ~= false)
         self.showSelectionCheck:SetChecked(db.testShowSelection)

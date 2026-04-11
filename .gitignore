@@ -22,6 +22,7 @@ CLAUDE.md
 .claude/
 .mcp.json
 docs/superpowers/
+.superpowers/
 
 # Reference material (contents ignored, folder kept via .gitkeep)
 _Reference/*

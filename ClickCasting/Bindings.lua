@@ -2492,12 +2492,16 @@ function CC:ApplyBindingsToFrameUnified(frame, skipKeyboardUpdate)
             frame:RegisterForClicks("AnyUp")
         end
     end
-    
+
     -- Enable mouse wheel for scroll bindings (like Clique does)
     if frame.EnableMouseWheel then
         frame:EnableMouseWheel(true)
     end
     
+    -- Track which base (no modifier) mouse buttons get a binding applied to THIS frame.
+    -- Used to restore defaults for uncovered buttons on non-DandersFrames.
+    local coveredBaseButtons = {}
+
     -- Apply each macro binding (these will override defaults where bindings exist)
     for keyString, data in pairs(self.unifiedMacroMap) do
         local binding = data.templateBinding
@@ -2529,7 +2533,12 @@ function CC:ApplyBindingsToFrameUnified(frame, skipKeyboardUpdate)
                 -- Mouse binding: use frame attributes
                 local buttonNum = GetButtonNumber(binding.button)
                 local modPrefix = BuildModifierPrefix(binding.modifiers)
-                
+
+                -- Track base (no modifier) mouse buttons that get a binding on this frame
+                if modPrefix == "" then
+                    coveredBaseButtons[buttonNum] = true
+                end
+
                 local typeAttr = modPrefix .. "type" .. buttonNum
                 local spellAttr = modPrefix .. "spell" .. buttonNum
                 local macroAttr = modPrefix .. "macrotext" .. buttonNum
@@ -2637,23 +2646,23 @@ function CC:ApplyBindingsToFrameUnified(frame, skipKeyboardUpdate)
         end
     end
     
-    -- Preserve default click behavior for buttons that weren't explicitly bound
-    -- This ensures left click = target and right click = menu work unless overridden
-    -- Check for both nil and empty string since ClearBindingsFromFrame sets to ""
-    local type1 = frame:GetAttribute("type1")
-    if not type1 or type1 == "" then
-        frame:SetAttribute("type1", "target")
-        -- For Blizzard frames, set unit1="mouseover" to ensure targeting works
-        -- This is needed because type="target" uses the unit attribute
-        if frame.dfIsBlizzardFrame then
-            frame:SetAttribute("unit1", "mouseover")
+    -- For non-DandersFrames, restore default behavior for any base mouse buttons
+    -- that weren't covered by a binding on this frame. ClearBlizzardClickCastFromFrame
+    -- wipes type1/type2 to "" when ANY binding targets other frames, but individual
+    -- bindings may be DandersFrames-only. Without this, right-click menu (or left-click
+    -- target) breaks on Blizzard frames when the binding doesn't apply to them.
+    if not isDandersFrame then
+        local defaults = { [1] = "target", [2] = "togglemenu" }
+        for btn, defaultType in pairs(defaults) do
+            if not coveredBaseButtons[btn] then
+                local currentType = frame:GetAttribute("type" .. btn)
+                if not currentType or currentType == "" then
+                    frame:SetAttribute("type" .. btn, defaultType)
+                end
+            end
         end
     end
-    local type2 = frame:GetAttribute("type2")
-    if not type2 or type2 == "" then
-        frame:SetAttribute("type2", "togglemenu")
-    end
-    
+
     -- Mark this frame as having had bindings applied (for optimization in ClearBindingsFromFrame)
     frame.dfBindingsEverApplied = true
 
