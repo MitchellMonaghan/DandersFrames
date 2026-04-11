@@ -1,10 +1,14 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-10T23:03:17Z"
+DF.BUILD_DATE = "2026-04-11T15:11:45Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
 ## [4.3.0] - 2026-04-10
+
+### Improvements
+
+* (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
 
 ### New Features
 
