@@ -673,7 +673,10 @@ local AuraPassesAnyFilter
 -- ============================================================
 
 local function IsBlizzardAuraSourceAvailable()
-    return type(_G.CompactUnitFrame_UpdateAuras) == "function"
+    -- Force-disabled: Blizzard aura data source is being removed in 12.0.5
+    -- and is already causing issues. Returning false unconditionally so all
+    -- users migrate to Direct API now rather than waiting for the patch.
+    return false
 end
 
 -- Applies the forced migration to both party and raid profiles. Called both

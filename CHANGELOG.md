@@ -2,6 +2,10 @@
 
 ## [4.3.0] - 2026-04-10
 
+### Improvements
+
+* (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
+
 ### New Features
 
 * **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only
