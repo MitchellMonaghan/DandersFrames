@@ -5,6 +5,11 @@
 ### Improvements
 
 * (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
+* (Aura Filters) Add info banner clarifying that Aura Filters only affect Buff Bar and Debuff Bar, with clickable links to related pages
+* (Aura Filters) Remove outdated Defensives and Dispel Detection info section
+* (Aura Blacklist) Add notice explaining the blacklist is a curated Blizzard list
+* (Aura Blacklist) Add warning icon next to Symbiotic Relationship noting caster-only blacklist limitation
+* (Boss Debuffs) Add info banner noting Boss Debuffs cannot trigger Dispel Overlays
 
 ### New Features
 
@@ -18,6 +23,9 @@
 
 ### Bug Fixes
 
+* (Absorb Bars) Fix absorb bars showing as floating bars when Attached or Attached+Overflow display mode is selected
+* (Aura Designer) Fix indicators sometimes showing wrong settings (wrong font size, icon size, bar colors) — Configure now runs mid-combat so indicators always get correct static settings immediately
+* (Aura Designer) Fix duration text using default Blizzard font/size when the cooldown FontString hasn't been created yet at configure time
 * (Personal Targeted Spells) Removed the white center-line overlays from the mover frame
 * (Targeted Spells) Added `UNIT_SPELLCAST_FAILED_QUIET` to the registered event list — some cancelled casts previously left dangling personal-display icons
 

@@ -185,6 +185,25 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
             nameText:SetTextColor(0.55, 0.55, 0.55)
         end
 
+        -- Warning icon for spells with known limitations
+        if spell.spellId == 474754 then  -- Symbiotic Relationship
+            local warnIcon = CreateFrame("Button", nil, row)
+            warnIcon:SetSize(14, 14)
+            warnIcon:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
+            local warnTex = warnIcon:CreateTexture(nil, "OVERLAY")
+            warnTex:SetAllPoints()
+            warnTex:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
+            warnIcon:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L["Symbiotic Relationship"], 1, 0.82, 0)
+                GameTooltip:AddLine(L["Only the aura on the caster can be blacklisted. The aura on the target cannot be blacklisted due to Blizzard limitations."], 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            warnIcon:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+        end
+
         -- Checkboxes (always visible — checked state reflects blacklist)
         local combatChecked = isBlacklisted and type(entry) == "table" and entry.combat or false
         local oocChecked = isBlacklisted and type(entry) == "table" and entry.ooc or false
@@ -355,9 +374,31 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         return container
     end
 
+    -- ========== CURATED LIST NOTICE ==========
+    local noticeBanner = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    noticeBanner:SetPoint("TOPLEFT", 10, -10)
+    noticeBanner:SetPoint("RIGHT", -10, 0)
+    noticeBanner:SetHeight(44)
+    if not noticeBanner.SetBackdrop then Mixin(noticeBanner, BackdropTemplateMixin) end
+    noticeBanner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    noticeBanner:SetBackdropColor(0.25, 0.22, 0.10, 1)
+    noticeBanner:SetBackdropBorderColor(0.6, 0.55, 0.2, 0.6)
+
+    local noticeIcon = noticeBanner:CreateTexture(nil, "OVERLAY")
+    noticeIcon:SetPoint("LEFT", 10, 0)
+    noticeIcon:SetSize(16, 16)
+    noticeIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
+
+    local noticeText = noticeBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    noticeText:SetPoint("LEFT", noticeIcon, "RIGHT", 8, 0)
+    noticeText:SetPoint("RIGHT", noticeBanner, "RIGHT", -10, 0)
+    noticeText:SetJustifyH("LEFT")
+    noticeText:SetText(L["This is a curated list selected by Blizzard. Additional spells cannot be added as these are the only spells Blizzard has allowed. If more are permitted in the future, they will be added to this list."])
+    noticeText:SetTextColor(1, 0.82, 0)
+
     -- ========== DESCRIPTION ==========
     local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", 10, -10)
+    desc:SetPoint("TOPLEFT", noticeBanner, "BOTTOMLEFT", 0, -8)
     desc:SetPoint("RIGHT", -10, 0)
     desc:SetJustifyH("LEFT")
     desc:SetText(L["Hide specific buffs and debuffs from your frames. Click a spell to toggle blacklisting. Blacklisted auras will not appear on buff bars or Aura Designer indicators."])
@@ -366,7 +407,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
     -- ========== CLASS DROPDOWN ==========
     local dropdownContainer = CreateFrame("Frame", nil, parent)
     dropdownContainer:SetSize(280, 55)
-    dropdownContainer:SetPoint("TOPLEFT", 10, -30)
+    dropdownContainer:SetPoint("TOPLEFT", 10, -80)
 
     local classLabel = dropdownContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     classLabel:SetPoint("TOPLEFT", 0, 0)

@@ -3870,6 +3870,107 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- Copy button at top
         Add(CreateCopyButton(self.child, {"auraSourceMode", "directBuff", "directDebuff"}, L["Aura Filters"], "auras_filters"), 25, 2)
 
+        -- ===== INFO BANNER =====
+        -- Explains that Aura Filters only affect buff/debuff bars, with inline
+        -- links to related pages so users can find the independent systems.
+        do
+            local infoBanner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+            infoBanner:SetSize(560, 56)
+            if not infoBanner.SetBackdrop then Mixin(infoBanner, BackdropTemplateMixin) end
+            infoBanner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            infoBanner:SetBackdropColor(0.15, 0.18, 0.28, 1)
+            local tc = GUI.GetThemeColor()
+            infoBanner:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
+
+            local infoIcon = infoBanner:CreateTexture(nil, "OVERLAY")
+            infoIcon:SetPoint("TOPLEFT", 12, -10)
+            infoIcon:SetSize(18, 18)
+            infoIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\info")
+
+            -- Helper to create an inline clickable link
+            local function CreateInlineLink(parent, text, pageId)
+                local btn = CreateFrame("Button", nil, parent)
+                local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                fs:SetAllPoints()
+                fs:SetText(text)
+                local c = GUI.GetThemeColor()
+                fs:SetTextColor(c.r, c.g, c.b)
+                btn:SetScript("OnEnter", function() fs:SetTextColor(1, 1, 1) end)
+                btn:SetScript("OnLeave", function()
+                    local c2 = GUI.GetThemeColor()
+                    fs:SetTextColor(c2.r, c2.g, c2.b)
+                end)
+                btn:SetScript("OnClick", function()
+                    if GUI.SelectTab then GUI.SelectTab(pageId) end
+                end)
+                btn:SetSize(fs:GetStringWidth() + 2, 14)
+                return btn
+            end
+
+            -- Line 1: "Aura Filters only affect the [Buff Bar] and [Debuff Bar]."
+            local t1 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t1:SetPoint("TOPLEFT", infoIcon, "TOPRIGHT", 8, 2)
+            t1:SetText(L["Aura Filters only affect the"])
+            t1:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkBuff = CreateInlineLink(infoBanner, L["Buff Bar"], "auras_buffs")
+            linkBuff:SetPoint("LEFT", t1, "RIGHT", 3, 0)
+
+            local t2 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t2:SetPoint("LEFT", linkBuff, "RIGHT", 3, 0)
+            t2:SetText(L["and"])
+            t2:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkDebuff = CreateInlineLink(infoBanner, L["Debuff Bar"], "auras_debuffs")
+            linkDebuff:SetPoint("LEFT", t2, "RIGHT", 3, 0)
+
+            local t2b = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t2b:SetPoint("LEFT", linkDebuff, "RIGHT", 0, 0)
+            t2b:SetText(".")
+            t2b:SetTextColor(0.85, 0.85, 0.85)
+
+            -- Line 2: "Auras displayed in the [Dispel Overlay], [Defensive Icon], and [Aura Designer] are independent."
+            local t3 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t3:SetPoint("TOPLEFT", t1, "BOTTOMLEFT", 0, -4)
+            t3:SetText(L["Auras displayed in the"])
+            t3:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkDispel = CreateInlineLink(infoBanner, L["Dispel Overlay"], "auras_dispel")
+            linkDispel:SetPoint("LEFT", t3, "RIGHT", 3, 0)
+
+            local t4 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t4:SetPoint("LEFT", linkDispel, "RIGHT", 0, 0)
+            t4:SetText(",")
+            t4:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkDef = CreateInlineLink(infoBanner, L["Defensive Icon"], "auras_defensiveicon")
+            linkDef:SetPoint("LEFT", t4, "RIGHT", 3, 0)
+
+            local t5 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t5:SetPoint("LEFT", linkDef, "RIGHT", 0, 0)
+            t5:SetText(",")
+            t5:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkAD = CreateInlineLink(infoBanner, L["Aura Designer"], "auras_auradesigner")
+            linkAD:SetPoint("LEFT", t5, "RIGHT", 3, 0)
+
+            local t5b = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t5b:SetPoint("LEFT", linkAD, "RIGHT", 0, 0)
+            t5b:SetText(", " .. L["and"])
+            t5b:SetTextColor(0.85, 0.85, 0.85)
+
+            local linkBoss = CreateInlineLink(infoBanner, L["Boss Debuffs"], "auras_bossdebuffs")
+            linkBoss:SetPoint("LEFT", t5b, "RIGHT", 3, 0)
+
+            local t6 = infoBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            t6:SetPoint("LEFT", linkBoss, "RIGHT", 3, 0)
+            t6:SetText(L["are independent of Aura Filters."])
+            t6:SetTextColor(0.85, 0.85, 0.85)
+
+            Add(infoBanner, 62, "both")
+            AddSpace(4, "both")
+        end
+
         -- hideOn helper: only show Direct mode options when Direct is selected
         local function HideDirectOptions(d)
             return d.auraSourceMode ~= "DIRECT"
@@ -3888,7 +3989,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- ===== MODE SELECTION (Column 1) =====
         local modeGroup = GUI:CreateSettingsGroup(self.child, 280)
         modeGroup:AddWidget(GUI:CreateHeader(self.child, L["Aura Data Source"]), 40)
-        modeGroup:AddWidget(GUI:CreateLabel(self.child, L["Choose how DandersFrames reads aura data for buffs, debuffs, defensives, and dispel detection."], 250), 45)
 
         local modeOptions = {
             BLIZZARD = L["Blizzard (Default)"],
@@ -3905,8 +4005,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- the value is correct; this just prevents the user from trying to
         -- switch back to a source that no longer exists.
         modeDropdown.disableOn = function() return DF.BlizzardAuraSourceUnavailable end
-
-        modeGroup:AddWidget(GUI:CreateLabel(self.child, "|cff888888Blizzard: Uses Blizzard's built-in aura filtering. No customisation available.\n\nDirect API: Queries the aura API directly. Full control over which buffs and debuffs appear.|r", 250), 80)
 
         -- Warning note shown when the Blizzard source has been force-disabled.
         -- Uses hideOn (not disableOn) since it's informational text.
@@ -4033,29 +4131,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         dfSort.hideOn = HideDirectOptions
         Add(debuffGroup, nil, 1)
 
-        -- ===== DEFENSIVES INFO (Column 2, Direct mode only) =====
-        local defGroup = GUI:CreateSettingsGroup(self.child, 280)
-        defGroup.hideOn = HideDirectOptions
-        local defHeader = defGroup:AddWidget(GUI:CreateHeader(self.child, L["Defensives"]), 40)
-        defHeader.hideOn = HideDirectOptions
-
-        local defInfo = defGroup:AddWidget(GUI:CreateLabel(self.child, L["In Direct mode, all active big and external defensives are shown per unit (not just one). Adjust max count and layout on the Defensive Icon page."], 250), 60)
-        defInfo.hideOn = HideDirectOptions
-
-        -- ===== DISPEL INFO =====
-        local dispelHeader = defGroup:AddWidget(GUI:CreateHeader(self.child, L["Dispel Detection"]), 40)
-        dispelHeader.hideOn = HideDirectOptions
-
-        local dispelInfo = defGroup:AddWidget(GUI:CreateLabel(self.child, L["Automatically detects player-dispellable debuffs via the RAID_PLAYER_DISPELLABLE filter. Configure the overlay on the Dispel Overlay page."], 250), 60)
-        dispelInfo.hideOn = HideDirectOptions
-        Add(defGroup, nil, 2)
-
         -- ===== SEE ALSO =====
         Add(GUI:CreateSeeAlso(self.child, {
             {pageId = "auras_buffs", label = L["Buff Icons"]},
             {pageId = "auras_debuffs", label = L["Debuff Icons"]},
-            {pageId = "auras_defensiveicon", label = L["Defensive Icon"]},
-            {pageId = "auras_dispel", label = L["Dispel Overlay"]},
+            {pageId = "auras_blacklist", label = L["Aura Blacklist"]},
+            {pageId = "auras_auradesigner", label = L["Aura Designer"]},
         }), 30, "both")
     end)
 
@@ -4566,7 +4647,51 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     BuildPage(pageBossDebuffs, function(self, db, Add, AddSpace, AddSyncPoint)
         -- Copy button at top
         Add(CreateCopyButton(self.child, {"bossDebuff"}, L["Boss Debuffs"], "auras_bossdebuffs"), 25, 2)
-        
+
+        -- ===== INFO BANNER =====
+        do
+            local bdBanner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+            bdBanner:SetSize(560, 38)
+            if not bdBanner.SetBackdrop then Mixin(bdBanner, BackdropTemplateMixin) end
+            bdBanner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            bdBanner:SetBackdropColor(0.15, 0.18, 0.28, 1)
+            local tc = GUI.GetThemeColor()
+            bdBanner:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
+
+            local bdIcon = bdBanner:CreateTexture(nil, "OVERLAY")
+            bdIcon:SetPoint("LEFT", 12, 0)
+            bdIcon:SetSize(18, 18)
+            bdIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\info")
+
+            local bdText = bdBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bdText:SetPoint("LEFT", bdIcon, "RIGHT", 8, 0)
+            bdText:SetText(L["Boss Debuffs cannot trigger"])
+            bdText:SetTextColor(0.85, 0.85, 0.85)
+
+            local bdLink = CreateFrame("Button", nil, bdBanner)
+            local bdLinkText = bdLink:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bdLinkText:SetAllPoints()
+            bdLinkText:SetText(L["Dispel Overlays"])
+            bdLinkText:SetTextColor(tc.r, tc.g, tc.b)
+            bdLink:SetSize(bdLinkText:GetStringWidth() + 2, 14)
+            bdLink:SetPoint("LEFT", bdText, "RIGHT", 3, 0)
+            bdLink:SetScript("OnEnter", function() bdLinkText:SetTextColor(1, 1, 1) end)
+            bdLink:SetScript("OnLeave", function()
+                local c = GUI.GetThemeColor()
+                bdLinkText:SetTextColor(c.r, c.g, c.b)
+            end)
+            bdLink:SetScript("OnClick", function()
+                if GUI.SelectTab then GUI.SelectTab("auras_dispel") end
+            end)
+
+            local bdSuffix = bdBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bdSuffix:SetPoint("LEFT", bdLink, "RIGHT", 3, 0)
+            bdSuffix:SetText(L["on frames."])
+            bdSuffix:SetTextColor(0.85, 0.85, 0.85)
+
+            Add(bdBanner, 44, "both")
+        end
+
         AddSpace(10, "both")
         
         local anchorOptions = {

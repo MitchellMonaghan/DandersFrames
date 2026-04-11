@@ -140,7 +140,7 @@ function DF:ApplyFrameLayout(frame)
         absorbBar:SetStatusBarTexture(absorbTex)
         absorbBar:SetStatusBarColor(absorbColor.r, absorbColor.g, absorbColor.b, absorbColor.a)
         
-        if absorbMode ~= "OVERLAY" then
+        if absorbMode == "FLOATING" then
             -- Floating mode positioning
             absorbBar:ClearAllPoints()
             local anchor = db.absorbBarAnchor or "BOTTOM"
@@ -178,7 +178,7 @@ function DF:ApplyFrameLayout(frame)
         healAbsorbBar:SetStatusBarTexture(healAbsorbTex)
         healAbsorbBar:SetStatusBarColor(healAbsorbColor.r, healAbsorbColor.g, healAbsorbColor.b, healAbsorbColor.a)
         
-        if healAbsorbMode ~= "OVERLAY" then
+        if healAbsorbMode == "FLOATING" then
             -- Floating mode positioning
             healAbsorbBar:ClearAllPoints()
             local anchor = db.healAbsorbBarAnchor or "BOTTOM"
