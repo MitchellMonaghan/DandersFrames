@@ -749,7 +749,7 @@ function DF:CheckBlizzardAuraSourceAvailable()
                         "directDebuffShowAll", "directDebuffFilterRaid",
                         "directDebuffFilterRaidInCombat", "directDebuffFilterCrowdControl",
                         "directDebuffFilterImportant",
-                        "directDebuffFilterRaidPlayerDispellable", "directDebuffFilterAllDispellable",
+                        "directDebuffDispellableMode",
                         "directDebuffSortOrder",
                     }
 
@@ -1226,10 +1226,10 @@ local function BuildDirectDebuffFilters(db)
     if db.directDebuffFilterImportant then
         filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.Important or "IMPORTANT")
     end
-    if db.directDebuffFilterRaidPlayerDispellable then
+    if db.directDebuffDispellableMode == "PLAYER" then
         filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.RaidPlayerDispellable or "RAID_PLAYER_DISPELLABLE")
     end
-    -- Note: directDebuffFilterAllDispellable has no Blizzard filter constant —
+    -- Note: directDebuffDispellableMode == "ALL" has no Blizzard filter constant —
     -- it's post-classified in ScanUnitDirect via auraData.dispelName ~= nil.
     -- No sub-filters selected = show all (backward compat)
     if #filters == 0 then return nil end
@@ -1486,7 +1486,7 @@ local function ClassifyAura(cache, unit, auraData, kind, buffFilters, debuffFilt
         end
         -- User-configurable debuff filter (nil means show all)
         local passesFilters = not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters)
-        local passesAllDispellable = db and db.directDebuffFilterAllDispellable and isAllDispellable
+        local passesAllDispellable = db and db.directDebuffDispellableMode == "ALL" and isAllDispellable
         if passesFilters or passesAllDispellable then
             cache.debuffs[id] = true
         end

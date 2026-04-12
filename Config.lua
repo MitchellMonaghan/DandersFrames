@@ -917,8 +917,7 @@ DF.PartyDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
-    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffDispellableMode = "PLAYER",  -- "PLAYER" (RAID_PLAYER_DISPELLABLE) or "ALL" (dispelName ~= nil)
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
@@ -1749,43 +1748,47 @@ DF.PartyDefaults = {
     -- internal `targetedList*` db prefix so the feature can be renamed later
     -- by editing locale strings only. Party-mode only by design.
     -- Position uses an absolute mover (targetedListX/Y), not an anchor point.
-    targetedListBackgroundAlpha = 0.6,
-    targetedListBorderColor = {r = 0, g = 0, b = 0, a = 1},
+    targetedListBackgroundAlpha = 0.5,
+    targetedListBorderColor = {r = 0.18, g = 0.18, b = 0.18, a = 1},
     targetedListEnabled = false,
     targetedListFadeOutDuration = 0.25,
-    targetedListFont = "Friz Quadrata TT",
-    targetedListFontOutline = "OUTLINE",
-    targetedListFontSize = 12,
-    targetedListSpellNameFontSize = 12,
-    targetedListTargetNameFontSize = 12,
+    targetedListFont = "DF Roboto SemiBold",
+    targetedListFontOutline = "SHADOW",
+    targetedListFontSize = 11,
+    targetedListSpellNameFontSize = 0,
+    targetedListTargetNameFontSize = 0,
     targetedListGrowth = "DOWN",
     targetedListHeight = 22,
     targetedListHideOwnCasts = false,
+    targetedListHideOutOfCombat = true,
     targetedListHighlightImportant = true,
     targetedListHighlightColor = {r = 1, g = 0.8, b = 0},
     targetedListIconPosition = "LEFT",
-    targetedListImportantOnly = true,
+    targetedListImportantOnly = false,
     targetedListInArena = true,
     targetedListInBattlegrounds = true,
     targetedListInDungeons = true,
     targetedListInOpenWorld = true,
     targetedListInRaids = false,
-    targetedListInterruptedFlashDuration = 1.0,
+    targetedListInterruptedFlashDuration = 2.0,
     targetedListInterruptibleColor = {r = 1, g = 0.2, b = 0.2, a = 1},
     targetedListMaxBars = 6,
     targetedListShowArrowPrefix = true,
+    targetedListShowArrowSuffix = false,
     targetedListShowBorder = true,
-    targetedListShowUntargeted = false,
+    targetedListShowUntargeted = true,
     targetedListShowDuration = true,
     targetedListShowIcon = true,
     targetedListShowSpellName = true,
     targetedListShowTargetName = true,
-    targetedListSortOrder = "NEWEST",
-    targetedListSpacing = 2,
+    targetedListSortOrder = "OLDEST",
+    targetedListSpacing = 6,
     targetedListStylePreset = "DEFAULT",
     targetedListTargetNameClassColor = true,
-    targetedListTexture = "Interface\\TargetingFrame\\UI-StatusBar",
+    targetedListTexture = "Interface\\Buttons\\WHITE8x8",
     targetedListUninterruptibleColor = {r = 0.5, g = 0.5, b = 0.5, a = 1},
+    targetedListSelfTargetColorEnabled = true,
+    targetedListSelfTargetColor = {r = 1, g = 0.85, b = 0.1, a = 0.2},
     targetedListWidth = 240,
     targetedListX = 0,
     targetedListY = -10,
@@ -1805,7 +1808,8 @@ DF.PartyDefaults = {
     targetedListTargetNameY = 0,
     targetedListDurationAnchor = "RIGHT",
     targetedListDurationAlign = "RIGHT",
-    targetedListDurationX = -4,
+    targetedListDurationFontSize = 17,
+    targetedListDurationX = -6,
     targetedListDurationY = 0,
     targetedListInterruptTextAnchor = "CENTER",
     targetedListInterruptTextAlign = "CENTER",
@@ -2213,8 +2217,7 @@ DF.RaidDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
-    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffDispellableMode = "PLAYER",  -- "PLAYER" (RAID_PLAYER_DISPELLABLE) or "ALL" (dispelName ~= nil)
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",

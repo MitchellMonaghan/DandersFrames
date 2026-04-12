@@ -3689,6 +3689,24 @@ DF._MainEventDispatcher = function(self, event, arg1)
             end
         end
 
+        -- Migrate dispellable filter from two booleans to single mode string (v4.3.x)
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for profileName, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    local modeDb = profile[mode]
+                    if modeDb and modeDb.directDebuffDispellableMode == nil then
+                        if modeDb.directDebuffFilterAllDispellable == true then
+                            modeDb.directDebuffDispellableMode = "ALL"
+                        else
+                            modeDb.directDebuffDispellableMode = "PLAYER"
+                        end
+                        modeDb.directDebuffFilterRaidPlayerDispellable = nil
+                        modeDb.directDebuffFilterAllDispellable = nil
+                    end
+                end
+            end
+        end
+
         -- Recover from crash/disconnect during auto layout editing.
         -- If the recovery flag exists, the previous session was editing an auto layout
         -- when it crashed — _realRaidDB may still contain override values baked in.

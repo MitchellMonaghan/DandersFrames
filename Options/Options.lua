@@ -4095,6 +4095,36 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         dfAll.hideOn = HideDirectOptions
         dfAll.tooltip = L["Show every debuff with no filtering."]
 
+        -- ===== WARNING BANNER: All Debuffs disabled =====
+        local debuffWarningBanner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+        debuffWarningBanner:SetSize(560, 45)
+        debuffWarningBanner:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        debuffWarningBanner:SetBackdropColor(0.5, 0.45, 0.1, 0.9)
+        debuffWarningBanner:SetBackdropBorderColor(0.7, 0.6, 0.1, 1)
+
+        local debuffWarningIcon = debuffWarningBanner:CreateTexture(nil, "OVERLAY")
+        debuffWarningIcon:SetSize(20, 20)
+        debuffWarningIcon:SetPoint("LEFT", 12, 0)
+        debuffWarningIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
+        debuffWarningIcon:SetVertexColor(1, 0.9, 0.3)
+
+        local debuffWarningText = debuffWarningBanner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        debuffWarningText:SetPoint("LEFT", debuffWarningIcon, "RIGHT", 8, 0)
+        debuffWarningText:SetPoint("RIGHT", -12, 0)
+        debuffWarningText:SetJustifyH("LEFT")
+        debuffWarningText:SetWordWrap(true)
+        debuffWarningText:SetText(L["Recommended: enable 'All Debuffs' to see all relevant debuffs, especially for healers."])
+        debuffWarningText:SetTextColor(1, 0.95, 0.7)
+
+        debuffWarningBanner.hideOn = function(d)
+            return d.auraSourceMode ~= "DIRECT" or d.directDebuffShowAll
+        end
+        debuffGroup:AddWidget(debuffWarningBanner, 50)
+
         local debuffSubInfo = debuffGroup:AddWidget(GUI:CreateLabel(self.child, "|cff888888Enabled filters are combined \226\128\148 debuffs matching any selected filter will be shown.|r", 250), 35)
         debuffSubInfo.hideOn = HideDebuffSubFilters
 
@@ -4114,13 +4144,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         dfImportant.hideOn = HideDebuffSubFilters
         dfImportant.tooltip = L["Spells flagged as important by Blizzard."]
 
-        local dfPlayerDispel = debuffGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Player Dispellable"], db, "directDebuffFilterRaidPlayerDispellable", DirectFilterChanged), 30)
-        dfPlayerDispel.hideOn = HideDebuffSubFilters
-        dfPlayerDispel.tooltip = L["Debuffs your current character can dispel."]
-
-        local dfAllDispel = debuffGroup:AddWidget(GUI:CreateCheckbox(self.child, L["All Dispellable"], db, "directDebuffFilterAllDispellable", DirectFilterChanged), 30)
-        dfAllDispel.hideOn = HideDebuffSubFilters
-        dfAllDispel.tooltip = L["Any debuff that can be dispelled, regardless of whether you can dispel it."]
+        local dfDispelToggle = debuffGroup:AddWidget(GUI:CreateToggleSwitch(self.child, L["Dispellable By Me"], L["All Dispellable"], db, "directDebuffDispellableMode", "PLAYER", "ALL", DirectFilterChanged), 30)
+        dfDispelToggle.hideOn = HideDebuffSubFilters
+        dfDispelToggle.tooltip = L["Dispellable By Me: only debuffs you can dispel. All Dispellable: any debuff that can be dispelled."]
 
         local debuffSortOptions = {
             DEFAULT = L["Default (Slot Order)"],
@@ -5645,10 +5671,13 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             end), 30)
             local tlImportantOnly = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Important Spells Only"], db, "targetedListImportantOnly", TargetedListUpdate), 30)
             tlImportantOnly.disableOn = HideTLOptions
-            local tlHideOwn = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Own Casts"], db, "targetedListHideOwnCasts", TargetedListUpdate), 30)
+            local tlHideOwn = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Casts Targeting You"], db, "targetedListHideOwnCasts", TargetedListUpdate), 30)
             tlHideOwn.disableOn = HideTLOptions
             local tlShowUntargeted = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Untargeted Casts"], db, "targetedListShowUntargeted", TargetedListUpdate), 30)
             tlShowUntargeted.disableOn = HideTLOptions
+            local tlHideOOC = settingsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Out-of-Combat Casts"], db, "targetedListHideOutOfCombat", TargetedListUpdate), 30)
+            tlHideOOC.disableOn = HideTLOptions
+            tlHideOOC.tooltip = L["Only show casts from enemies that are in combat. Filters out idle mobs casting nearby."]
             local tlMaxBars = settingsGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Bars"], 1, 20, 1, db, "targetedListMaxBars", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlMaxBars.disableOn = HideTLOptions
             Add(settingsGroup, nil, 1)
@@ -5720,6 +5749,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlInterColor.disableOn = HideTLOptions
             local tlUninterColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Uninterruptible Color"], db, "targetedListUninterruptibleColor", true, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListBarColor then DF:LightweightUpdateTargetedListBarColor() end end, true), 35)
             tlUninterColor.disableOn = HideTLOptions
+            local tlSelfTargetEnabled = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Self-Target Color"], db, "targetedListSelfTargetColorEnabled", function()
+                self:RefreshStates()
+                TargetedListUpdate()
+            end), 30)
+            tlSelfTargetEnabled.disableOn = HideTLOptions
+            tlSelfTargetEnabled.tooltip = L["Highlight the bar when the enemy is casting at you."]
+            local function HideSelfTargetOptions(d) return not d.targetedListEnabled or not d.targetedListSelfTargetColorEnabled end
+            local tlSelfTargetColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Self-Target Color"], db, "targetedListSelfTargetColor", true, TargetedListUpdate, nil, true), 35)
+            tlSelfTargetColor.disableOn = HideSelfTargetOptions
             local tlHighlight = colorGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Highlight Important Spells"], db, "targetedListHighlightImportant", function()
                 self:RefreshStates()
                 TargetedListUpdate()
@@ -5765,6 +5803,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tlClassColor.disableOn = HideTargetNameOptions
             local tlArrow = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Arrow Prefix"], db, "targetedListShowArrowPrefix", TargetedListUpdate), 30)
             tlArrow.disableOn = HideTargetNameOptions
+            local tlArrowSuffix = textToggleGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Arrow Suffix"], db, "targetedListShowArrowSuffix", TargetedListUpdate), 30)
+            tlArrowSuffix.disableOn = HideTargetNameOptions
             AddToSection(textToggleGroup, nil, 1)
 
             local fontGroup = GUI:CreateSettingsGroup(self.child, 260)
@@ -5795,7 +5835,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             spellNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Spell Name"]), 40)
             local tlSNFontSize = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListSpellNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNFontSize.disableOn = HideTLOptions
-            local tlSNWidth = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Width"], 0, 400, 1, db, "targetedListSpellNameWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlSNWidth = spellNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Text Width"], 0, 400, 1, db, "targetedListSpellNameWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlSNWidth.disableOn = HideTLOptions
             local tlSNAnchor = spellNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListSpellNameAnchor", TargetedListUpdate), 55)
             tlSNAnchor.disableOn = HideTLOptions
@@ -5811,7 +5851,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             targetNamePosGroup:AddWidget(GUI:CreateHeader(self.child, L["Target Name"]), 40)
             local tlTNFontSize = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListTargetNameFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNFontSize.disableOn = HideTargetNameOptions
-            local tlTNWidth = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Width"], 0, 400, 1, db, "targetedListTargetNameWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlTNWidth = targetNamePosGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Text Width"], 0, 400, 1, db, "targetedListTargetNameWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlTNWidth.disableOn = HideTargetNameOptions
             local tlTNAnchor = targetNamePosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListTargetNameAnchor", TargetedListUpdate), 55)
             tlTNAnchor.disableOn = HideTargetNameOptions
@@ -5826,6 +5866,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             local function HideDurationPosOptions(d) return not d.targetedListEnabled or not d.targetedListShowDuration end
             local durationPosGroup = GUI:CreateSettingsGroup(self.child, 260)
             durationPosGroup:AddWidget(GUI:CreateHeader(self.child, L["Duration"]), 40)
+            local tlDurFontSize = durationPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListDurationFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
+            tlDurFontSize.disableOn = HideDurationPosOptions
             local tlDurAnchor = durationPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListDurationAnchor", TargetedListUpdate), 55)
             tlDurAnchor.disableOn = HideDurationPosOptions
             local tlDurAlign = durationPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Alignment"], textAlignOptions, db, "targetedListDurationAlign", TargetedListUpdate), 55)
@@ -5840,7 +5882,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             interruptPosGroup:AddWidget(GUI:CreateHeader(self.child, L["Interrupt Text"]), 40)
             local tlIntFontSize = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Font Size"], 6, 24, 1, db, "targetedListInterruptTextFontSize", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlIntFontSize.disableOn = HideTLOptions
-            local tlIntWidth = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Width"], 0, 400, 1, db, "targetedListInterruptTextWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
+            local tlIntWidth = interruptPosGroup:AddWidget(GUI:CreateSlider(self.child, L["Max Text Width"], 0, 400, 1, db, "targetedListInterruptTextWidth", TargetedListUpdate, TargetedListUpdate, true), 55)
             tlIntWidth.disableOn = HideTLOptions
             local tlIntAnchor = interruptPosGroup:AddWidget(GUI:CreateDropdown(self.child, L["Anchor"], textAnchorOptions, db, "targetedListInterruptTextAnchor", TargetedListUpdate), 55)
             tlIntAnchor.disableOn = HideTLOptions

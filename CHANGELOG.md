@@ -1,5 +1,31 @@
 # DandersFrames Changelog
 
+## [4.3.1] - 2026-04-12
+
+### New Features
+
+* **Toggle Switch GUI element** — new reusable UI control for mutually exclusive A/B settings, with themed visuals and label highlighting
+* (Aura Filters) Dispellable filter now uses a toggle switch (Dispellable By Me / All Dispellable) instead of two separate checkboxes
+* (Aura Filters) Warning banner when "All Debuffs" is disabled, recommending healers keep it enabled
+* (Targeted List) Arrow suffix setting — append an arrow marker after the target name, complementing the existing arrow prefix
+* (Targeted List) Self-target color overlay — highlight bars with a configurable color when the enemy is casting at you (enabled by default)
+* (Targeted List) Hide out-of-combat casts — filter out casts from idle mobs not yet in combat (enabled by default)
+* (Targeted List) Duration text now uses custom FontString instead of Blizzard's native Cooldown countdown, allowing custom font, size, and outline to apply
+* (Targeted List) Duration font size slider added to the Duration section in Text Position settings
+
+### Improvements
+
+* (Targeted List) Rename "Hide Own Casts" to "Hide Casts Targeting You" for clarity
+* (Targeted List) Rename "Width" to "Max Text Width" on spell name, target name, and interrupt text sliders
+* (Targeted List) Font now uses DF:SafeSetFont for proper SHADOW outline and multi-alphabet support
+* (Targeted List) Per-element font sizes (0 = use global) now fall back correctly instead of treating 0 as a literal size
+* (Targeted List) Updated defaults: font matches global (DF Roboto SemiBold / SHADOW), self-target color on, hide out-of-combat on, show untargeted on, flat texture, and other tuned values
+* (Aura Blacklist) Increased warning and notice banner icon sizes for better visibility
+
+### Bug Fixes
+
+* (Targeted List) Fix global font not applying on first open — bars now receive font settings immediately on acquisition from the pool
+
 ## [4.3.0] - 2026-04-10
 
 ### Improvements

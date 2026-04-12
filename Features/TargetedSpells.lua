@@ -3821,7 +3821,8 @@ local function TargetedList_IsRelevantCaster(casterUnit)
     return true
 end
 
--- File-scope cached duration APIs (added for the secret-taint fix)
+-- File-scope cached APIs
+local TL_UnitAffectingCombat = UnitAffectingCombat
 local TL_UnitCastingDuration_API = UnitCastingDuration
 local TL_UnitChannelDuration_API = UnitChannelDuration
 local TL_C_Spell_GetSpellName = C_Spell and C_Spell.GetSpellName
@@ -3856,10 +3857,15 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     if not TargetedList_ShouldPickup() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
+    -- Combat filter: skip casters not in combat (idle mobs casting nearby)
+    local party = DF.db and DF.db.party
+    if party and party.targetedListHideOutOfCombat then
+        if not TL_UnitAffectingCombat(casterUnit) then return end
+    end
+
     -- Targeting filter: check if the cast targets a party member.
     -- If "Show Untargeted" is on, also accept casts that have no
     -- target at all (ground AoEs, self-buffs, untargeted channels).
-    local party = DF.db and DF.db.party
     local showUntargeted = party and party.targetedListShowUntargeted
     local target = casterUnit .. "target"
     local hasTarget = TL_UnitExists(target)
@@ -4346,16 +4352,41 @@ local function TargetedList_BuildBar(parent)
     targetName:SetWordWrap(false)
     bar.targetName = targetName
 
-    -- Duration countdown: a Cooldown frame that handles native
-    -- secret-safe countdown rendering via SetCooldownFromDurationObject.
-    -- The swirl / edge are hidden; we only use it for the countdown
-    -- number text. Positioned and sized by ApplyBarAppearance.
-    local durationCooldown = CreateFrame("Cooldown", nil, progress, "CooldownFrameTemplate")
-    durationCooldown:SetDrawEdge(false)
-    durationCooldown:SetDrawSwipe(false)
-    durationCooldown:SetDrawBling(false)
-    durationCooldown:SetHideCountdownNumbers(false)
-    bar.duration = durationCooldown
+    -- Duration countdown text. We use a custom FontString updated via
+    -- OnUpdate instead of Blizzard's native Cooldown countdown, so that
+    -- custom fonts can be applied. The remaining time is read from the
+    -- duration object stored on the bar via GetRemainingDuration().
+    local durationText = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    durationText:SetJustifyV("MIDDLE")
+    durationText:SetWordWrap(false)
+    bar.duration = durationText
+
+    -- OnUpdate: refresh duration countdown text every ~100ms
+    bar._durationElapsed = 0
+    bar:SetScript("OnUpdate", function(self, elapsed)
+        self._durationElapsed = self._durationElapsed + elapsed
+        if self._durationElapsed < 0.1 then return end
+        self._durationElapsed = self._durationElapsed - 0.1
+        if not self.duration:IsShown() then return end
+        if self._durationObj then
+            -- Live bar: read remaining time from the opaque duration object
+            local remaining = self._durationObj:GetRemainingDuration()
+            if remaining and remaining > 0 then
+                self.duration:SetFormattedText("%.1f", remaining)
+            else
+                self.duration:SetText("")
+            end
+        elseif self._testDuration then
+            -- Test bar: compute from startTime + totalDuration
+            local td = self._testDuration
+            local remaining = td.totalDuration - (TL_GetTime() - td.startTime)
+            if remaining > 0 then
+                self.duration:SetFormattedText("%.1f", remaining)
+            else
+                self.duration:SetText("")
+            end
+        end
+    end)
 
     -- Interrupter name FontString — shown during interrupted-flash
     -- fade with the name of who kicked the cast. Overlays spell name
@@ -4377,6 +4408,18 @@ local function TargetedList_BuildBar(parent)
     highlight:SetFrameLevel(bar:GetFrameLevel() + 5)
     highlight:Hide()
     bar.highlightFrame = highlight
+
+    -- Self-target color overlay. A frame wrapping a colored texture,
+    -- shown/hidden via SetShownFromBoolean (secret-safe sink) when
+    -- the enemy cast targets the player.
+    local selfFrame = CreateFrame("Frame", nil, progress)
+    selfFrame:SetAllPoints()
+    selfFrame:SetFrameLevel(progress:GetFrameLevel() + 1)
+    selfFrame:Hide()
+    local selfTex = selfFrame:CreateTexture(nil, "OVERLAY")
+    selfTex:SetAllPoints()
+    bar.selfTargetFrame = selfFrame
+    bar.selfTargetTex = selfTex
 
     return bar
 end
@@ -4433,19 +4476,11 @@ local function TargetedList_ApplyTextLayout(bar, db)
         "targetedListInterruptTextWidth",
         "targetedListInterruptTextX", "targetedListInterruptTextY", "CENTER", "CENTER")
 
-    -- Duration: the Cooldown frame renders its own countdown text at
-    -- its center. We position the frame itself (as a narrow box) at
-    -- the configured anchor, and the text appears centered inside.
-    if bar.duration then
-        local point = TargetedList_ResolveAnchorPoint(db.targetedListDurationAnchor or "RIGHT")
-        local fontSize = db.targetedListFontSize or 12
-        local cdW = math.max(40, fontSize * 3)
-        local cdH = math.max(14, fontSize + 4)
-        bar.duration:ClearAllPoints()
-        bar.duration:SetSize(cdW, cdH)
-        bar.duration:SetPoint(point, bar.progress, point,
-            db.targetedListDurationX or 0, db.targetedListDurationY or 0)
-    end
+    -- Duration: now a FontString like the others, positioned via applyTextElement.
+    applyTextElement(bar.duration,
+        "targetedListDurationAnchor", "targetedListDurationAlign",
+        nil,  -- no width key; duration text is short
+        "targetedListDurationX", "targetedListDurationY", "RIGHT", "RIGHT")
 end
 
 -- Apply static appearance settings to a bar. "Static" here means the
@@ -4522,30 +4557,30 @@ local function TargetedList_ApplyBarAppearance(bar, db)
         bar.border:Hide()
     end
 
-    -- ----- Font (all three text elements share one font setting) -----
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    if DF.GetFontPath then
-        local resolved = DF:GetFontPath(db.targetedListFont or "Friz Quadrata TT")
-        if type(resolved) == "string" then fontPath = resolved end
-    end
+    -- ----- Font (all text elements share one font + outline setting) -----
+    local fontName = db.targetedListFont or "Friz Quadrata TT"
     local fontSize = db.targetedListFontSize or 12
-    local outline = db.targetedListFontOutline
-    if outline == "NONE" then outline = "" end
+    local outline = db.targetedListFontOutline or ""
 
-    -- Per-element font sizes fall back to the global targetedListFontSize
-    local spellNameFontSize = db.targetedListSpellNameFontSize or fontSize
-    local targetNameFontSize = db.targetedListTargetNameFontSize or fontSize
-    bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
-    bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
+    -- Per-element font sizes fall back to the global targetedListFontSize.
+    -- 0 means "use global" (the default for per-element overrides).
+    local spellNameFontSize = db.targetedListSpellNameFontSize
+    if not spellNameFontSize or spellNameFontSize == 0 then spellNameFontSize = fontSize end
+    local targetNameFontSize = db.targetedListTargetNameFontSize
+    if not targetNameFontSize or targetNameFontSize == 0 then targetNameFontSize = fontSize end
+
+    DF:SafeSetFont(bar.spellName, fontName, spellNameFontSize, outline)
+    DF:SafeSetFont(bar.targetName, fontName, targetNameFontSize, outline)
     if bar.interruptText then
-        local intFontSize = db.targetedListInterruptTextFontSize or fontSize
-        bar.interruptText:SetFont(fontPath, intFontSize, outline)
+        local intFontSize = db.targetedListInterruptTextFontSize
+        if not intFontSize or intFontSize == 0 then intFontSize = fontSize end
+        DF:SafeSetFont(bar.interruptText, fontName, intFontSize, outline)
     end
-    -- NOTE: The duration Cooldown frame renders its countdown text
-    -- via Blizzard's native cooldown system, which uses a built-in
-    -- font object (NumberFontNormal-ish). Custom font paths can't
-    -- be applied — SetCountdownFont takes a font object name string,
-    -- not a (path, size, outline) triple.
+    if bar.duration then
+        local durFontSize = db.targetedListDurationFontSize
+        if not durFontSize or durFontSize == 0 then durFontSize = fontSize end
+        DF:SafeSetFont(bar.duration, fontName, durFontSize, outline)
+    end
 
     -- ----- Per-element show/hide toggles -----
     -- NOTE: spell name and target name visibility is handled in
@@ -4568,9 +4603,11 @@ local function TargetedList_ResetBar(pool, bar)
     bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
     bar.spellName:SetText("")
     bar.targetName:SetText("")
-    if bar.duration and bar.duration.Clear then
-        bar.duration:Clear()
+    if bar.duration then
+        bar.duration:SetText("")
     end
+    bar._durationObj = nil
+    bar._testDuration = nil
     bar.icon:SetTexture(nil)
     bar._lastTexturePath = nil
     if bar.highlightFrame then
@@ -4591,10 +4628,13 @@ local targetedListBarPoolAvailable = {}
 local function TargetedList_AcquireBar()
     local parent = TargetedList_EnsureContainer()
     local bar = table.remove(targetedListBarPoolAvailable)
-    if bar then
-        return bar
+    if not bar then
+        bar = TargetedList_BuildBar(parent)
     end
-    return TargetedList_BuildBar(parent)
+    -- Apply appearance immediately so bars never show with template fonts
+    local db = DF.db and DF.db.party
+    if db then TargetedList_ApplyBarAppearance(bar, db) end
+    return bar
 end
 
 local function TargetedList_ReleaseBar(bar)
@@ -4651,18 +4691,15 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     -- Target name: test records store a clean string; live records
     -- use UnitSpellTargetName (secret-tainted, fed to SetText sink).
     local party = DF.db and DF.db.party
+    local arrowPrefix = (party and party.targetedListShowArrowPrefix) and "> " or ""
+    local arrowSuffix = (party and party.targetedListShowArrowSuffix) and " <" or ""
     if isTest and activeRec.testTargetName then
-        local tname = activeRec.testTargetName
-        if party and party.targetedListShowArrowPrefix then
-            bar.targetName:SetText("> " .. tname)
-        else
-            bar.targetName:SetText(tname)
-        end
+        bar.targetName:SetText(arrowPrefix .. activeRec.testTargetName .. arrowSuffix)
     else
         local targetName = TL_UnitSpellTargetName(casterUnit)
         if targetName then
-            if party and party.targetedListShowArrowPrefix then
-                bar.targetName:SetFormattedText("> %s", targetName)
+            if arrowPrefix ~= "" or arrowSuffix ~= "" then
+                bar.targetName:SetFormattedText("%s%s%s", arrowPrefix, targetName, arrowSuffix)
             else
                 bar.targetName:SetText(targetName)
             end
@@ -4699,28 +4736,30 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     if activeRec.testFrozenFill then
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(activeRec.testFrozenFill)
+        bar._durationObj = nil
+        bar._testDuration = nil
     elseif activeRec.fadingStartedAt then
         -- Don't update progress. The fill stays where it was.
+        bar._durationObj = nil
+        bar._testDuration = nil
     elseif isTest and activeRec.testCastDuration then
         local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
         local elapsed = TL_GetTime() - activeRec.startTime
         local pct = math.min(1, math.max(0, elapsed / cutoff))
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(pct)
-        if bar.duration and bar.duration.SetCooldown then
-            bar.duration:SetCooldown(activeRec.startTime, cutoff)
-        end
+        -- Store test timing for OnUpdate duration text
+        bar._durationObj = nil
+        bar._testDuration = { startTime = activeRec.startTime, totalDuration = cutoff }
     elseif activeRec.duration and bar.progress.SetTimerDuration then
         local direction = activeRec.isChannel
             and Enum.StatusBarTimerDirection.RemainingTime
             or Enum.StatusBarTimerDirection.ElapsedTime
         bar.progress:SetTimerDuration(activeRec.duration,
             Enum.StatusBarInterpolation.Immediate, direction)
-        if bar.duration and activeRec.duration then
-            if bar.duration.SetCooldownFromDurationObject then
-                bar.duration:SetCooldownFromDurationObject(activeRec.duration)
-            end
-        end
+        -- Store duration object for OnUpdate countdown text
+        bar._durationObj = activeRec.duration
+        bar._testDuration = nil
     end
 
     -- Interruptible color: test records have a clean bool so we can
@@ -4808,6 +4847,25 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
         else
             bar:SetAlpha(1)
+        end
+    end
+
+    -- Self-target color overlay (non-fading path only).
+    if not activeRec.fadingStartedAt then
+        if party and party.targetedListSelfTargetColorEnabled
+           and bar.selfTargetFrame then
+            local sc = party.targetedListSelfTargetColor or {r = 1, g = 0.85, b = 0.1, a = 0.4}
+            bar.selfTargetTex:SetColorTexture(sc.r, sc.g, sc.b, sc.a or 0.4)
+            if isTest then
+                -- Test bars use a clean boolean field
+                bar.selfTargetFrame:SetShown(activeRec.testIsTargetingPlayer or false)
+            elseif bar.selfTargetFrame.SetShownFromBoolean then
+                -- Live bars: UnitIsUnit returns a secret-tainted boolean
+                local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
+                bar.selfTargetFrame:SetShownFromBoolean(isTargetingPlayer, true, false)
+            end
+        elseif bar.selfTargetFrame then
+            bar.selfTargetFrame:Hide()
         end
     end
 end
@@ -5436,6 +5494,8 @@ local function TargetedList_SpawnTestCast()
         testInterrupterClass = willInterrupt and targetClass or nil,
         -- Alternate importance: odd-numbered casts are "important"
         testIsImportant = (targetedListTestNextId % 2 == 0),
+        -- Alternate self-targeting: every 3rd cast targets the player
+        testIsTargetingPlayer = (targetedListTestNextId % 3 == 1),
     }
     -- NOTE: caller is responsible for calling TargetedList_Render()
     -- after all spawns/modifications are done. This avoids premature

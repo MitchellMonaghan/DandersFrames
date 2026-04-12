@@ -188,7 +188,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         -- Warning icon for spells with known limitations
         if spell.spellId == 474754 then  -- Symbiotic Relationship
             local warnIcon = CreateFrame("Button", nil, row)
-            warnIcon:SetSize(14, 14)
+            warnIcon:SetSize(18, 18)
             warnIcon:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
             local warnTex = warnIcon:CreateTexture(nil, "OVERLAY")
             warnTex:SetAllPoints()
@@ -386,7 +386,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
     local noticeIcon = noticeBanner:CreateTexture(nil, "OVERLAY")
     noticeIcon:SetPoint("LEFT", 10, 0)
-    noticeIcon:SetSize(16, 16)
+    noticeIcon:SetSize(20, 20)
     noticeIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
 
     local noticeText = noticeBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
