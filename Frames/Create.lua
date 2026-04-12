@@ -2222,11 +2222,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
             end
         else
             PositionFrameTooltip(self)
-            local unit = GetCleanUnitForTooltip(self) or self.unit
-            GameTooltip:SetUnit(unit)
-            if _G.RaiderIO and _G.RaiderIO.ShowProfile then
-                _G.RaiderIO.ShowProfile(GameTooltip, unit)
-            end
+            GameTooltip:SetUnit(GetCleanUnitForTooltip(self) or self.unit)
             StartTooltipRefresh(self)
         end
         DF:ShowBindingTooltip(self)
