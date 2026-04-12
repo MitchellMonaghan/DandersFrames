@@ -254,7 +254,8 @@ local function StartTooltipRefresh(frame)
             return
         end
         GameTooltip:SetUnit(f.unit)
-        if _G.RaiderIO and _G.RaiderIO.ShowProfile then
+        local _, ttUnit = GameTooltip:GetUnit()
+        if (not ttUnit or issecretvalue(ttUnit)) and _G.RaiderIO and _G.RaiderIO.ShowProfile then
             _G.RaiderIO.ShowProfile(GameTooltip, f.unit)
         end
     end)
@@ -2227,7 +2228,8 @@ function DF:CreateUnitFrame(unit, index, isRaid)
             PositionFrameTooltip(self)
             local unit = GetCleanUnitForTooltip(self) or self.unit
             GameTooltip:SetUnit(unit)
-            if _G.RaiderIO and _G.RaiderIO.ShowProfile then
+            local _, ttUnit = GameTooltip:GetUnit()
+            if (not ttUnit or issecretvalue(ttUnit)) and _G.RaiderIO and _G.RaiderIO.ShowProfile then
                 _G.RaiderIO.ShowProfile(GameTooltip, unit)
             end
             StartTooltipRefresh(self)
