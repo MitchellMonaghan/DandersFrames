@@ -2,6 +2,11 @@
 
 ## [4.3.0] - 2026-04-10
 
+### Bug Fixes
+
+* (Tooltips) Add tooltip refresh ticker so third-party tooltip addons (e.g. RaiderIO) can respond to modifier key state changes while hovering unit frames
+* (Tooltips) Add clean unit token resolver for tooltip SetUnit calls to work around Midnight 12.0 taint propagation from secure frame attributes
+
 ### Improvements
 
 * (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately

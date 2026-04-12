@@ -17,6 +17,10 @@ local wipe = wipe
 local format = string.format
 local tinsert = table.insert
 local tsort = table.sort
+local GetNumGroupMembers = GetNumGroupMembers
+local GetNumSubgroupMembers = GetNumSubgroupMembers
+local IsInRaid = IsInRaid
+local UnitGUID = UnitGUID
 local ceil = math.ceil
 local InCombatLockdown = InCombatLockdown
 local UnitExists = UnitExists
@@ -228,6 +232,42 @@ bindingTooltip:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 bindingTooltip:SetScript("OnEvent", function(self)
     if self.anchorFrame then DF:ShowBindingTooltip(self.anchorFrame) end
 end)
+
+-- ============================================================
+-- TOOLTIP REFRESH TICKER
+-- Re-fires GameTooltip:SetUnit() every 0.25s while hovering a unit frame.
+-- Allows addons like RaiderIO that check IsModifierKeyDown() inside
+-- TooltipDataProcessor to respond to modifier key state changes.
+-- ============================================================
+local tooltipRefreshTicker = nil
+local tooltipRefreshFrame = nil
+
+local function StartTooltipRefresh(frame)
+    tooltipRefreshFrame = frame
+    if tooltipRefreshTicker then return end  -- already running
+    tooltipRefreshTicker = C_Timer.NewTicker(0.25, function()
+        local f = tooltipRefreshFrame
+        if not f or not f.dfIsHovered or not GameTooltip:IsShown() then
+            tooltipRefreshTicker:Cancel()
+            tooltipRefreshTicker = nil
+            tooltipRefreshFrame = nil
+            return
+        end
+        GameTooltip:SetUnit(f.unit)
+    end)
+end
+
+local function StopTooltipRefresh()
+    tooltipRefreshFrame = nil
+    if tooltipRefreshTicker then
+        tooltipRefreshTicker:Cancel()
+        tooltipRefreshTicker = nil
+    end
+end
+
+-- Expose for Headers.lua (loads before Create.lua frame hooks)
+function DF:StartTooltipRefresh(frame) StartTooltipRefresh(frame) end
+function DF:StopTooltipRefresh() StopTooltipRefresh() end
 
 -- Debug flag for duration API troubleshooting
 -- Set to true to enable debug output: /run DandersFrames.debugDurationAPI = true
@@ -2110,6 +2150,31 @@ function DF:CreateUnitFrame(unit, index, isRaid)
     -- Expose for tooltip refresh in UpdateAuras_Enhanced
     DF.ShowDFAuraTooltip = ShowDFAuraTooltip
 
+    -- Resolve a clean (untainted) unit token for tooltip use.
+    -- Midnight 12.0 taints unit tokens from secure frame attributes, which causes
+    -- GameTooltip:GetUnit() to return a secret value. Third-party tooltip hooks
+    -- (e.g. RaiderIO) bail out on secret values via issecretvalue(). This function
+    -- matches the frame's GUID against clean literal tokens to find an untainted match.
+    local function GetCleanUnitForTooltip(frame)
+        local guid = frame.unit and UnitGUID(frame.unit)
+        if not guid or issecretvalue(guid) then return nil end
+
+        if UnitGUID("player") == guid then return "player" end
+
+        if IsInRaid() then
+            for i = 1, GetNumGroupMembers() do
+                local token = "raid" .. i
+                if UnitGUID(token) == guid then return token end
+            end
+        else
+            for i = 1, GetNumSubgroupMembers() do
+                local token = "party" .. i
+                if UnitGUID(token) == guid then return token end
+            end
+        end
+        return nil
+    end
+
     -- Use HookScript (not SetScript) to preserve SecureHandlerEnterLeaveTemplate's _onenter/_onleave
     -- SetScript would override the template's handler and break click-casting keyboard bindings
     frame:HookScript("OnEnter", function(self)
@@ -2157,7 +2222,8 @@ function DF:CreateUnitFrame(unit, index, isRaid)
             end
         else
             PositionFrameTooltip(self)
-            GameTooltip:SetUnit(self.unit)
+            GameTooltip:SetUnit(GetCleanUnitForTooltip(self) or self.unit)
+            StartTooltipRefresh(self)
         end
         DF:ShowBindingTooltip(self)
     end)
@@ -2175,6 +2241,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
             if focus.unitFrame == self then return end           -- still over our icon
             if IsChildOfUnitFrame(focus, self) then return end   -- still over a child (e.g. private aura)
         end
+        StopTooltipRefresh()
         GameTooltip:Hide()
         if DFBindingTooltip then DFBindingTooltip:Hide(); DFBindingTooltip.anchorFrame = nil end
     end)

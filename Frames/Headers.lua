@@ -808,16 +808,22 @@ function DF:InitializeHeaderChild(frame)
                 GameTooltip_SetDefaultAnchor(GameTooltip, self)
             end
             GameTooltip:SetUnit(self.unit)
+            -- Start refresh ticker so tooltip addons (RaiderIO) can respond
+            -- to modifier key changes while hovering
+            if DF.StartTooltipRefresh then DF:StartTooltipRefresh(self) end
         end
     end)
-    
+
     frame:HookScript("OnLeave", function(self)
         -- Clear hover state and update highlights
         self.dfIsHovered = false
         if DF.UpdateHighlights then
             DF:UpdateHighlights(self)
         end
-        
+
+        -- Stop tooltip refresh ticker
+        if DF.StopTooltipRefresh then DF:StopTooltipRefresh() end
+
         -- Only hide tooltip if we're truly leaving the frame
         local focus = GetMouseFocus and GetMouseFocus() or GetMouseFoci and GetMouseFoci()[1]
         if focus and focus.unitFrame == self then
