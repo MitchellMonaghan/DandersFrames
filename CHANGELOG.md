@@ -43,6 +43,8 @@
 ### Bug Fixes
 
 * (Targeted List) Fix global font not applying on first open — bars now receive font settings immediately on acquisition from the pool
+* (Targeted List) Fix cast-to-channel transitions — bars now seamlessly update duration when a cast completes into a channel (e.g. Void Resurgence)
+* (Targeted List) Fix duration text using secret-tainted values — switched to SetFormattedText with GetRemainingDuration (secret-safe sink)
 
 * (Absorb Bars) Fix absorb bars showing as floating bars when Attached or Attached+Overflow display mode is selected
 * (Aura Designer) Fix indicators sometimes showing wrong settings (wrong font size, icon size, bar colors) — Configure now runs mid-combat so indicators always get correct static settings immediately
