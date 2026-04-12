@@ -4059,6 +4059,10 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
         if TL_UnitChannelInfo(casterUnit) ~= nil then return end
     end
 
+    -- INTERRUPTED fires before STOP. If the record is already fading
+    -- as interrupted, don't let STOP overwrite with the short fade.
+    if active.wasInterrupted and active.fadingStartedAt then return end
+
     -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
     -- the findings doc. Equality compare on a secret-tainted castID
     -- errors. Without the match, rapid same-spell restarts may briefly
