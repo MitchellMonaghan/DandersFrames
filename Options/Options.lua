@@ -5772,6 +5772,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 db.targetedListSelfTargetColor = {r = 1, g = 0.85, b = 0.1, a = 0.2}
                 db.targetedListHighlightColor = {r = 1, g = 0.8, b = 0}
                 db.targetedListBorderColor = {r = 0.18, g = 0.18, b = 0.18, a = 1}
+                -- Refresh color swatches
+                if tlInterColor.UpdateSwatch then tlInterColor:UpdateSwatch() end
+                if tlUninterColor.UpdateSwatch then tlUninterColor:UpdateSwatch() end
+                if tlSelfTargetColor.UpdateSwatch then tlSelfTargetColor:UpdateSwatch() end
+                if tlHighlightColor.UpdateSwatch then tlHighlightColor:UpdateSwatch() end
                 TargetedListUpdate()
                 self:RefreshStates()
             end), 30)
