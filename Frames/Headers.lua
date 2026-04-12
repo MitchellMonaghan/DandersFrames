@@ -808,6 +808,9 @@ function DF:InitializeHeaderChild(frame)
                 GameTooltip_SetDefaultAnchor(GameTooltip, self)
             end
             GameTooltip:SetUnit(self.unit)
+            if _G.RaiderIO and _G.RaiderIO.ShowProfile then
+                _G.RaiderIO.ShowProfile(GameTooltip, self.unit)
+            end
             -- Start refresh ticker so tooltip addons (RaiderIO) can respond
             -- to modifier key changes while hovering
             if DF.StartTooltipRefresh then DF:StartTooltipRefresh(self) end
