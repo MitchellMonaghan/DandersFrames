@@ -1060,6 +1060,7 @@ L["Removes all Aura Designer overrides from this auto layout, restoring it to ma
 L["Removes your player frame from the DandersFrames party display."] = true
 L["Replace Blizzard's color picker with the DandersFrames color picker for this addon."] = true
 L["Reset All to Default"] = true
+L["Reset Colors to Default"] = true
 L["Reset Aura Designer to Global"] = true
 L["Reset current profile to defaults?\nThis will reset BOTH Party and Raid settings."] = true
 L["Reset Position"] = true

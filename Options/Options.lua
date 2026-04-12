@@ -5766,6 +5766,16 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             local function HideHighlightOptions(d) return not d.targetedListEnabled or not d.targetedListHighlightImportant end
             local tlHighlightColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Highlight Color"], db, "targetedListHighlightColor", false, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListHighlightColor then DF:LightweightUpdateTargetedListHighlightColor() end end, true), 35)
             tlHighlightColor.disableOn = HideHighlightOptions
+            local tlResetColors = colorGroup:AddWidget(GUI:CreateButton(self.child, L["Reset Colors to Default"], 200, 24, function()
+                db.targetedListInterruptibleColor = {r = 0.988, g = 0.549, b = 0, a = 1}
+                db.targetedListUninterruptibleColor = {r = 0.514, g = 0.753, b = 0.765, a = 1}
+                db.targetedListSelfTargetColor = {r = 1, g = 0.85, b = 0.1, a = 0.2}
+                db.targetedListHighlightColor = {r = 1, g = 0.8, b = 0}
+                db.targetedListBorderColor = {r = 0.18, g = 0.18, b = 0.18, a = 1}
+                TargetedListUpdate()
+                self:RefreshStates()
+            end), 30)
+            tlResetColors.disableOn = HideTLOptions
             AddToSection(colorGroup, nil, 1)
 
             local iconGroup = GUI:CreateSettingsGroup(self.child, 260)
