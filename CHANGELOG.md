@@ -1,31 +1,5 @@
 # DandersFrames Changelog
 
-## [4.3.1] - 2026-04-12
-
-### New Features
-
-* **Toggle Switch GUI element** — new reusable UI control for mutually exclusive A/B settings, with themed visuals and label highlighting
-* (Aura Filters) Dispellable filter now uses a toggle switch (Dispellable By Me / All Dispellable) instead of two separate checkboxes
-* (Aura Filters) Warning banner when "All Debuffs" is disabled, recommending healers keep it enabled
-* (Targeted List) Arrow suffix setting — append an arrow marker after the target name, complementing the existing arrow prefix
-* (Targeted List) Self-target color overlay — highlight bars with a configurable color when the enemy is casting at you (enabled by default)
-* (Targeted List) Hide out-of-combat casts — filter out casts from idle mobs not yet in combat (enabled by default)
-* (Targeted List) Duration text now uses custom FontString instead of Blizzard's native Cooldown countdown, allowing custom font, size, and outline to apply
-* (Targeted List) Duration font size slider added to the Duration section in Text Position settings
-
-### Improvements
-
-* (Targeted List) Rename "Hide Own Casts" to "Hide Casts Targeting You" for clarity
-* (Targeted List) Rename "Width" to "Max Text Width" on spell name, target name, and interrupt text sliders
-* (Targeted List) Font now uses DF:SafeSetFont for proper SHADOW outline and multi-alphabet support
-* (Targeted List) Per-element font sizes (0 = use global) now fall back correctly instead of treating 0 as a literal size
-* (Targeted List) Updated defaults: font matches global (DF Roboto SemiBold / SHADOW), self-target color on, hide out-of-combat on, show untargeted on, flat texture, and other tuned values
-* (Aura Blacklist) Increased warning and notice banner icon sizes for better visibility
-
-### Bug Fixes
-
-* (Targeted List) Fix global font not applying on first open — bars now receive font settings immediately on acquisition from the pool
-
 ## [4.3.0] - 2026-04-10
 
 ### Improvements
@@ -33,12 +7,22 @@
 * (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
 * (Aura Filters) Add info banner clarifying that Aura Filters only affect Buff Bar and Debuff Bar, with clickable links to related pages
 * (Aura Filters) Remove outdated Defensives and Dispel Detection info section
+* (Aura Filters) Dispellable filter now uses a toggle switch (Dispellable By Me / All Dispellable) instead of two separate checkboxes
+* (Aura Filters) Warning banner when "All Debuffs" is disabled, recommending healers keep it enabled
 * (Aura Blacklist) Add notice explaining the blacklist is a curated Blizzard list
 * (Aura Blacklist) Add warning icon next to Symbiotic Relationship noting caster-only blacklist limitation
+* (Aura Blacklist) Increased warning and notice banner icon sizes for better visibility
 * (Boss Debuffs) Add info banner noting Boss Debuffs cannot trigger Dispel Overlays
+* (Targeted List) Rename "Hide Own Casts" to "Hide Casts Targeting You" for clarity
+* (Targeted List) Rename "Width" to "Max Text Width" on spell name, target name, and interrupt text sliders
+* (Targeted List) Font now uses DF:SafeSetFont for proper SHADOW outline and multi-alphabet support
+* (Targeted List) Duration text now uses custom FontString instead of Blizzard's native Cooldown countdown, allowing custom font, size, and outline to apply
+* (Targeted List) Per-element font sizes (0 = use global) now fall back correctly instead of treating 0 as a literal size
+* (Targeted List) Updated defaults: font matches global (DF Roboto SemiBold / SHADOW), self-target color on, hide out-of-combat on, show untargeted on, flat texture, and other tuned values
 
 ### New Features
 
+* **Toggle Switch GUI element** — new reusable UI control for mutually exclusive A/B settings, with themed visuals and label highlighting
 * **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only
 * (Targeted List) Draggable mover integrated with the existing Unlock Frames flow
 * (Targeted List) Position panel now switches context based on which mover you click: party, raid, Personal Targeted Spells, or Targeted List
@@ -46,8 +30,14 @@
 * (Targeted List) Test mode support with demo bars driven from the Test Mode panel
 * (Targeted List) Fade-out animation on cast completion and a yellow interrupted-flash tint on interrupts, both with configurable durations
 * (Targeted List) Full appearance controls: icon, border, background alpha, textures, font, per-text-element show/hide, class-colored target names, arrow prefix, sort order, content-type filter, important-spells-only filter, hide-own-casts filter
+* (Targeted List) Arrow suffix setting — append an arrow marker after the target name, complementing the existing arrow prefix
+* (Targeted List) Self-target color overlay — highlight bars with a configurable color when the enemy is casting at you (enabled by default)
+* (Targeted List) Hide out-of-combat casts — filter out casts from idle mobs not yet in combat (enabled by default)
+* (Targeted List) Duration font size slider added to the Duration section in Text Position settings
 
 ### Bug Fixes
+
+* (Targeted List) Fix global font not applying on first open — bars now receive font settings immediately on acquisition from the pool
 
 * (Absorb Bars) Fix absorb bars showing as floating bars when Attached or Attached+Overflow display mode is selected
 * (Aura Designer) Fix indicators sometimes showing wrong settings (wrong font size, icon size, bar colors) — Configure now runs mid-combat so indicators always get correct static settings immediately
