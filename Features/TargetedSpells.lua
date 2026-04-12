@@ -4007,6 +4007,24 @@ local function TargetedList_ProcessCastStart(casterUnit, event, ...)
         isChannel = false
     end
 
+    -- Cast-to-channel transition: if CHANNEL_START fires and we already
+    -- have a cast record for this unit, update the record immediately
+    -- instead of waiting 0.2s. The channel duration is available now.
+    if isChannel then
+        local existing = activeTargetedListCasts[casterUnit]
+        if existing and not existing.fadingStartedAt and not existing.isChannel then
+            local channelDuration = TL_UnitChannelDuration_API
+                and TL_UnitChannelDuration_API(casterUnit)
+            if channelDuration then
+                existing.duration = channelDuration
+                existing.isChannel = true
+                existing.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+                if DF._TargetedListRender then DF._TargetedListRender() end
+                return
+            end
+        end
+    end
+
     -- Event payload (after `unit` consumed by OnEvent): (castGuid, spellId).
     -- We only need spellId — castGuid was used for cast-ID matching, which
     -- we've removed because secret-string equality compare errors.
@@ -4026,23 +4044,13 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     local active = activeTargetedListCasts[casterUnit]
     if not active then return end
 
-    -- Gotcha #3: cast-to-channel transitions and channel tick pulses.
-    -- When SUCCEEDED fires and a channel is active, update the existing
-    -- record with the channel's duration instead of fading the bar.
-    -- This handles both cast-to-channel transitions and pulse DoTs that
-    -- emit SUCCEEDED per tick while still channeling.
+    -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
+    -- emit SUCCEEDED once per tick while still channeling. Also covers
+    -- cast-to-channel transitions — the channel data may not be ready
+    -- yet at SUCCEEDED time, so we just skip the fade and let
+    -- CHANNEL_START handle the transition.
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        if TL_UnitChannelInfo(casterUnit) ~= nil then
-            -- Transition to channel: update the record in-place
-            local channelDuration = TL_UnitChannelDuration_API
-                and TL_UnitChannelDuration_API(casterUnit)
-            if channelDuration then
-                active.duration = channelDuration
-                active.isChannel = true
-                active.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
-            end
-            return
-        end
+        if TL_UnitChannelInfo(casterUnit) ~= nil then return end
     end
 
     -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
@@ -4759,8 +4767,11 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         -- Store test timing for OnUpdate duration text
         bar._testDuration = { startTime = activeRec.startTime, totalDuration = cutoff }
     elseif activeRec.duration and bar.progress.SetTimerDuration then
-        bar.progress:SetReverseFill(activeRec.isChannel or false)
-        bar.progress:SetTimerDuration(activeRec.duration)
+        local direction = (activeRec.isChannel)
+            and Enum.StatusBarTimerDirection.RemainingTime
+            or Enum.StatusBarTimerDirection.ElapsedTime
+        bar.progress:SetTimerDuration(activeRec.duration,
+            Enum.StatusBarInterpolation.Immediate, direction)
         bar._testDuration = nil
     end
 
