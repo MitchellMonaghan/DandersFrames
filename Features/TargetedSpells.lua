@@ -4362,10 +4362,10 @@ local function TargetedList_BuildBar(parent)
     bar.duration = durationText
 
     -- OnUpdate: refresh duration countdown text every ~100ms.
-    -- Live bars read the duration from the StatusBar via GetTimerDuration()
-    -- each tick, so cast-to-channel transitions automatically pick up
-    -- the new duration object. GetRemainingDuration() returns a secret-
-    -- tainted number; SetFormattedText is a secret-safe sink.
+    -- Mirrors TargetedSpells addon approach: read from StatusBar via
+    -- GetTimerDuration() each tick, call GetRemainingDuration(), feed
+    -- directly to SetFormattedText (a secret-safe sink). Use explicit
+    -- == nil checks (not truthiness) to avoid secret-taint errors.
     bar._durationElapsed = 0
     bar:SetScript("OnUpdate", function(self, elapsed)
         self._durationElapsed = self._durationElapsed + elapsed
@@ -4381,15 +4381,11 @@ local function TargetedList_BuildBar(parent)
             else
                 self.duration:SetText("")
             end
-        elseif self.progress and self.progress.GetTimerDuration then
+        else
             -- Live bar: read duration fresh from the StatusBar each tick
             local durationObj = self.progress:GetTimerDuration()
-            if durationObj then
-                local remaining = durationObj:GetRemainingDuration()
-                if remaining then
-                    self.duration:SetFormattedText("%.1f", remaining)
-                end
-            end
+            if durationObj == nil then return end
+            self.duration:SetFormattedText("%.1f", durationObj:GetRemainingDuration())
         end
     end)
 
@@ -4753,11 +4749,8 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         -- Store test timing for OnUpdate duration text
         bar._testDuration = { startTime = activeRec.startTime, totalDuration = cutoff }
     elseif activeRec.duration and bar.progress.SetTimerDuration then
-        local direction = activeRec.isChannel
-            and Enum.StatusBarTimerDirection.RemainingTime
-            or Enum.StatusBarTimerDirection.ElapsedTime
-        bar.progress:SetTimerDuration(activeRec.duration,
-            Enum.StatusBarInterpolation.Immediate, direction)
+        bar.progress:SetReverseFill(activeRec.isChannel or false)
+        bar.progress:SetTimerDuration(activeRec.duration)
         bar._testDuration = nil
     end
 
