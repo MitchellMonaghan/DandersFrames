@@ -4027,12 +4027,12 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     if not active then return end
 
     -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
-    -- emit SUCCEEDED once per tick while still channeling. Ignore.
-    -- We pull only the spellId via positional discard to avoid
-    -- truth-testing the (possibly secret) first return value.
+    -- emit SUCCEEDED once per tick while still channeling. Also handles
+    -- cast-to-channel transitions (cast SUCCEEDED but channel already
+    -- started). Check first return of UnitChannelInfo — simpler and
+    -- avoids destructuring secret-tainted multi-returns.
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local _, _, _, _, _, _, _, channelSpellId = TL_UnitChannelInfo(casterUnit)
-        if channelSpellId ~= nil then return end
+        if TL_UnitChannelInfo(casterUnit) ~= nil then return end
     end
 
     -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
