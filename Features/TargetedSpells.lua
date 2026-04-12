@@ -4362,24 +4362,17 @@ local function TargetedList_BuildBar(parent)
     bar.duration = durationText
 
     -- OnUpdate: refresh duration countdown text every ~100ms.
-    -- Live bars: GetRemainingDuration() returns a secret-tainted number
-    -- so we cannot compare it. FormatRemainingDuration() returns a
-    -- secret-tainted string that is safe for SetText (a secret-safe sink).
+    -- Live bars read the duration from the StatusBar via GetTimerDuration()
+    -- each tick, so cast-to-channel transitions automatically pick up
+    -- the new duration object. GetRemainingDuration() returns a secret-
+    -- tainted number; SetFormattedText is a secret-safe sink.
     bar._durationElapsed = 0
     bar:SetScript("OnUpdate", function(self, elapsed)
         self._durationElapsed = self._durationElapsed + elapsed
         if self._durationElapsed < 0.1 then return end
         self._durationElapsed = self._durationElapsed - 0.1
         if not self.duration:IsShown() then return end
-        if self._durationObj then
-            -- Live bar: GetRemainingDuration() returns a secret-tainted
-            -- number. We cannot compare it, but SetFormattedText is a
-            -- secret-safe sink that accepts secret values directly.
-            local remaining = self._durationObj:GetRemainingDuration()
-            if remaining then
-                self.duration:SetFormattedText("%.1f", remaining)
-            end
-        elseif self._testDuration then
+        if self._testDuration then
             -- Test bar: compute from startTime + totalDuration (clean values)
             local td = self._testDuration
             local remaining = td.totalDuration - (TL_GetTime() - td.startTime)
@@ -4387,6 +4380,15 @@ local function TargetedList_BuildBar(parent)
                 self.duration:SetFormattedText("%.1f", remaining)
             else
                 self.duration:SetText("")
+            end
+        elseif self.progress and self.progress.GetTimerDuration then
+            -- Live bar: read duration fresh from the StatusBar each tick
+            local durationObj = self.progress:GetTimerDuration()
+            if durationObj then
+                local remaining = durationObj:GetRemainingDuration()
+                if remaining then
+                    self.duration:SetFormattedText("%.1f", remaining)
+                end
             end
         end
     end)
@@ -4609,7 +4611,6 @@ local function TargetedList_ResetBar(pool, bar)
     if bar.duration then
         bar.duration:SetText("")
     end
-    bar._durationObj = nil
     bar._testDuration = nil
     bar.icon:SetTexture(nil)
     bar._lastTexturePath = nil
@@ -4739,11 +4740,9 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     if activeRec.testFrozenFill then
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(activeRec.testFrozenFill)
-        bar._durationObj = nil
         bar._testDuration = nil
     elseif activeRec.fadingStartedAt then
         -- Don't update progress. The fill stays where it was.
-        bar._durationObj = nil
         bar._testDuration = nil
     elseif isTest and activeRec.testCastDuration then
         local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
@@ -4752,7 +4751,6 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(pct)
         -- Store test timing for OnUpdate duration text
-        bar._durationObj = nil
         bar._testDuration = { startTime = activeRec.startTime, totalDuration = cutoff }
     elseif activeRec.duration and bar.progress.SetTimerDuration then
         local direction = activeRec.isChannel
@@ -4760,8 +4758,6 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             or Enum.StatusBarTimerDirection.ElapsedTime
         bar.progress:SetTimerDuration(activeRec.duration,
             Enum.StatusBarInterpolation.Immediate, direction)
-        -- Store duration object for OnUpdate countdown text
-        bar._durationObj = activeRec.duration
         bar._testDuration = nil
     end
 
