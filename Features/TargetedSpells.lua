@@ -4361,7 +4361,10 @@ local function TargetedList_BuildBar(parent)
     durationText:SetWordWrap(false)
     bar.duration = durationText
 
-    -- OnUpdate: refresh duration countdown text every ~100ms
+    -- OnUpdate: refresh duration countdown text every ~100ms.
+    -- Live bars: GetRemainingDuration() returns a secret-tainted number
+    -- so we cannot compare it. FormatRemainingDuration() returns a
+    -- secret-tainted string that is safe for SetText (a secret-safe sink).
     bar._durationElapsed = 0
     bar:SetScript("OnUpdate", function(self, elapsed)
         self._durationElapsed = self._durationElapsed + elapsed
@@ -4369,15 +4372,12 @@ local function TargetedList_BuildBar(parent)
         self._durationElapsed = self._durationElapsed - 0.1
         if not self.duration:IsShown() then return end
         if self._durationObj then
-            -- Live bar: read remaining time from the opaque duration object
-            local remaining = self._durationObj:GetRemainingDuration()
-            if remaining and remaining > 0 then
-                self.duration:SetFormattedText("%.1f", remaining)
-            else
-                self.duration:SetText("")
-            end
+            -- Live bar: FormatRemainingDuration returns a secret string,
+            -- safe to pass directly to SetText (a secret-safe sink).
+            local formatted = self._durationObj:FormatRemainingDuration()
+            self.duration:SetText(formatted or "")
         elseif self._testDuration then
-            -- Test bar: compute from startTime + totalDuration
+            -- Test bar: compute from startTime + totalDuration (clean values)
             local td = self._testDuration
             local remaining = td.totalDuration - (TL_GetTime() - td.startTime)
             if remaining > 0 then
