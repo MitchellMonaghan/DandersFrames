@@ -4026,13 +4026,23 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     local active = activeTargetedListCasts[casterUnit]
     if not active then return end
 
-    -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
-    -- emit SUCCEEDED once per tick while still channeling. Also handles
-    -- cast-to-channel transitions (cast SUCCEEDED but channel already
-    -- started). Check first return of UnitChannelInfo — simpler and
-    -- avoids destructuring secret-tainted multi-returns.
+    -- Gotcha #3: cast-to-channel transitions and channel tick pulses.
+    -- When SUCCEEDED fires and a channel is active, update the existing
+    -- record with the channel's duration instead of fading the bar.
+    -- This handles both cast-to-channel transitions and pulse DoTs that
+    -- emit SUCCEEDED per tick while still channeling.
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        if TL_UnitChannelInfo(casterUnit) ~= nil then return end
+        if TL_UnitChannelInfo(casterUnit) ~= nil then
+            -- Transition to channel: update the record in-place
+            local channelDuration = TL_UnitChannelDuration_API
+                and TL_UnitChannelDuration_API(casterUnit)
+            if channelDuration then
+                active.duration = channelDuration
+                active.isChannel = true
+                active.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+            end
+            return
+        end
     end
 
     -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
