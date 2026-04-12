@@ -4372,10 +4372,13 @@ local function TargetedList_BuildBar(parent)
         self._durationElapsed = self._durationElapsed - 0.1
         if not self.duration:IsShown() then return end
         if self._durationObj then
-            -- Live bar: FormatRemainingDuration returns a secret string,
-            -- safe to pass directly to SetText (a secret-safe sink).
-            local formatted = self._durationObj:FormatRemainingDuration()
-            self.duration:SetText(formatted or "")
+            -- Live bar: GetRemainingDuration() returns a secret-tainted
+            -- number. We cannot compare it, but SetFormattedText is a
+            -- secret-safe sink that accepts secret values directly.
+            local remaining = self._durationObj:GetRemainingDuration()
+            if remaining then
+                self.duration:SetFormattedText("%.1f", remaining)
+            end
         elseif self._testDuration then
             -- Test bar: compute from startTime + totalDuration (clean values)
             local td = self._testDuration
