@@ -4010,6 +4010,10 @@ local function TargetedList_ProcessCastStart(casterUnit, event, ...)
     -- Cast-to-channel transition: if CHANNEL_START fires and we already
     -- have a cast record for this unit, update the record immediately
     -- instead of waiting 0.2s. The channel duration is available now.
+    -- We must re-apply bar content directly because the render loop
+    -- only calls ApplyBarContent for newly assigned bars, not existing ones.
+    -- Uses DF._TargetedListTransitionToChannel (defined later, after
+    -- casterToBar and ApplyBarContent are in scope).
     if isChannel then
         local existing = activeTargetedListCasts[casterUnit]
         if existing and not existing.fadingStartedAt and not existing.isChannel then
@@ -4019,7 +4023,9 @@ local function TargetedList_ProcessCastStart(casterUnit, event, ...)
                 existing.duration = channelDuration
                 existing.isChannel = true
                 existing.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
-                if DF._TargetedListRender then DF._TargetedListRender() end
+                if DF._TargetedListTransitionToChannel then
+                    DF._TargetedListTransitionToChannel(casterUnit, existing)
+                end
                 return
             end
         end
@@ -5282,6 +5288,16 @@ end
 -- Re-export so the cast lifecycle can trigger a render after
 -- modifying activeTargetedListCasts.
 DF._TargetedListRender = TargetedList_Render
+
+-- Cast-to-channel transition: re-apply bar content so SetTimerDuration
+-- picks up the new channel duration. Called from ProcessCastStart which
+-- runs before casterToBar and ApplyBarContent are defined.
+DF._TargetedListTransitionToChannel = function(casterUnit, rec)
+    local bar = casterToBar[casterUnit]
+    if bar then
+        TargetedList_ApplyBarContent(bar, rec)
+    end
+end
 
 -- ------------------------------------------------------------
 -- Mover
