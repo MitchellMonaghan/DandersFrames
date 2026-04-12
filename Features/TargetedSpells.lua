@@ -3901,26 +3901,26 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     local spellId = eventSpellId
     if spellId == nil then return end
 
-    -- Pull notInterruptible only — everything else from these APIs is
-    -- secret. notInterruptible itself is also secret, but only ever
-    -- fed to SetVertexColorFromBoolean (a secret-safe sink) at render.
+    -- Re-detect cast vs channel at pickup time. The 0.2s delay means
+    -- a cast may have transitioned to a channel since the START event.
+    -- Check casting first (like TargetedSpells addon), fall back to channel.
     local notInterruptible
-    if isChannel then
-        -- UnitChannelInfo positional 7: notInterruptible
+    if TL_UnitCastingInfo(casterUnit) ~= nil then
+        isChannel = false
+        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    elseif TL_UnitChannelInfo(casterUnit) ~= nil then
+        isChannel = true
         notInterruptible = select(7, TL_UnitChannelInfo(casterUnit))
     else
-        -- UnitCastingInfo positional 8: notInterruptible
-        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+        -- Cast vanished during the 0.2s delay (CC, mob death, etc.)
+        return
     end
 
-    -- Duration: TimerDuration object (NOT a number), opaque, fed to
-    -- StatusBar:SetTimerDuration at render. Never arithmetic.
-    local duration
-    if isChannel then
-        duration = TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit)
-    else
-        duration = TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit)
-    end
+    -- Duration: try both APIs regardless of isChannel flag. A cast that
+    -- transitions to a channel may report via either API during the
+    -- brief overlap. Matches TargetedSpells addon approach.
+    local duration = (TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit))
+        or (TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit))
 
     activeTargetedListCasts[casterUnit] = {
         spellId         = spellId,           -- secret; only feed to C_Spell.* + sinks
