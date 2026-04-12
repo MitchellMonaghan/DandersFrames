@@ -254,7 +254,7 @@ local function StartTooltipRefresh(frame)
             return
         end
         GameTooltip:SetUnit(f.unit)
-        if InCombatLockdown() and _G.RaiderIO and _G.RaiderIO.ShowProfile then
+        if _G.RaiderIO and _G.RaiderIO.ShowProfile then
             _G.RaiderIO.ShowProfile(GameTooltip, f.unit)
         end
     end)
@@ -2227,7 +2227,7 @@ function DF:CreateUnitFrame(unit, index, isRaid)
             PositionFrameTooltip(self)
             local unit = GetCleanUnitForTooltip(self) or self.unit
             GameTooltip:SetUnit(unit)
-            if InCombatLockdown() and _G.RaiderIO and _G.RaiderIO.ShowProfile then
+            if _G.RaiderIO and _G.RaiderIO.ShowProfile then
                 _G.RaiderIO.ShowProfile(GameTooltip, unit)
             end
             StartTooltipRefresh(self)

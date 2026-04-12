@@ -808,10 +808,10 @@ function DF:InitializeHeaderChild(frame)
                 GameTooltip_SetDefaultAnchor(GameTooltip, self)
             end
             GameTooltip:SetUnit(self.unit)
-            -- In combat, GetUnit() returns a secret value from secure frame taint,
-            -- so TooltipDataProcessor-based addons (RaiderIO) can't read the unit.
-            -- Bypass via their public API which accepts the unit directly.
-            if InCombatLockdown() and _G.RaiderIO and _G.RaiderIO.ShowProfile then
+            -- GetUnit() returns a secret value due to secure frame taint from
+            -- SecureGroupHeaderTemplate, so TooltipDataProcessor-based addons
+            -- can't read the unit. Bypass via RaiderIO's public API.
+            if _G.RaiderIO and _G.RaiderIO.ShowProfile then
                 _G.RaiderIO.ShowProfile(GameTooltip, self.unit)
             end
             -- Start refresh ticker so tooltip addons (RaiderIO) can respond
