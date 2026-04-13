@@ -43,8 +43,11 @@
 ### Bug Fixes
 
 * (Targeted List) Fix global font not applying on first open — bars now receive font settings immediately on acquisition from the pool
-* (Targeted List) Fix cast-to-channel transitions — bars now seamlessly update duration when a cast completes into a channel (e.g. Void Resurgence)
+* (Targeted List) Fix cast-to-channel transitions — bars now seamlessly update duration when a cast completes into a channel
 * (Targeted List) Fix duration text using secret-tainted values — switched to SetFormattedText with GetRemainingDuration (secret-safe sink)
+* (Targeted List) Fix interrupted flash not showing — INTERRUPTED event fires before STOP, prevent STOP from overwriting the flash
+* (Targeted List) Add "Reset Colors to Default" button to the Bar Color section
+* (Targeted List) Updated default colors: interruptible #FF7E23 (orange), uninterruptible #CC4D4D (dark red), self-target #05C666 (green)
 
 * (Absorb Bars) Fix absorb bars showing as floating bars when Attached or Attached+Overflow display mode is selected
 * (Aura Designer) Fix indicators sometimes showing wrong settings (wrong font size, icon size, bar colors) — Configure now runs mid-combat so indicators always get correct static settings immediately
