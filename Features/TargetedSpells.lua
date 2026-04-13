@@ -3696,9 +3696,8 @@ local TargetedList_StartFadeTicker
 
 -- Single source of truth for "is this feature allowed to run at all".
 -- Every public entry point calls this; any time it returns false, the
--- caller must be a no-op. This is the stable-release kill switch.
+-- caller must be a no-op.
 local function TargetedList_IsGateOpen()
-    if DF.RELEASE_CHANNEL == "release" then return false end
     return true
 end
 

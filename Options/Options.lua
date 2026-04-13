@@ -5615,18 +5615,19 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     -- on stable builds no sub-tab is created, no navigation entry
     -- exists, and users never see this feature. The db defaults and
     -- all lifecycle code are also gated at their own check sites.
-    if DF.RELEASE_CHANNEL ~= "release" then
-        local pageTargetedList = CreateSubTab("indicators", "indicators_targetedlist", L["Targeted List"])
-        BuildPage(pageTargetedList, function(self, db, Add, AddSpace, AddSyncPoint)
+    local pageTargetedList = CreateSubTab("indicators", "indicators_targetedlist", L["Targeted List"])
+    BuildPage(pageTargetedList, function(self, db, Add, AddSpace, AddSyncPoint)
+            -- Party-only feature: show message and return if in raid mode
+            if GUI.SelectedMode == "raid" then
+                Add(GUI:CreateHeader(self.child, L["Targeted List"]), 40, "both")
+                Add(GUI:CreateLabel(self.child,
+                    L["Targeted List is a Party-only feature. Switch to Party mode to configure."],
+                    500, {r = 0.6, g = 0.6, b = 0.6}), 60, "both")
+                return
+            end
+
             -- Copy button at top
             Add(CreateCopyButton(self.child, {"targetedList"}, L["Targeted List"], "indicators_targetedlist"), 25, 2)
-
-            AddSpace(6, "both")
-
-            -- Alpha warning banner
-            local banner = GUI:CreateLabel(self.child,
-                "|cffffd100" .. L["Targeted List — Alpha feature, behavior may change"] .. "|r", 520)
-            Add(banner, 22, "both")
 
             AddSpace(6, "both")
 
@@ -5933,7 +5934,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 {pageId = "indicators_personal_targeted", label = L["Personal Targeted"]},
             }), 30, "both")
         end)
-    end
 
     -- Indicators > Personal Targeted Spells (center of screen display for player)
     local pagePersonalTargeted = CreateSubTab("indicators", "indicators_personal_targeted", L["Personal Targeted"])

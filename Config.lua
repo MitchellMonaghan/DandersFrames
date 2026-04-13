@@ -1742,7 +1742,7 @@ DF.PartyDefaults = {
     targetedSpellX = 0,
     targetedSpellY = -28,
 
-    -- Targeted List (alpha/beta only — gated by DF.RELEASE_CHANNEL ~= "release")
+    -- Targeted List (party-mode only)
     -- Stacked cast-bar display showing enemy casts targeting party members.
     -- User-facing name ("Targeted List") is intentionally decoupled from the
     -- internal `targetedList*` db prefix so the feature can be renamed later
