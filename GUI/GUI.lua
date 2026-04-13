@@ -22,6 +22,12 @@ DF.SectionRegistry = DF.SectionRegistry or {}
 -- Track selected mode
 GUI.SelectedMode = "party"
 
+-- Registry of tabs that should show a "New" badge until opened.
+-- Add tab IDs here for new features; the badge auto-hides once viewed.
+GUI.NewTabs = {
+    ["indicators_targetedlist"] = true,
+}
+
 -- Track currently open dropdown menu (only one can be open at a time)
 local currentOpenDropdown = nil
 
@@ -7346,6 +7352,14 @@ function DF:CreateGUI()
             end
             GUI.Tabs[name].Text:SetTextColor(nc.r, nc.g, nc.b)
             GUI.Tabs[name].isActive = true
+            -- Mark "New" badge as seen
+            if GUI.Tabs[name].newBadge and GUI.Tabs[name].newBadge:IsShown() then
+                GUI.Tabs[name].newBadge:Hide()
+                if DandersFramesDB_v2 then
+                    DandersFramesDB_v2.seenTabs = DandersFramesDB_v2.seenTabs or {}
+                    DandersFramesDB_v2.seenTabs[name] = true
+                end
+            end
         end
         GUI.CurrentPageName = name
         UpdateThemeColors()
@@ -7453,7 +7467,20 @@ function DF:CreateGUI()
         btn.Text:SetPoint("LEFT", 24, 0)
         btn.Text:SetText(label)
         btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-        
+
+        -- "New" badge — shown for tabs in GUI.NewTabs until the user opens them
+        local newBadge = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        newBadge:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+        newBadge:SetText(L["New"])
+        newBadge:SetTextColor(1, 0.82, 0)
+        newBadge:Hide()
+        btn.newBadge = newBadge
+        if GUI.NewTabs[name]
+           and not (DandersFramesDB_v2 and DandersFramesDB_v2.seenTabs
+                    and DandersFramesDB_v2.seenTabs[name]) then
+            newBadge:Show()
+        end
+
         btn:SetScript("OnEnter", function(self)
             if not self.isActive then
                 self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 0.5)
