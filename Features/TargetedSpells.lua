@@ -3903,7 +3903,7 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
 
     -- Re-detect cast vs channel at pickup time. The 0.2s delay means
     -- a cast may have transitioned to a channel since the START event.
-    -- Check casting first (like TargetedSpells addon), fall back to channel.
+    -- Check casting first, fall back to channel.
     local notInterruptible
     if TL_UnitCastingInfo(casterUnit) ~= nil then
         isChannel = false
@@ -3918,7 +3918,7 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
 
     -- Duration: try both APIs regardless of isChannel flag. A cast that
     -- transitions to a channel may report via either API during the
-    -- brief overlap. Matches TargetedSpells addon approach.
+    -- brief overlap.
     local duration = (TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit))
         or (TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit))
 
@@ -4390,8 +4390,8 @@ local function TargetedList_BuildBar(parent)
     bar.duration = durationText
 
     -- OnUpdate: refresh duration countdown text every ~100ms.
-    -- Mirrors TargetedSpells addon approach: read from StatusBar via
-    -- GetTimerDuration() each tick, call GetRemainingDuration(), feed
+    -- Read duration from the StatusBar via GetTimerDuration() each tick,
+    -- call GetRemainingDuration(), feed
     -- directly to SetFormattedText (a secret-safe sink). Use explicit
     -- == nil checks (not truthiness) to avoid secret-taint errors.
     bar._durationElapsed = 0
