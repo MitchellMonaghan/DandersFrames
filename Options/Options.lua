@@ -5767,9 +5767,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             local tlHighlightColor = colorGroup:AddWidget(GUI:CreateColorPicker(self.child, L["Highlight Color"], db, "targetedListHighlightColor", false, TargetedListUpdate, function() if DF.LightweightUpdateTargetedListHighlightColor then DF:LightweightUpdateTargetedListHighlightColor() end end, true), 35)
             tlHighlightColor.disableOn = HideHighlightOptions
             local tlResetColors = colorGroup:AddWidget(GUI:CreateButton(self.child, L["Reset Colors to Default"], 200, 24, function()
-                db.targetedListInterruptibleColor = {r = 0.988, g = 0.549, b = 0, a = 1}
-                db.targetedListUninterruptibleColor = {r = 0.514, g = 0.753, b = 0.765, a = 1}
-                db.targetedListSelfTargetColor = {r = 1, g = 0.85, b = 0.1, a = 0.2}
+                db.targetedListInterruptibleColor = {r = 1, g = 0.494, b = 0.137, a = 1}
+                db.targetedListUninterruptibleColor = {r = 0.8, g = 0.302, b = 0.302, a = 1}
+                db.targetedListSelfTargetColor = {r = 0.02, g = 0.776, b = 0.4, a = 0.2}
                 db.targetedListHighlightColor = {r = 1, g = 0.8, b = 0}
                 db.targetedListBorderColor = {r = 0.18, g = 0.18, b = 0.18, a = 1}
                 -- Refresh color swatches
