@@ -18,6 +18,7 @@
 ### New Features
 
 * **Toggle Switch GUI element** — new reusable UI control for mutually exclusive A/B settings, with themed visuals and label highlighting
+* **"New" tab badges** — gold "New" text appears on tabs and their parent category for new features, auto-hides once the tab is opened
 * **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only, with draggable mover, test mode, four style presets, and full appearance controls including font, colors, icon, border, textures, arrow prefix/suffix, self-target color overlay, hide out-of-combat filter, cast-to-channel transitions, interrupted flash, and per-text-element positioning
 
 ### Bug Fixes
