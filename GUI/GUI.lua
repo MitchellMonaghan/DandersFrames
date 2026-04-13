@@ -7359,6 +7359,19 @@ function DF:CreateGUI()
                     DandersFramesDB_v2.seenTabs = DandersFramesDB_v2.seenTabs or {}
                     DandersFramesDB_v2.seenTabs[name] = true
                 end
+                -- Hide parent category badge if no remaining children have new badges
+                local catName = GUI.Tabs[name].categoryName
+                local cat = catName and GUI.Categories[catName]
+                if cat and cat.newBadge and cat.newBadge:IsShown() then
+                    local anyNew = false
+                    for _, child in ipairs(cat.children) do
+                        if child.newBadge and child.newBadge:IsShown() then
+                            anyNew = true
+                            break
+                        end
+                    end
+                    if not anyNew then cat.newBadge:Hide() end
+                end
             end
         end
         GUI.CurrentPageName = name
@@ -7410,7 +7423,15 @@ function DF:CreateGUI()
         cat.Text:SetPoint("LEFT", 20, 0)
         cat.Text:SetText(label)
         cat.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-        
+
+        -- "New" badge for categories — shown when any child tab has a new badge
+        local catNewBadge = cat:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        catNewBadge:SetPoint("RIGHT", cat, "RIGHT", -8, 0)
+        catNewBadge:SetText(L["New"])
+        catNewBadge:SetTextColor(1, 0.82, 0)
+        catNewBadge:Hide()
+        cat.newBadge = catNewBadge
+
         cat:SetScript("OnEnter", function(self)
             self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 0.3)
         end)
@@ -7479,6 +7500,10 @@ function DF:CreateGUI()
            and not (DandersFramesDB_v2 and DandersFramesDB_v2.seenTabs
                     and DandersFramesDB_v2.seenTabs[name]) then
             newBadge:Show()
+            -- Also show "New" on the parent category
+            if cat and cat.newBadge then
+                cat.newBadge:Show()
+            end
         end
 
         btn:SetScript("OnEnter", function(self)

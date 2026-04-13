@@ -3704,6 +3704,12 @@ DF._MainEventDispatcher = function(self, event, arg1)
             end
         end
 
+        -- Reset seenTabs so "New" badges show for 4.3.0 features (one-time)
+        if DandersFramesDB_v2 and not DandersFramesDB_v2._seenTabsReset_430 then
+            DandersFramesDB_v2.seenTabs = nil
+            DandersFramesDB_v2._seenTabsReset_430 = true
+        end
+
         -- Migrate dispellable filter from two booleans to single mode string (v4.3.x)
         if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
             for profileName, profile in pairs(DandersFramesDB_v2.profiles) do
