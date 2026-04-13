@@ -5,6 +5,7 @@
 ### Improvements
 
 * (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
+* (Auras) Prevent Blizzard aura source from persisting via profile imports — removed from export categories, forced to Direct on import and every login
 * (Aura Filters) Add info banner clarifying that Aura Filters only affect Buff Bar and Debuff Bar, with clickable links to related pages
 * (Aura Filters) Remove outdated Defensives and Dispel Detection info section
 * (Aura Filters) Dispellable filter now uses a toggle switch (Dispellable By Me / All Dispellable) instead of two separate checkboxes
