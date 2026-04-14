@@ -713,6 +713,19 @@ function DF:UpdateMissingBuffIcon(frame)
         return
     end
 
+    -- Hide for out-of-range units (can't reliably query their buffs)
+    local inRange = frame.dfInRange
+    if issecretvalue and issecretvalue(inRange) then
+        -- Secret value = can't tell, hide to be safe
+        frame.missingBuffFrame:Hide()
+        missingBuffCache[frame] = nil
+        return
+    elseif inRange == false then
+        frame.missingBuffFrame:Hide()
+        missingBuffCache[frame] = nil
+        return
+    end
+
     -- Hide for non-player units (NPCs, followers, pets can't have raid buffs)
     if not UnitIsPlayer(unit) then
         frame.missingBuffFrame:Hide()

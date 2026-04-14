@@ -1514,6 +1514,21 @@ local function ScanUnitFull(unit)
 
     local cache = EnsureAuraCacheEntry(unit)
 
+    -- Don't wipe aura cache for out-of-range units — the API returns nothing
+    -- for OOR units, so rescanning would destroy valid cached data.
+    -- When they come back in range, UNIT_AURA fires again with real data.
+    local frame = DF.unitFrameMap and DF.unitFrameMap[unit]
+    if frame then
+        local inRange = frame.dfInRange
+        local isSecret = issecretvalue and issecretvalue(inRange)
+        if not isSecret and inRange == false then
+            -- Only skip if we already have data cached (don't skip first scan)
+            if cache.hasFullScan then
+                return
+            end
+        end
+    end
+
     -- Wipe the new Fix A fields
     wipe(cache.buffsByID)
     wipe(cache.debuffsByID)
