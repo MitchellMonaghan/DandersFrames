@@ -998,20 +998,6 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     -- General > Settings (mode enable/disable, Blizzard frame toggles, profile-wide settings)
     local pageGeneral = CreateSubTab("general", "general_settings", L["Settings"])
     BuildPage(pageGeneral, function(self, db, Add, AddSpace, AddSyncPoint)
-        -- Helper: prompt reload if the flag diverges from the loaded state
-        local function PromptReloadIfNeeded()
-            if DF:EnableFlagsDifferFromLoaded() and DF.ShowPopupAlert then
-                DF:ShowPopupAlert({
-                    title = L["Reload Required"],
-                    message = L["Enabling or disabling a frame mode requires a UI reload to take effect.\n\nReload now?"],
-                    buttons = {
-                        { label = L["Reload Now"], onClick = function() ReloadUI() end },
-                        { label = L["Later"] },
-                    },
-                })
-            end
-        end
-
         -- Helpers: read from party-mode storage (canonical), write to BOTH
         -- party and raid mode dbs so the value stays consistent regardless
         -- of which mode is currently selected. The Blizzard frames are
@@ -1027,11 +1013,86 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             end
         end
 
+        -- Contextual reload popup shown when toggling DF Party/Raid frames.
+        -- Offers an optional third button that ALSO flips the matching
+        -- Blizzard hide flag, so "enabling" DF party also disables Blizzard
+        -- party (typical intent) and "disabling" DF party also enables
+        -- Blizzard party (so the user isn't left with no frames).
+        local function PromptReloadAfterModeToggle(mode)
+            if not DF:EnableFlagsDifferFromLoaded() then return end
+            if not DF.ShowPopupAlert then return end
+
+            local enabled = (mode == "party") and (DF.db.partyEnabled ~= false) or (DF.db.raidEnabled ~= false)
+            local blizKey = (mode == "party") and "hideBlizzardPartyFrames" or "hideBlizzardRaidFrames"
+            local blizCurrentlyHidden = DF.db.party and DF.db.party[blizKey]
+
+            local buttons = {}
+            if enabled and not blizCurrentlyHidden then
+                -- Enabling DF frames while Blizzard frames are still visible
+                -- → offer to disable the Blizzard equivalent on the same reload
+                buttons[#buttons + 1] = {
+                    label = (mode == "party") and L["Reload & Disable Blizzard Party"] or L["Reload & Disable Blizzard Raid"],
+                    onClick = function()
+                        if DF.db.party then DF.db.party[blizKey] = true end
+                        if DF.db.raid  then DF.db.raid[blizKey]  = true end
+                        ReloadUI()
+                    end,
+                }
+            elseif (not enabled) and blizCurrentlyHidden then
+                -- Disabling DF frames while Blizzard frames are hidden
+                -- → offer to re-enable the Blizzard equivalent
+                buttons[#buttons + 1] = {
+                    label = (mode == "party") and L["Reload & Enable Blizzard Party"] or L["Reload & Enable Blizzard Raid"],
+                    onClick = function()
+                        if DF.db.party then DF.db.party[blizKey] = false end
+                        if DF.db.raid  then DF.db.raid[blizKey]  = false end
+                        ReloadUI()
+                    end,
+                }
+            end
+            buttons[#buttons + 1] = { label = L["Just Reload"], onClick = function() ReloadUI() end }
+            buttons[#buttons + 1] = { label = L["Reload Later"] }
+
+            DF:ShowPopupAlert({
+                title = L["Reload Required"],
+                message = L["Enabling or disabling a frame mode requires a UI reload to take effect.\n\nReload now?"],
+                width = 560,
+                buttonWidth = 170,
+                buttons = buttons,
+            })
+        end
+
+        -- ===== INFO BANNER (global settings notice) =====
+        do
+            local banner = CreateFrame("Frame", nil, self.child, "BackdropTemplate")
+            banner:SetSize(560, 40)
+            if not banner.SetBackdrop then Mixin(banner, BackdropTemplateMixin) end
+            banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            banner:SetBackdropColor(0.15, 0.18, 0.28, 1)
+            local tc = GUI.GetThemeColor and GUI.GetThemeColor() or {r = 0.45, g = 0.45, b = 0.95}
+            banner:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
+
+            local icon = banner:CreateTexture(nil, "OVERLAY")
+            icon:SetPoint("LEFT", 10, 0)
+            icon:SetSize(16, 16)
+            icon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\info")
+
+            local txt = banner:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+            txt:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+            txt:SetPoint("RIGHT", banner, "RIGHT", -10, 0)
+            txt:SetJustifyH("LEFT")
+            txt:SetWordWrap(true)
+            txt:SetText(L["Settings on this page apply globally — changes persist across both the Party and Raid sections."])
+            txt:SetTextColor(0.85, 0.85, 0.85)
+
+            Add(banner, 44, "both")
+        end
+
         -- ===== FRAME MODES GROUP (Column 1, Top) =====
         local modesGroup = GUI:CreateSettingsGroup(self.child, 280)
         modesGroup:AddWidget(GUI:CreateHeader(self.child, L["Frame Modes"]), 40)
-        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Party Frames"], DF.db, "partyEnabled", PromptReloadIfNeeded), 30)
-        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Raid Frames"], DF.db, "raidEnabled", PromptReloadIfNeeded), 30)
+        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Party Frames"], DF.db, "partyEnabled", function() PromptReloadAfterModeToggle("party") end), 30)
+        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Raid Frames"], DF.db, "raidEnabled", function() PromptReloadAfterModeToggle("raid") end), 30)
         modesGroup:AddWidget(GUI:CreateLabel(self.child,
             L["Completely enable or disable the Party or Raid frame system. Disabled modes are never created, consuming zero performance in the background. Requires a UI reload to apply."],
             260), 80)

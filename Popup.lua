@@ -1845,7 +1845,7 @@ local function ConfigureForAlert(config)
     -- Create/reuse alert buttons
     local buttons = config.buttons or {}
     local numButtons = #buttons
-    local btnWidth = 100
+    local btnWidth = config.buttonWidth or 100
     local btnSpacing = 8
     local totalBtnWidth = numButtons * btnWidth + (numButtons - 1) * btnSpacing
     local startX = -totalBtnWidth / 2 + btnWidth / 2
