@@ -3264,6 +3264,29 @@ DF._MainEventDispatcher = function(self, event, arg1)
         -- Ensure structure exists in per-character DB
         if DandersFramesCharDB.specProfiles == nil then DandersFramesCharDB.specProfiles = {} end
 
+        -- Language override lives per-character because the locale files
+        -- need to read it at file-load time, before any profile resolution
+        -- happens. SavedVariablesPerCharacter is available at that stage.
+        if DandersFramesCharDB.languageOverride == nil then
+            -- Migrate from the earlier per-profile slot if any profile had it set
+            local migrated = "AUTO"
+            if DandersFramesDB_v2.profiles then
+                for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                    if profile.languageOverride and profile.languageOverride ~= "AUTO" then
+                        migrated = profile.languageOverride
+                        break
+                    end
+                end
+            end
+            DandersFramesCharDB.languageOverride = migrated
+        end
+        -- Clean up legacy per-profile key (no longer read anywhere)
+        if DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                profile.languageOverride = nil
+            end
+        end
+
         -- Seed per-character profile from account-wide on first login for this character
         if not DandersFramesCharDB.currentProfile then
             DandersFramesCharDB.currentProfile = DandersFramesDB_v2.currentProfile
@@ -3299,7 +3322,6 @@ DF._MainEventDispatcher = function(self, event, arg1)
                 raidEnabled = true,
                 settingsFont = "Friz Quadrata TT",
                 settingsFontOutline = "",
-                languageOverride = "AUTO",
             }
         end
         
@@ -3342,10 +3364,9 @@ DF._MainEventDispatcher = function(self, event, arg1)
         if DF.db.partyEnabled == nil then DF.db.partyEnabled = true end
         if DF.db.raidEnabled == nil then DF.db.raidEnabled = true end
 
-        -- Ensure settings-panel font + language defaults exist
+        -- Ensure settings-panel font defaults exist
         if DF.db.settingsFont        == nil then DF.db.settingsFont        = "Friz Quadrata TT" end
         if DF.db.settingsFontOutline == nil then DF.db.settingsFontOutline = "" end
-        if DF.db.languageOverride    == nil then DF.db.languageOverride    = "AUTO" end
 
         -- Snapshot the enable-flag state at load time. After profile switches
         -- or imports, we compare against this to decide whether to prompt for
@@ -3397,10 +3418,9 @@ DF._MainEventDispatcher = function(self, event, arg1)
                 if profile.partyEnabled == nil then profile.partyEnabled = true end
                 if profile.raidEnabled == nil then profile.raidEnabled = true end
 
-                -- Ensure settings-panel font + language defaults exist on every profile
+                -- Ensure settings-panel font defaults exist on every profile
                 if profile.settingsFont        == nil then profile.settingsFont        = "Friz Quadrata TT" end
                 if profile.settingsFontOutline == nil then profile.settingsFontOutline = "" end
-                if profile.languageOverride    == nil then profile.languageOverride    = "AUTO" end
             end
         end
 

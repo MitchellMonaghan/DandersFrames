@@ -191,7 +191,6 @@ function DF:SetProfile(name)
             raidEnabled = true,
             settingsFont = "Friz Quadrata TT",
             settingsFontOutline = "",
-            languageOverride = "AUTO",
         }
         print("|cff00ff00DandersFrames:|r " .. format(L["Created new profile: %s"], name))
     end
@@ -202,7 +201,6 @@ function DF:SetProfile(name)
     if p.raidEnabled         == nil then p.raidEnabled         = true end
     if p.settingsFont        == nil then p.settingsFont        = "Friz Quadrata TT" end
     if p.settingsFontOutline == nil then p.settingsFontOutline = "" end
-    if p.languageOverride    == nil then p.languageOverride    = "AUTO" end
 
     -- Switch to the profile (update both account-wide and per-character)
     DandersFramesDB_v2.currentProfile = name

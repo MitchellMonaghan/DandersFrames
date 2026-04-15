@@ -1126,7 +1126,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         }
         local languageGroup = GUI:CreateSettingsGroup(self.child, 280)
         languageGroup:AddWidget(GUI:CreateHeader(self.child, L["Language"]), 40)
-        languageGroup:AddWidget(GUI:CreateDropdown(self.child, L["Addon Language"], languageValues, DF.db, "languageOverride", function()
+        -- Language override lives on the per-character SavedVariable so
+        -- locale files can read it at file-load time (before DF.db exists).
+        languageGroup:AddWidget(GUI:CreateDropdown(self.child, L["Addon Language"], languageValues, DandersFramesCharDB, "languageOverride", function()
             if DF.ShowPopupAlert then
                 DF:ShowPopupAlert({
                     title = L["Reload Required"],
