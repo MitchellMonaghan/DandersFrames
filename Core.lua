@@ -3354,6 +3354,12 @@ DF._MainEventDispatcher = function(self, event, arg1)
         DF.loadedPartyEnabled = DF.db.partyEnabled ~= false
         DF.loadedRaidEnabled  = DF.db.raidEnabled  ~= false
 
+        -- Apply user's Settings Panel font (safe no-op if GUI/DFFonts.lua hasn't loaded yet;
+        -- SetupGUIPages also calls this again after the GUI frame exists)
+        if DF.GUI and DF.GUI.ApplySettingsFont then
+            DF.GUI:ApplySettingsFont()
+        end
+
         -- Ensure auraBlacklist table exists (profile-level, shared across party/raid)
         if not DF.db.auraBlacklist then
             DF.db.auraBlacklist = { buffs = {}, debuffs = {} }
