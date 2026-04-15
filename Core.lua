@@ -3287,6 +3287,32 @@ DF._MainEventDispatcher = function(self, event, arg1)
             end
         end
 
+        -- Apply language override: the locale files populated
+        -- DF_AllLocales[locale] at file-scope; we now overlay the chosen
+        -- locale's strings onto AceLocale's app table. Non-enUS client
+        -- locales also flow through here (they populate only the side
+        -- table, not AceLocale directly, so the app otherwise has just
+        -- the enUS baseline).
+        if DF_AllLocales then
+            local override = DandersFramesCharDB.languageOverride
+            local active = (override and override ~= "AUTO") and override or GetLocale()
+            if active ~= "enUS" and DF_AllLocales[active] then
+                local aceL = DF.L
+                for k, v in pairs(DF_AllLocales[active]) do
+                    -- AceLocale stores L["key"] = true as L["key"] = "key"
+                    -- (the key string); we preserve that convention for
+                    -- any `true` values in DF_AllLocales, though real
+                    -- translations are already strings.
+                    rawset(aceL, k, v == true and k or v)
+                end
+            end
+            -- Free the side-table now that the overlay is applied. Changing
+            -- languageOverride requires a /reload (enforced by the dropdown
+            -- popup), which re-populates DF_AllLocales on the next load, so
+            -- we don't need to keep it around for subsequent lookups.
+            DF_AllLocales = nil
+        end
+
         -- Seed per-character profile from account-wide on first login for this character
         if not DandersFramesCharDB.currentProfile then
             DandersFramesCharDB.currentProfile = DandersFramesDB_v2.currentProfile

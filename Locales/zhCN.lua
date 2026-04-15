@@ -1,18 +1,9 @@
--- Only load this locale's strings if the user's language override
--- (DandersFramesCharDB.languageOverride) selects it, or when no
--- override is set and the client locale matches.
-local chosen = DandersFramesCharDB and DandersFramesCharDB.languageOverride
-local wanted = (chosen and chosen ~= "AUTO") and chosen or GetLocale()
-if wanted ~= "zhCN" then return end
-
--- Set GAME_LOCALE so AceLocale treats zhCN as the active game locale
--- and returns its writeproxy (which overwrites enUS defaults). The
--- writedefaultproxy returned when isDefault=true refuses to overwrite
--- existing keys, which would leave our translations unapplied.
--- GAME_LOCALE is AceLocale's documented locale-override variable.
-local _dfOrigGameLocale = GAME_LOCALE
-GAME_LOCALE = "zhCN"
-local L = LibStub("AceLocale-3.0"):NewLocale("DandersFrames", "zhCN")
-GAME_LOCALE = _dfOrigGameLocale
-if not L then return end
+-- Populate DF_AllLocales["zhCN"] so Core.lua's ADDON_LOADED handler
+-- can apply this locale's translations as an overlay if the user's
+-- languageOverride selects it. No AceLocale interaction here — the
+-- overlay step happens once the SavedVariable is actually populated,
+-- which is only guaranteed at ADDON_LOADED time (not file-scope).
+DF_AllLocales = DF_AllLocales or {}
+DF_AllLocales.zhCN = {}
+local L = DF_AllLocales.zhCN
 --@localization(locale="zhCN", format="lua_additive_table", handle-unlocalized="comment")@
