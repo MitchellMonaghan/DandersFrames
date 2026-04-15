@@ -148,7 +148,14 @@ function DF.GUI:SetSettingsFont(fontString, size, outline)
 
     local flagsToUse = explicitOutline or userOutline
 
-    if DF.SafeSetFont then
+    -- SafeSetFont uses CreateFontFamily + SetTextScale which is only
+    -- available on FontString objects. EditBoxes inherit from FontInstance
+    -- (GetFont/SetFont work) but lack SetTextScale, so for them we use a
+    -- direct SetFont via the resolved path — no multi-alphabet family, but
+    -- also no crash. EditBox text is almost always user-typed ASCII anyway.
+    local isFontString = fontString.GetObjectType and fontString:GetObjectType() == "FontString"
+
+    if isFontString and DF.SafeSetFont then
         DF:SafeSetFont(fontString, fontName, size, flagsToUse)
     else
         local fontPath = DF.GetFontPath and DF:GetFontPath(fontName) or "Fonts\\FRIZQT__.TTF"
