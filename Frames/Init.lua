@@ -705,7 +705,7 @@ function DF:CreateRaidMoverFrame()
     
     local label = mover:CreateFontString(nil, "OVERLAY")
     label:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    label:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    DF:SafeSetFont(label, nil, 14, "OUTLINE")
     label:SetText("Raid Frames\nDrag to move")
     label:SetTextColor(1, 0.7, 0.3, 1)
     

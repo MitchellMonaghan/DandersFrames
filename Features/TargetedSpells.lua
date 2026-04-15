@@ -704,7 +704,7 @@ local function CreateSingleIcon(parent, index)
     
     -- Custom duration text (on overlay so it's above the swipe)
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY")
-    durationText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    DF.GUI:SetSettingsFont(durationText, 10, "OUTLINE")
     durationText:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     durationText:SetTextColor(1, 1, 1, 1)
     container.durationText = durationText
@@ -727,7 +727,7 @@ local function CreateSingleIcon(parent, index)
     
     -- X mark for interrupted
     local interruptX = interruptOverlay:CreateFontString(nil, "OVERLAY")
-    interruptX:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
+    DF.GUI:SetSettingsFont(interruptX, 16, "OUTLINE")
     interruptX:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     interruptX:SetText("X")
     interruptX:SetTextColor(1, 0, 0, 1)
@@ -1281,7 +1281,7 @@ local function ShowInterruptedVisual(icon, db)
         if showX then
             icon.interruptX:Show()
             icon.interruptX:SetTextColor(xColor.r, xColor.g, xColor.b, 1)
-            icon.interruptX:SetFont("Fonts\\FRIZQT__.TTF", xSize, "OUTLINE")
+            DF.GUI:SetSettingsFont(icon.interruptX, xSize, "OUTLINE")
         else
             icon.interruptX:Hide()
         end
@@ -2139,7 +2139,7 @@ local function CreatePersonalIcon(index)
     
     -- Duration text
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY")
-    durationText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    DF.GUI:SetSettingsFont(durationText, 12, "OUTLINE")
     durationText:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     durationText:SetTextColor(1, 1, 1, 1)
     icon.durationText = durationText
@@ -2159,7 +2159,7 @@ local function CreatePersonalIcon(index)
     icon.interruptTint = interruptTint
     
     local interruptX = interruptOverlay:CreateFontString(nil, "OVERLAY")
-    interruptX:SetFont("Fonts\\FRIZQT__.TTF", 20, "OUTLINE")
+    DF.GUI:SetSettingsFont(interruptX, 20, "OUTLINE")
     interruptX:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     interruptX:SetText("X")
     interruptX:SetTextColor(1, 0, 0, 1)
@@ -2436,7 +2436,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
         if interruptShowX then
             icon.interruptX:Show()
             icon.interruptX:SetTextColor(interruptXColor.r, interruptXColor.g, interruptXColor.b, 1)
-            icon.interruptX:SetFont("Fonts\\FRIZQT__.TTF", interruptXSize, "OUTLINE")
+            DF.GUI:SetSettingsFont(icon.interruptX, interruptXSize, "OUTLINE")
         else
             icon.interruptX:Hide()
         end

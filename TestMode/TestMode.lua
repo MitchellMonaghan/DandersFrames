@@ -5576,7 +5576,7 @@ function DF:UpdateTestTargetedSpell(frame, testData)
                     if showX then
                         icon.interruptX:Show()
                         icon.interruptX:SetTextColor(xColor.r, xColor.g, xColor.b, 1)
-                        icon.interruptX:SetFont("Fonts\\FRIZQT__.TTF", xSize, "OUTLINE")
+                        DF:SafeSetFont(icon.interruptX, nil, xSize, "OUTLINE")
                     else
                         icon.interruptX:Hide()
                     end

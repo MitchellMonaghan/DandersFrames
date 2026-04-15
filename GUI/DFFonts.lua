@@ -111,11 +111,87 @@ function DF.GUI:ApplySettingsFont()
     end
 end
 
--- Refresh every active FontString on every visible settings page
--- so changes appear instantly without /reload. Called from the
--- settings font/outline dropdowns' callbacks.
+-- ============================================================
+-- INLINE FONT TRACKER
+-- For settings-UI widgets that need explicit size/outline control
+-- (e.g. custom-sized button text, small status labels) the addon
+-- historically called fontString:SetFont("Fonts\\FRIZQT__.TTF",
+-- size, outline) directly. That bypasses any template inheritance,
+-- so the Settings Font dropdown cannot affect them. SetSettingsFont
+-- replaces those calls: it applies the user's current settings font
+-- with the given size/outline, AND registers the FontString so
+-- RefreshSettingsFont can re-apply the new font later.
+-- ============================================================
+
+-- List of {fontString, size, outline} tuples to re-apply on refresh.
+-- Entries with a garbage-collected FontString become nil and are
+-- skipped naturally.
+DF.GUI._settingsFontStrings = DF.GUI._settingsFontStrings or {}
+
+-- Apply the user's settings font to a FontString with the given
+-- size and outline, then register it for future refreshes.
+--
+-- `outline` semantics: if nil, the user's Settings Font Outline
+-- choice wins (so the widget follows whatever the user picked).
+-- If explicit (e.g. "OUTLINE"), it is respected as the minimum
+-- outline — useful for widgets like drag-hint text that need an
+-- outline regardless of user preference.
+function DF.GUI:SetSettingsFont(fontString, size, outline)
+    if not fontString then return end
+
+    size = size or DEFAULT_FONT_SIZE
+    local explicitOutline = outline  -- nil means "follow user"
+
+    local fontName = (DF.db and DF.db.settingsFont) or "Friz Quadrata TT"
+    local userOutline = (DF.db and DF.db.settingsFontOutline) or ""
+    if userOutline == "NONE" then userOutline = "" end
+
+    local flagsToUse = explicitOutline or userOutline
+
+    if DF.SafeSetFont then
+        DF:SafeSetFont(fontString, fontName, size, flagsToUse)
+    else
+        local fontPath = DF.GetFontPath and DF:GetFontPath(fontName) or "Fonts\\FRIZQT__.TTF"
+        pcall(function() fontString:SetFont(fontPath, size, flagsToUse) end)
+    end
+
+    -- Register for future refreshes (only once per fontString)
+    local registry = self._settingsFontStrings
+    for _, entry in ipairs(registry) do
+        if entry.fs == fontString then
+            entry.size = size
+            entry.outline = explicitOutline
+            return
+        end
+    end
+    registry[#registry + 1] = { fs = fontString, size = size, outline = explicitOutline }
+end
+
+-- ============================================================
+-- REFRESH
+-- Called by the settings font/outline dropdown callbacks.
+-- Re-applies the user's font to every registered FontString (the
+-- inline-SetFont widgets) and nudges every FontString across every
+-- settings page so template-inherited widgets re-render immediately.
+-- ============================================================
 function DF.GUI:RefreshSettingsFont()
     self:ApplySettingsFont()
+
+    -- Re-apply settings font to every registered inline-SetFont FontString
+    local registry = self._settingsFontStrings
+    if registry then
+        for i = #registry, 1, -1 do
+            local entry = registry[i]
+            local fs = entry and entry.fs
+            if fs and fs.GetObjectType then
+                -- Re-apply with the same explicit outline semantics
+                self:SetSettingsFont(fs, entry.size, entry.outline)
+            else
+                -- FontString was garbage-collected; drop the entry
+                table.remove(registry, i)
+            end
+        end
+    end
 
     -- Force FontStrings to re-evaluate their inherited font.
     -- Setting the same text back forces a layout pass.

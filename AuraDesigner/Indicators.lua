@@ -2651,7 +2651,7 @@ local function CreateADBar(frame, auraName)
 
     -- Duration text (manual, for preview)
     bar.duration = bar.textOverlay:CreateFontString(nil, "OVERLAY")
-    bar.duration:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    DF:SafeSetFont(bar.duration, nil, 10, "OUTLINE")
     bar.duration:SetPoint("CENTER", 0, 0)
     bar.duration:SetTextColor(1, 1, 1)
 

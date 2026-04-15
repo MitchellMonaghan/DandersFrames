@@ -156,7 +156,7 @@ function DF:CreateMoverFrame()
     local label = mover:CreateFontString(nil, "OVERLAY")
     label:SetPoint("CENTER")
     -- Set font explicitly to avoid "Font not set" errors
-    label:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    DF.GUI:SetSettingsFont(label, 14, "OUTLINE")
     label:SetText("Party Frames\nDrag to move")
     label:SetTextColor(1, 1, 1, 1)
     

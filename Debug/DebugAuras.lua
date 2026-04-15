@@ -201,12 +201,12 @@ local function CreateDebugIcon(parent, index)
     
     -- Count text
     icon.count = icon:CreateFontString(nil, "OVERLAY")
-    icon.count:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    DF.GUI:SetSettingsFont(icon.count, 10, "OUTLINE")
     icon.count:SetPoint("BOTTOMRIGHT", 0, 0)
     
     -- Index label
     icon.indexText = icon:CreateFontString(nil, "OVERLAY")
-    icon.indexText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    DF.GUI:SetSettingsFont(icon.indexText, 8, "OUTLINE")
     icon.indexText:SetPoint("TOPLEFT", 1, -1)
     icon.indexText:SetText(index)
     icon.indexText:SetTextColor(1, 1, 0, 1)
@@ -265,7 +265,7 @@ function DA:CreateDebugBar(frame)
     
     -- Label showing current filter
     bar.label = bar:CreateFontString(nil, "OVERLAY")
-    bar.label:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+    DF.GUI:SetSettingsFont(bar.label, 9, "OUTLINE")
     bar.label:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 2, 2)
     bar.label:SetText("Debug Auras")
     bar.label:SetTextColor(0, 1, 1, 1)

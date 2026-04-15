@@ -112,7 +112,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
         -- Label text
         local text = cb:CreateFontString(nil, "OVERLAY")
-        text:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+        GUI:SetSettingsFont(text, 8, "")
         text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
         text:SetText(label)
         text:SetTextColor(0.55, 0.55, 0.55)
