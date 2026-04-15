@@ -2262,8 +2262,7 @@ function DF:UnlockFrames()
         DF:ShowPersonalTargetedSpellsMover()
     end
 
-    -- Show Targeted List mover if enabled (alpha/beta only — the
-    -- function is gated internally on DF.RELEASE_CHANNEL)
+    -- Show Targeted List mover if enabled
     if db.targetedListEnabled and DF.ShowTargetedListMover then
         DF:ShowTargetedListMover()
     end

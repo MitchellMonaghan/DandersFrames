@@ -1916,8 +1916,7 @@ local function NeedsCastEvents()
         return groupOn or personalOn
     end
     if modeNeeds(DF.db.party) or modeNeeds(DF.db.raid) then return true end
-    -- Targeted List is alpha/beta-only and party-only; the call is
-    -- gated by DF.RELEASE_CHANNEL inside the helper.
+    -- Targeted List is party-only
     if DF.TargetedListNeedsCastEvents and DF:TargetedListNeedsCastEvents() then
         return true
     end
@@ -3616,11 +3615,6 @@ end
 -- members. Anchored to the party frame container. Replaces the
 -- group-frame Targeted Spells icons that Blizzard's 2026-04-07
 -- UnitIsUnit hotfix permanently broke.
---
--- Gated by DF.RELEASE_CHANNEL — feature is fully inert on stable
--- releases. Alpha and beta builds run normally. The matching
--- settings sub-tab in Options.lua is also gated so stable users
--- never see it.
 --
 -- Party-mode only by design. We will not add raid support.
 --
@@ -5933,8 +5927,7 @@ function DF:InitTargetedSpells()
     end
 
     -- Initialize the Targeted List. Safe to call unconditionally — the
-    -- function is gated internally on DF.RELEASE_CHANNEL and on the
-    -- user's targetedListEnabled setting.
+    -- function is gated internally on the user's targetedListEnabled setting.
     if DF.InitTargetedList then
         DF:InitTargetedList()
     end

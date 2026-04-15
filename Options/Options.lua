@@ -5788,16 +5788,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
     end
 
     -- ============================================================
-    -- Indicators > Targeted List (ALPHA / BETA ONLY)
+    -- Indicators > Targeted List
     -- ============================================================
     -- Stacked cast-bar display showing enemy casts targeting party
     -- members. Replaces the group-frame Targeted Spells icons that
     -- Blizzard's 2026-04-07 UnitIsUnit hotfix permanently broke.
-    --
-    -- The entire page registration is gated by DF.RELEASE_CHANNEL —
-    -- on stable builds no sub-tab is created, no navigation entry
-    -- exists, and users never see this feature. The db defaults and
-    -- all lifecycle code are also gated at their own check sites.
+    -- Party-only feature; raid mode shows a redirect message.
     local pageTargetedList = CreateSubTab("indicators", "indicators_targetedlist", L["Targeted List"])
     BuildPage(pageTargetedList, function(self, db, Add, AddSpace, AddSyncPoint)
             -- Party-only feature: show message and return if in raid mode

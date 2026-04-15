@@ -1820,8 +1820,7 @@ DF.PartyDefaults = {
 
     -- Test Mode
     -- testShowTargetedList drives the Targeted List demo bars in party
-    -- test mode (alpha/beta only — the feature is gated by
-    -- DF.RELEASE_CHANNEL). There is no raid-mode equivalent because the
+    -- test mode. There is no raid-mode equivalent because the
     -- Targeted List itself is party-only.
     testShowTargetedList = false,
     testAnimateTargetedList = true,
