@@ -13,8 +13,9 @@
 * (General) "Hide Blizzard Party/Raid Frames" renamed to "Disable Blizzard Party/Raid Frames" for clarity — the toggles unregister all events on those frames in addition to hiding them, so nothing fires in the background
 * (General) The Blizzard frame toggles now appear on the Settings tab regardless of which mode (party/raid) you are viewing; changes sync to both mode storages
 * (General) "Hide Blizzard Player Frame" moved from the Blizzard Frames section into Display > Visibility where the other per-frame hide toggles live
-* (General) New Settings Panel Appearance section with Settings Font and Settings Font Outline controls — changes the look of the settings panel itself (in-game frame text continues to be configured per-element on the Health Text, Name Text, and Status Text pages)
+* (General) New Settings Panel Appearance section with Settings Font and Settings Font Outline controls — changes the look of the settings panel itself (in-game frame text continues to be configured per-element on the Health Text, Name Text, and Status Text pages). Font and outline changes apply live across every page, popup, wizard, click-casting dialog, aura designer panel, blacklist, test mode panel, debug tools, and party/raid position popup — no reload required
 * (General) New Language section with an Addon Language dropdown (Auto + all supported locales) — lets you run the addon in a different language than your WoW client
+* (Localisation) Fixed Cyrillic, Korean, and Chinese (simplified + traditional) characters rendering as squares in many parts of the addon. Every in-addon `SetFont` call now flows through the multi-alphabet font family system, so glyphs that the chosen font lacks automatically fall back to the client's locale-appropriate Blizzard font
 
 ## [4.3.0] - 2026-04-10
 
