@@ -1,5 +1,21 @@
 # DandersFrames Changelog
 
+## [Unreleased]
+
+### New Features
+
+* **Disable Party or Raid frames entirely** — new Settings tab under General lets you completely disable the Party or Raid frame system. Disabled modes are never created, consuming zero performance in the background (no headers, no unit frames, no event registration, no permanent mover). Requires a UI reload to apply; a popup prompts you to reload when toggling. Mode-specific settings pages are greyed out and unclickable while their mode is disabled (with the General Settings, Profiles Manage / Import-Export, Debug Console, Targeted List, and Personal Targeted pages always remaining accessible). Switching to or importing a profile that changes the enable state also prompts for a reload.
+
+### Improvements
+
+* (General) Restructured the General > Settings tab with four sections: Frame Modes, Blizzard Frames, Appearance, and Language
+* (General) Moved the Blizzard Frames section from Display > Visibility into the new General > Settings tab
+* (General) "Hide Blizzard Party/Raid Frames" renamed to "Disable Blizzard Party/Raid Frames" for clarity — the toggles unregister all events on those frames in addition to hiding them, so nothing fires in the background
+* (General) The Blizzard frame toggles now appear on the Settings tab regardless of which mode (party/raid) you are viewing; changes sync to both mode storages
+* (General) "Hide Blizzard Player Frame" moved from the Blizzard Frames section into Display > Visibility where the other per-frame hide toggles live
+* (General) New Settings Panel Appearance section with Settings Font and Settings Font Outline controls — changes the look of the settings panel itself (in-game frame text continues to be configured per-element on the Health Text, Name Text, and Status Text pages)
+* (General) New Language section with an Addon Language dropdown (Auto + all supported locales) — lets you run the addon in a different language than your WoW client
+
 ## [4.3.0] - 2026-04-10
 
 ### Improvements

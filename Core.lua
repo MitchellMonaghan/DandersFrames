@@ -42,6 +42,34 @@ DF.demoMode = false
 DF.demoPercent = 1
 DF.initialized = false  -- Set to true after frames are created and ready
 
+-- Returns true if the current profile's partyEnabled/raidEnabled flags
+-- differ from the state captured when the addon loaded. A reload is
+-- required to actually create or destroy frame headers, so callers use
+-- this to decide whether to prompt the user.
+function DF:EnableFlagsDifferFromLoaded()
+    if not DF.db then return false end
+    local curParty = DF.db.partyEnabled ~= false
+    local curRaid  = DF.db.raidEnabled  ~= false
+    return curParty ~= (DF.loadedPartyEnabled ~= false)
+        or curRaid  ~= (DF.loadedRaidEnabled  ~= false)
+end
+
+-- Show the standard "reload to apply enable changes" popup if the flags
+-- have diverged from the loaded state. Safe to call from any context.
+function DF:PromptReloadIfEnableFlagsChanged()
+    if not DF:EnableFlagsDifferFromLoaded() then return end
+    if not DF.ShowPopupAlert then return end
+    local L = DF.L
+    DF:ShowPopupAlert({
+        title = L["Reload Required"],
+        message = L["The new profile changes which frame modes are enabled. A UI reload is required to apply this.\n\nReload now?"],
+        buttons = {
+            { label = L["Reload Now"], onClick = function() ReloadUI() end },
+            { label = L["Later"] },
+        },
+    })
+end
+
 -- Aura layout version: incremented when any layout-affecting setting changes.
 -- Frames track the version they were last laid out with to avoid redundant work.
 DF.auraLayoutVersion = 1
@@ -3267,6 +3295,11 @@ DF._MainEventDispatcher = function(self, event, arg1)
                 classColors = {},
                 powerColors = {},
                 linkedSections = {},
+                partyEnabled = true,
+                raidEnabled = true,
+                settingsFont = "Friz Quadrata TT",
+                settingsFontOutline = "",
+                languageOverride = "AUTO",
             }
         end
         
@@ -3305,6 +3338,22 @@ DF._MainEventDispatcher = function(self, event, arg1)
             DF.db.linkedSections = {}
         end
 
+        -- Ensure mode-enable flags exist (default true for backward compatibility)
+        if DF.db.partyEnabled == nil then DF.db.partyEnabled = true end
+        if DF.db.raidEnabled == nil then DF.db.raidEnabled = true end
+
+        -- Ensure settings-panel font + language defaults exist
+        if DF.db.settingsFont        == nil then DF.db.settingsFont        = "Friz Quadrata TT" end
+        if DF.db.settingsFontOutline == nil then DF.db.settingsFontOutline = "" end
+        if DF.db.languageOverride    == nil then DF.db.languageOverride    = "AUTO" end
+
+        -- Snapshot the enable-flag state at load time. After profile switches
+        -- or imports, we compare against this to decide whether to prompt for
+        -- a UI reload. The actual headers are created based on this state and
+        -- can only be (un)created on /reload.
+        DF.loadedPartyEnabled = DF.db.partyEnabled ~= false
+        DF.loadedRaidEnabled  = DF.db.raidEnabled  ~= false
+
         -- Ensure auraBlacklist table exists (profile-level, shared across party/raid)
         if not DF.db.auraBlacklist then
             DF.db.auraBlacklist = { buffs = {}, debuffs = {} }
@@ -3338,6 +3387,14 @@ DF._MainEventDispatcher = function(self, event, arg1)
                         end
                     end
                 end
+                -- Ensure mode-enable flags exist on every profile
+                if profile.partyEnabled == nil then profile.partyEnabled = true end
+                if profile.raidEnabled == nil then profile.raidEnabled = true end
+
+                -- Ensure settings-panel font + language defaults exist on every profile
+                if profile.settingsFont        == nil then profile.settingsFont        = "Friz Quadrata TT" end
+                if profile.settingsFontOutline == nil then profile.settingsFontOutline = "" end
+                if profile.languageOverride    == nil then profile.languageOverride    = "AUTO" end
             end
         end
 

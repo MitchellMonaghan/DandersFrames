@@ -3579,7 +3579,13 @@ function DF:ShowTestFrames(silent)
         print("|cffff9900DandersFrames:|r " .. L["Cannot enter test mode during combat."])
         return
     end
-    
+
+    -- Respect mode-enable flag: party test requires party frames
+    if DF.db and DF.db.partyEnabled == false then
+        print("|cffff9900DandersFrames:|r " .. L["Party frames are disabled. Enable them in General settings to use party test mode."])
+        return
+    end
+
     local db = DF:GetDB()
     DF.testMode = true
     
@@ -4048,7 +4054,13 @@ function DF:ShowRaidTestFrames()
         print("|cffff9900DandersFrames:|r " .. L["Cannot enter test mode during combat."])
         return
     end
-    
+
+    -- Respect mode-enable flag: raid test requires raid frames
+    if DF.db and DF.db.raidEnabled == false then
+        print("|cffff9900DandersFrames:|r " .. L["Raid frames are disabled. Enable them in General settings to use raid test mode."])
+        return
+    end
+
     local db = DF:GetRaidDB()
     DF.raidTestMode = true
     

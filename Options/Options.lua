@@ -277,50 +277,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         hidePlayer.hideOn = function() return GUI.SelectedMode == "raid" end
         hidePlayer.tooltip = L["Removes your player frame from the DandersFrames party display."]
 
-        Add(frameDisplayGroup, nil, 1)
-        
-        -- ===== BLIZZARD FRAMES GROUP (Column 2) =====
-        local blizzardGroup = GUI:CreateSettingsGroup(self.child, 280)
-        blizzardGroup:AddWidget(GUI:CreateHeader(self.child, L["Blizzard Frames"]), 40)
-        
-        local hideDefaultPlayer = blizzardGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Blizzard Player Frame"], db, "hideDefaultPlayerFrame", function()
+        local hideDefaultPlayer = frameDisplayGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Blizzard Player Frame"], db, "hideDefaultPlayerFrame", function()
             DF:UpdateDefaultPlayerFrame()
         end), 30)
         hideDefaultPlayer.tooltip = L["Hides the default Blizzard player portrait and health bar."]
-        
-        local hidePartyCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Blizzard Party Frames"], db, "hideBlizzardPartyFrames", function()
-            DF:UpdateBlizzardFrameVisibility()
-        end), 30)
-        hidePartyCheck.hideOn = function() return GUI.SelectedMode == "raid" end
-        
-        local hideRaidCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Hide Blizzard Raid Frames"], db, "hideBlizzardRaidFrames", function()
-            DF:UpdateBlizzardFrameVisibility()
-        end), 30)
-        hideRaidCheck.hideOn = function() return GUI.SelectedMode == "party" end
-        
-        blizzardGroup:AddWidget(GUI:CreateLabel(self.child, L["Hides Blizzard frames but keeps them active for aura filtering."], 250), 40)
-        
-        local sideMenuCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Party/Raid Side Menu"], db, "showBlizzardSideMenu", function()
-            DF:UpdateBlizzardFrameVisibility()
-        end), 30)
-        sideMenuCheck.hideOn = function(d)
-            if GUI.SelectedMode == "raid" then
-                return not d.hideBlizzardRaidFrames
-            else
-                return not d.hideBlizzardPartyFrames
-            end
-        end
-        
-        local sideMenuLabel = blizzardGroup:AddWidget(GUI:CreateLabel(self.child, L["Shows the ping wheel & party management menu."], 250), 30)
-        sideMenuLabel.hideOn = function(d)
-            if GUI.SelectedMode == "raid" then
-                return not d.hideBlizzardRaidFrames
-            else
-                return not d.hideBlizzardPartyFrames
-            end
-        end
-        
-        Add(blizzardGroup, nil, 2)
+
+        Add(frameDisplayGroup, nil, 1)
     end)
     
     -- Display > Tooltips (moved from General)
@@ -1033,6 +995,155 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         Add(healthTextGroup, nil, 2)
     end)
     
+    -- General > Settings (mode enable/disable, Blizzard frame toggles, profile-wide settings)
+    local pageGeneral = CreateSubTab("general", "general_settings", L["Settings"])
+    BuildPage(pageGeneral, function(self, db, Add, AddSpace, AddSyncPoint)
+        -- Helper: prompt reload if the flag diverges from the loaded state
+        local function PromptReloadIfNeeded()
+            if DF:EnableFlagsDifferFromLoaded() and DF.ShowPopupAlert then
+                DF:ShowPopupAlert({
+                    title = L["Reload Required"],
+                    message = L["Enabling or disabling a frame mode requires a UI reload to take effect.\n\nReload now?"],
+                    buttons = {
+                        { label = L["Reload Now"], onClick = function() ReloadUI() end },
+                        { label = L["Later"] },
+                    },
+                })
+            end
+        end
+
+        -- Helpers: read from party-mode storage (canonical), write to BOTH
+        -- party and raid mode dbs so the value stays consistent regardless
+        -- of which mode is currently selected. The Blizzard frames are
+        -- global UI elements so the toggle conceptually has no mode.
+        local function makeBlizGet(key)
+            return function() return DF.db.party and DF.db.party[key] end
+        end
+        local function makeBlizSet(key, cb)
+            return function(val)
+                if DF.db.party then DF.db.party[key] = val end
+                if DF.db.raid  then DF.db.raid[key]  = val end
+                if cb then cb() end
+            end
+        end
+
+        -- ===== FRAME MODES GROUP (Column 1, Top) =====
+        local modesGroup = GUI:CreateSettingsGroup(self.child, 280)
+        modesGroup:AddWidget(GUI:CreateHeader(self.child, L["Frame Modes"]), 40)
+        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Party Frames"], DF.db, "partyEnabled", PromptReloadIfNeeded), 30)
+        modesGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Raid Frames"], DF.db, "raidEnabled", PromptReloadIfNeeded), 30)
+        modesGroup:AddWidget(GUI:CreateLabel(self.child,
+            L["Completely enable or disable the Party or Raid frame system. Disabled modes are never created, consuming zero performance in the background. Requires a UI reload to apply."],
+            260), 80)
+        Add(modesGroup, nil, 1)
+
+        -- ===== BLIZZARD FRAMES GROUP (Column 1, Bottom) =====
+        -- Storage stays per-mode (party + raid both updated via setter sync)
+        -- so AutoProfiles and ExportCategories continue to work unchanged.
+        local blizzardGroup = GUI:CreateSettingsGroup(self.child, 280)
+        blizzardGroup:AddWidget(GUI:CreateHeader(self.child, L["Blizzard Frames"]), 40)
+
+        local disablePartyCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(
+            self.child, L["Disable Blizzard Party Frames"],
+            DF.db.party, "hideBlizzardPartyFrames",
+            function() DF:UpdateBlizzardFrameVisibility() end,
+            makeBlizGet("hideBlizzardPartyFrames"),
+            makeBlizSet("hideBlizzardPartyFrames", function() DF:UpdateBlizzardFrameVisibility() end)
+        ), 30)
+        disablePartyCheck.tooltip = L["Hides and unregisters all events on the default Blizzard party frames so they consume no performance."]
+
+        local disableRaidCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(
+            self.child, L["Disable Blizzard Raid Frames"],
+            DF.db.party, "hideBlizzardRaidFrames",
+            function() DF:UpdateBlizzardFrameVisibility() end,
+            makeBlizGet("hideBlizzardRaidFrames"),
+            makeBlizSet("hideBlizzardRaidFrames", function() DF:UpdateBlizzardFrameVisibility() end)
+        ), 30)
+        disableRaidCheck.tooltip = L["Hides and unregisters all events on the default Blizzard raid frames so they consume no performance."]
+
+        -- Visual divider + small caption to separate the related sub-option
+        -- (Show Side Menu only applies once a Blizzard frame is disabled)
+        local divider = CreateFrame("Frame", nil, self.child)
+        divider:SetSize(260, 1)
+        local dividerTex = divider:CreateTexture(nil, "OVERLAY")
+        dividerTex:SetColorTexture(1, 1, 1, 0.08)
+        dividerTex:SetPoint("LEFT", 0, 0)
+        dividerTex:SetPoint("RIGHT", 0, 0)
+        dividerTex:SetHeight(1)
+        blizzardGroup:AddWidget(divider, 14)
+
+        local sideMenuCheck = blizzardGroup:AddWidget(GUI:CreateCheckbox(
+            self.child, L["Show Party/Raid Side Menu"],
+            DF.db.party, "showBlizzardSideMenu",
+            function() DF:UpdateBlizzardFrameVisibility() end,
+            makeBlizGet("showBlizzardSideMenu"),
+            makeBlizSet("showBlizzardSideMenu", function() DF:UpdateBlizzardFrameVisibility() end)
+        ), 30)
+        sideMenuCheck.disableOn = function()
+            local p = DF.db.party
+            return not (p and (p.hideBlizzardPartyFrames or p.hideBlizzardRaidFrames))
+        end
+        sideMenuCheck.tooltip = L["Shows the ping wheel & party management menu when Blizzard frames are disabled."]
+
+        Add(blizzardGroup, nil, 1)
+
+        -- ===== SETTINGS PANEL APPEARANCE GROUP (Column 2, Top) =====
+        -- Controls the look of this settings panel itself — does NOT affect
+        -- in-game frame text (use Health Text / Name Text pages for those).
+        local outlineValues = {
+            [""]          = L["None"],
+            OUTLINE       = L["Outline"],
+            THICKOUTLINE  = L["Thick Outline"],
+            MONOCHROME    = L["Monochrome"],
+        }
+        local appearanceGroup = GUI:CreateSettingsGroup(self.child, 280)
+        appearanceGroup:AddWidget(GUI:CreateHeader(self.child, L["Settings Panel Appearance"]), 40)
+        appearanceGroup:AddWidget(GUI:CreateFontDropdown(self.child, L["Settings Font"], DF.db, "settingsFont", function()
+            if DF.RefreshSettingsGUI then DF:RefreshSettingsGUI() end
+        end), 55)
+        appearanceGroup:AddWidget(GUI:CreateDropdown(self.child, L["Settings Font Outline"], outlineValues, DF.db, "settingsFontOutline", function()
+            if DF.RefreshSettingsGUI then DF:RefreshSettingsGUI() end
+        end), 55)
+        appearanceGroup:AddWidget(GUI:CreateLabel(self.child,
+            L["Font used for this settings panel. Does not affect in-game frame text — use the Health Text, Name Text, and Status Text pages for those."],
+            260), 60)
+        Add(appearanceGroup, nil, 2)
+
+        -- ===== LANGUAGE GROUP (Column 2, Bottom) =====
+        local languageValues = {
+            AUTO  = L["Auto (use client language)"],
+            enUS  = "English",
+            deDE  = "Deutsch",
+            esES  = "Español (ES)",
+            esMX  = "Español (MX)",
+            frFR  = "Français",
+            itIT  = "Italiano",
+            koKR  = "한국어",
+            ptBR  = "Português (BR)",
+            ruRU  = "Русский",
+            zhCN  = "中文 (简体)",
+            zhTW  = "中文 (繁體)",
+        }
+        local languageGroup = GUI:CreateSettingsGroup(self.child, 280)
+        languageGroup:AddWidget(GUI:CreateHeader(self.child, L["Language"]), 40)
+        languageGroup:AddWidget(GUI:CreateDropdown(self.child, L["Addon Language"], languageValues, DF.db, "languageOverride", function()
+            if DF.ShowPopupAlert then
+                DF:ShowPopupAlert({
+                    title = L["Reload Required"],
+                    message = L["Changing the addon language requires a UI reload to take effect.\n\nReload now?"],
+                    buttons = {
+                        { label = L["Reload Now"], onClick = function() ReloadUI() end },
+                        { label = L["Later"] },
+                    },
+                })
+            end
+        end), 55)
+        languageGroup:AddWidget(GUI:CreateLabel(self.child,
+            L["Override the addon's display language. Auto follows your WoW client language. Translations are community-contributed and may be incomplete."],
+            260), 60)
+        Add(languageGroup, nil, 2)
+    end)
+
     -- General > Frame
     local pageFrame = CreateSubTab("general", "general_frame", L["Frame"])
     BuildPage(pageFrame, function(self, db, Add, AddSpace, AddSyncPoint)

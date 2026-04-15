@@ -28,6 +28,50 @@ GUI.NewTabs = {
     ["indicators_targetedlist"] = true,
 }
 
+-- Pages that remain fully accessible regardless of whether party or raid
+-- mode is disabled via General settings. All other mode-specific tabs
+-- are greyed out and non-interactive when viewing a disabled mode.
+-- Auto Layouts is intentionally NOT whitelisted: it edits per-profile
+-- settings that would have no effect if all frames are disabled.
+GUI.AlwaysAccessiblePages = {
+    ["general_settings"]             = true,  -- the toggles themselves
+    ["profiles_manage"]              = true,
+    ["profiles_importexport"]        = true,
+    ["debug_console"]                = true,
+    ["indicators_targetedlist"]      = true,
+    ["indicators_personal_targeted"] = true,
+}
+
+-- Returns true if the given tab should be disabled for the currently
+-- selected mode (i.e. the tab is mode-specific and that mode is off).
+function GUI:IsTabDisabledForCurrentMode(tabName)
+    if not tabName then return false end
+    if GUI.AlwaysAccessiblePages[tabName] then return false end
+    if GUI.SelectedMode == "party" and DF.db and DF.db.partyEnabled == false then return true end
+    if GUI.SelectedMode == "raid"  and DF.db and DF.db.raidEnabled  == false then return true end
+    return false
+end
+
+-- Walk all registered tabs and update their .disabled flag + visuals
+-- based on the current mode and enable flags. Call after mode switches.
+function GUI:UpdateTabAvailability()
+    if not GUI.Tabs then return end
+    for name, btn in pairs(GUI.Tabs) do
+        local disabled = GUI:IsTabDisabledForCurrentMode(name)
+        btn.disabled = disabled
+        if btn.Text then
+            if disabled then
+                btn.Text:SetTextColor(0.45, 0.45, 0.45)
+            else
+                btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+            end
+        end
+        if disabled and not btn.isActive then
+            btn:SetBackdropColor(0, 0, 0, 0)
+        end
+    end
+end
+
 -- Track currently open dropdown menu (only one can be open at a time)
 local currentOpenDropdown = nil
 
@@ -6967,12 +7011,13 @@ function DF:CreateGUI()
         end
         
         GUI.SelectedMode = "party"
-        if DF.Search then 
+        if DF.Search then
             DF.Search:InvalidateRegistry()
             DF.Search:RefreshIfActive()
         end
         UpdateThemeColors()
         GUI:ShowNormalContent()
+        GUI:UpdateTabAvailability()
         GUI:RefreshCurrentPage()
     end)
     btnRaid:SetScript("OnClick", function()
@@ -6997,12 +7042,13 @@ function DF:CreateGUI()
         end
         
         GUI.SelectedMode = "raid"
-        if DF.Search then 
+        if DF.Search then
             DF.Search:InvalidateRegistry()
             DF.Search:RefreshIfActive()
         end
         UpdateThemeColors()
         GUI:ShowNormalContent()
+        GUI:UpdateTabAvailability()
         GUI:RefreshCurrentPage()
     end)
     
@@ -7251,9 +7297,12 @@ function DF:CreateGUI()
         if clickCastPanel then clickCastPanel:Hide() end
         if tabFrame then tabFrame:Show() end
         if content then content:Show() end
-        
+
         -- Restore normal minimum width
         frame:SetResizeBounds(normalMinWidth, minHeight, maxWidth, maxHeight)
+
+        -- Update tab availability for current mode (greys out tabs for disabled modes)
+        GUI:UpdateTabAvailability()
     end
     
     -- Function to show Click Casting content
@@ -7592,7 +7641,7 @@ function DF:CreateGUI()
             local db = DF.db[GUI.SelectedMode]
             -- Guard against nil db (e.g., when "clicks" mode is selected)
             if not db then return end
-            
+
             if self.children then
                 for _, child in ipairs(self.children) do child:Hide() end
             end
@@ -7601,13 +7650,42 @@ function DF:CreateGUI()
             -- Propagate RefreshStates to child so widgets can call it
             self.child.RefreshStates = function() self:RefreshStates() end
             local parent = self.child
-            
+
             local function Add(widget, height, col)
                 table.insert(self.children, widget)
                 widget:SetParent(parent)
                 widget.layoutHeight = height or 55
                 widget.layoutCol = col or 1
                 return widget
+            end
+
+            -- Disabled-mode handling: when the current mode is off in General
+            -- settings, replace the page content with a single banner instead
+            -- of rendering any controls. Whitelisted pages (General, Profiles,
+            -- Debug, Targeted List, Personal Targeted) always render normally.
+            if GUI:IsTabDisabledForCurrentMode(self.tabName) then
+                local banner = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+                banner:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                banner:SetBackdropColor(0.4, 0.2, 0.05, 0.5)
+                banner:SetBackdropBorderColor(1, 0.82, 0, 0.7)
+                local msg = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                msg:SetPoint("LEFT", 14, 0)
+                msg:SetPoint("RIGHT", -14, 0)
+                msg:SetJustifyH("LEFT")
+                msg:SetWordWrap(true)
+                msg:SetText(GUI.SelectedMode == "raid"
+                    and (L["Raid frames are currently disabled. Changes here will apply after re-enabling Raid in the General tab and reloading."])
+                    or  (L["Party frames are currently disabled. Changes here will apply after re-enabling Party in the General tab and reloading."]))
+                table.insert(self.children, banner)
+                banner:SetParent(parent)
+                banner.layoutHeight = 60
+                banner.layoutCol = "both"
+                self:RefreshStates()
+                return  -- skip builderFunc entirely
             end
             
             local function AddSpace(h, col)
@@ -7840,6 +7918,9 @@ function DF:CreateGUI()
     GUI:UpdateTabLayout()
 
     UpdateThemeColors()
+
+    -- Apply tab availability for current mode (greys out disabled-mode tabs)
+    GUI:UpdateTabAvailability()
 
     -- Select first subtab
     if GUI.CategoryOrder[1] then

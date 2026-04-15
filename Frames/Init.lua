@@ -82,8 +82,10 @@ function DF:InitializeFrames()
     -- Create mover frame
     DF:CreateMoverFrame()
 
-    -- Create permanent mover handle for party
-    DF:CreatePermanentMover(DF.container, "party")
+    -- Create permanent mover handle for party (skip if party mode disabled)
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePermanentMover(DF.container, "party")
+    end
 
     -- Initialize raid container (needed by Headers.lua)
     DF:InitializeRaidFrames()
@@ -121,8 +123,10 @@ function DF:InitializeRaidFrames()
     -- Create raid mover frame
     DF:CreateRaidMoverFrame()
 
-    -- Create permanent mover handle for raid
-    DF:CreatePermanentMover(DF.raidContainer, "raid")
+    -- Create permanent mover handle for raid (skip if raid mode disabled)
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreatePermanentMover(DF.raidContainer, "raid")
+    end
 end
 
 function DF:CreateRaidFrame(unit, index)

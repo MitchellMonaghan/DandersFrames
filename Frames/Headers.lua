@@ -5813,15 +5813,18 @@ function DF:InitializeHeaderFrames()
     
     -- Create containers
     DF:CreateContainers()
-    
+
     -- Create party header (single header for player + party, no separate playerHeader)
-    DF:CreatePartyHeader()
-    
-    -- Create arena header (raid units but party layout - for arena where IsInRaid()=true)
-    DF:CreateArenaHeader()
-    
+    -- Arena header rides with party (raid units but party layout)
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePartyHeader()
+        DF:CreateArenaHeader()
+    end
+
     -- Create raid headers
-    DF:CreateRaidHeaders()
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreateRaidHeaders()
+    end
     
     -- Mark frames as created (not fully initialized yet)
     DF.headersCreated = true
@@ -7227,13 +7230,16 @@ function DF:CreateHeaderFrames()
 
     -- Create containers and headers (this is the combat-safe part)
     DF:CreateContainers()
-    
-    DF:CreatePartyHeader()
-    
-    -- Create arena header (raid units but party layout - for arena where IsInRaid()=true)
-    DF:CreateArenaHeader()
-    
-    DF:CreateRaidHeaders()
+
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePartyHeader()
+        -- Arena header rides with party (raid units but party layout)
+        DF:CreateArenaHeader()
+    end
+
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreateRaidHeaders()
+    end
     
     -- Initialize secure positioning hooks (must be done out of combat, but frames exist)
     if not InCombatLockdown() then
