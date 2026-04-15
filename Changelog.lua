@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-15T12:45:35Z"
+DF.BUILD_DATE = "2026-04-15T18:52:33Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -8,11 +8,11 @@ DF.CHANGELOG_TEXT = [===[
 
 ### New Features
 
-* **Disable Party or Raid frames entirely** — new Settings tab under General lets you completely disable the Party or Raid frame system. Disabled modes are never created, consuming zero performance in the background (no headers, no unit frames, no event registration, no permanent mover). Requires a UI reload to apply; a popup prompts you to reload when toggling. Mode-specific settings pages are greyed out and unclickable while their mode is disabled (with the General Settings, Profiles Manage / Import-Export, Debug Console, Targeted List, and Personal Targeted pages always remaining accessible). Switching to or importing a profile that changes the enable state also prompts for a reload.
+* **Disable Party or Raid frames entirely** — new Settings tab under General lets you completely disable the Party or Raid frame system. Disabled modes are never created, consuming zero performance in the background (no headers, no unit frames, no event registration, no permanent mover). Requires a UI reload to apply; the reload popup offers an optional third button that also flips the matching Blizzard Party/Raid Frames setting in the same reload (so enabling DF frames can simultaneously hide Blizzard's, and disabling DF frames can simultaneously re-show Blizzard's). Mode-specific settings pages are greyed out and unclickable while their mode is disabled (with the General Settings, Profiles Manage / Import-Export, Debug Console, Targeted List, and Personal Targeted pages always remaining accessible). Switching to or importing a profile that changes the enable state also prompts for a reload.
 
 ### Improvements
 
-* (General) Restructured the General > Settings tab with four sections: Frame Modes, Blizzard Frames, Appearance, and Language
+* (General) Restructured the General > Settings tab with four sections: Frame Modes, Blizzard Frames, Appearance, and Language, plus a top banner clarifying the settings apply globally across both the Party and Raid sections
 * (General) Moved the Blizzard Frames section from Display > Visibility into the new General > Settings tab
 * (General) "Hide Blizzard Party/Raid Frames" renamed to "Disable Blizzard Party/Raid Frames" for clarity — the toggles unregister all events on those frames in addition to hiding them, so nothing fires in the background
 * (General) The Blizzard frame toggles now appear on the Settings tab regardless of which mode (party/raid) you are viewing; changes sync to both mode storages
