@@ -102,6 +102,7 @@ L["Global Keybind:"] = true
 L["Go Back"] = true
 L["Grid"] = true
 L["Having multiple click-casting addons enabled\nmay cause conflicts and unexpected behavior.\n\n%sUse at your own risk!%s"] = true
+L["Holy Bulwark and Sacred Weapon share the same aura signature and cannot be tracked separately. Both buffs will trigger this single indicator."] = true
 L["Hostile Only"] = true
 L["Ignore"] = true
 L["Import"] = true

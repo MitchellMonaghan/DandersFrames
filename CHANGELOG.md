@@ -17,6 +17,10 @@
 * (General) New Language section with an Addon Language dropdown (Auto + all supported locales) — lets you run the addon in a different language than your WoW client. Setting is per-character (stored in the per-character SavedVariable) so profile imports won't change your language. Applies on reload; translations for the selected language must be available in the build
 * (Localisation) Fixed Cyrillic, Korean, and Chinese (simplified + traditional) characters rendering as squares in many parts of the addon. Every in-addon `SetFont` call now flows through the multi-alphabet font family system, so glyphs that the chosen font lacks automatically fall back to the client's locale-appropriate Blizzard font
 
+### Bug Fixes
+
+* (Aura Designer) Holy Paladin: Holy Bulwark now triggers the same indicator as Sacred Weapon (both variants of Armament of Light are tracked together since the aura API doesn't let us distinguish them). A small warning icon appears on the spell in the Aura Designer with a tooltip explaining the limitation
+
 ## [4.3.0] - 2026-04-10
 
 ### Improvements

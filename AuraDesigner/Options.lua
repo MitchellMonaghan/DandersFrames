@@ -855,6 +855,94 @@ local function CreateAuraProxy(auraName)
     })
 end
 
+-- ============================================================
+-- WARNING BADGE
+-- Some auras have underlying API limitations that mean multiple
+-- spells collapse into a single indicator. Entries in Config.lua
+-- with a `warningKey` get a small yellow triangle overlay on their
+-- spell icon and collapsible header, with a tooltip explaining why.
+-- ============================================================
+
+local WARNING_TEXTURE = "Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning.tga"
+
+-- Resolve a warningKey to localized tooltip text. Keys are defined
+-- here rather than Config.lua so they can go through L[] without
+-- load-order concerns.
+local function GetWarningText(warningKey)
+    if not warningKey then return nil end
+    local L = DF.L or setmetatable({}, { __index = function(_, k) return k end })
+    if warningKey == "HolyArmamentsMerge" then
+        return L["Holy Bulwark and Sacred Weapon share the same aura signature and cannot be tracked separately. Both buffs will trigger this single indicator."]
+    end
+    return nil
+end
+
+-- Look up the warningKey for a given aura name in the current spec.
+local function GetAuraWarningKey(specKey, auraName)
+    local specList = DF.AuraDesigner.TrackableAuras and DF.AuraDesigner.TrackableAuras[specKey]
+    if not specList then return nil end
+    for _, entry in ipairs(specList) do
+        if entry.name == auraName then return entry.warningKey end
+    end
+    return nil
+end
+
+-- Attach (or refresh) a warning triangle badge on the given region.
+-- host:     parent Frame the badge is attached to (must be a Frame).
+-- warnKey:  config warning key; nil hides the badge.
+-- opts:     optional table with:
+--             point         -- default "TOPRIGHT"
+--             relativeTo    -- default host
+--             relativePoint -- default "TOPRIGHT"
+--             offsetX/Y     -- default 3, 3
+--             size          -- default 16
+--             color         -- { r, g, b } default red { 1.0, 0.25, 0.25 }
+local function AttachWarningBadge(host, warnKey, opts)
+    if not host then return end
+    local badge = host.dfWarningBadge
+    if not warnKey then
+        if badge then badge:Hide() end
+        return
+    end
+    local tooltipText = GetWarningText(warnKey)
+    if not tooltipText then
+        if badge then badge:Hide() end
+        return
+    end
+
+    if not badge then
+        badge = CreateFrame("Frame", nil, host)
+        badge:SetFrameLevel(host:GetFrameLevel() + 5)
+        local tex = badge:CreateTexture(nil, "OVERLAY")
+        tex:SetAllPoints(badge)
+        tex:SetTexture(WARNING_TEXTURE)
+        badge.texture = tex
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.tooltipText or "", 1, 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        host.dfWarningBadge = badge
+    end
+
+    opts = opts or {}
+    local size = opts.size or 16
+    local color = opts.color or { 1.0, 0.25, 0.25 }
+    badge:SetSize(size, size)
+    badge:ClearAllPoints()
+    badge:SetPoint(
+        opts.point or "TOPRIGHT",
+        opts.relativeTo or host,
+        opts.relativePoint or "TOPRIGHT",
+        opts.offsetX or 3,
+        opts.offsetY or 3
+    )
+    badge.texture:SetVertexColor(color[1], color[2], color[3])
+    badge.tooltipText = tooltipText
+    badge:Show()
+end
+
 -- Get spell icon texture for an aura
 -- Uses static texture IDs to avoid C_Spell.GetSpellTexture returning
 -- the wrong icon when talent choice nodes replace a spell.
@@ -3783,6 +3871,12 @@ local function CreateSpellCard(grid, auraInfo, spec, x, y, CARD_SIZE, isSecret)
     end
     if alreadyUsed then icon:SetAlpha(0.35) end
 
+    -- Warning badge for auras with API-level tracking limitations
+    AttachWarningBadge(card, auraInfo.warningKey, {
+        relativeTo = icon,
+        size = 18,
+    })
+
     -- Letter fallback
     if not iconTex then
         local letter = card:CreateFontString(nil, "OVERLAY", "DFFontNormal")
@@ -4084,6 +4178,18 @@ CreateEffectCard = function(parent, yPos, effect)
     badgeText:SetTextColor(1, 1, 1)
     badgeBg:SetWidth(max(badgeText:GetStringWidth() + 12, 32))
 
+    -- Warning badge for auras with API-level tracking limitations
+    -- (positioned to the right of the type badge)
+    local warnKey = GetAuraWarningKey(spec, effect.auraName)
+    AttachWarningBadge(header, warnKey, {
+        point = "LEFT",
+        relativeTo = badgeBg,
+        relativePoint = "RIGHT",
+        offsetX = 4,
+        offsetY = 0,
+        size = 16,
+    })
+
     -- Aura name + anchor/trigger/group info
     local infoStr = effect.displayName
     local indicatorGroup = nil  -- layout group this indicator belongs to
@@ -4105,7 +4211,11 @@ CreateEffectCard = function(parent, yPos, effect)
         end
     end
     local infoText = header:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
-    infoText:SetPoint("LEFT", badgeBg, "RIGHT", 6, 0)
+    if warnKey and header.dfWarningBadge and header.dfWarningBadge:IsShown() then
+        infoText:SetPoint("LEFT", header.dfWarningBadge, "RIGHT", 6, 0)
+    else
+        infoText:SetPoint("LEFT", badgeBg, "RIGHT", 6, 0)
+    end
     infoText:SetPoint("RIGHT", header, "RIGHT", indicatorGroup and -8 or -30, 0)
     infoText:SetMaxLines(1)
     infoText:SetText(infoStr)
