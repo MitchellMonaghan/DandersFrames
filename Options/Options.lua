@@ -1022,7 +1022,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if not DF:EnableFlagsDifferFromLoaded() then return end
             if not DF.ShowPopupAlert then return end
 
-            local enabled = (mode == "party") and (DF.db.partyEnabled ~= false) or (DF.db.raidEnabled ~= false)
+            -- NB: don't use `cond and a or b` here — the `a` result can be
+            -- false (when DF frames are disabled), which makes the `or`
+            -- fall through to the wrong mode's value.
+            local enabled
+            if mode == "party" then
+                enabled = DF.db.partyEnabled ~= false
+            else
+                enabled = DF.db.raidEnabled ~= false
+            end
             local blizKey = (mode == "party") and "hideBlizzardPartyFrames" or "hideBlizzardRaidFrames"
             local blizCurrentlyHidden = DF.db.party and DF.db.party[blizKey]
 
