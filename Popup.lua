@@ -62,7 +62,7 @@ local function CreatePopupButton(parent, text, width, height)
     btn:SetSize(width or 120, height or 28)
     ApplyBackdrop(btn, C.element, C.border)
 
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     btn.Text:SetPoint("CENTER")
     btn.Text:SetText(text)
     btn.Text:SetTextColor(C.text.r, C.text.g, C.text.b)
@@ -119,7 +119,7 @@ local function CreateOptionButton(parent, index)
     btn.CheckMark = checkMark
 
     -- Label
-    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local label = btn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     label:SetPoint("LEFT", 12, 0)
     label:SetPoint("RIGHT", -12, 0)
     label:SetJustifyH("LEFT")
@@ -177,7 +177,7 @@ local function CreateImageCard(parent, index)
     card.Image = img
 
     -- Label below the image
-    local label = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local label = card:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     label:SetPoint("BOTTOMLEFT", 4, 6)
     label:SetPoint("BOTTOMRIGHT", -4, 6)
     label:SetJustifyH("CENTER")
@@ -531,7 +531,7 @@ local function CreatePickerBanner()
     banner:SetBackdropColor(PICKER_COLOR.r, PICKER_COLOR.g, PICKER_COLOR.b, 0.9)
     banner:SetBackdropBorderColor(PICKER_COLOR.r * 0.7, PICKER_COLOR.g * 0.7, PICKER_COLOR.b * 0.7, 1)
 
-    banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    banner.text = banner:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     banner.text:SetPoint("LEFT", 16, 0)
     banner.text:SetText(L["Click a setting to link it to your wizard"])
     banner.text:SetTextColor(0, 0, 0)
@@ -547,7 +547,7 @@ local function CreatePickerBanner()
     })
     cancelBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
     cancelBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    cancelBtn.text = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cancelBtn.text = cancelBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     cancelBtn.text:SetPoint("CENTER")
     cancelBtn.text:SetText(L["Cancel"])
     cancelBtn:SetScript("OnClick", function()
@@ -923,7 +923,7 @@ local function CreatePopupFrame()
     f.AccentStripe = stripe
 
     -- Title text
-    local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local titleText = titleBar:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     titleText:SetPoint("CENTER")
     titleText:SetTextColor(C.text.r, C.text.g, C.text.b)
     f.TitleText = titleText
@@ -972,7 +972,7 @@ local function CreatePopupFrame()
     f.Content = content
 
     -- Question text (wizard mode)
-    local questionText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local questionText = content:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     questionText:SetPoint("TOPLEFT")
     questionText:SetPoint("TOPRIGHT")
     questionText:SetJustifyH("LEFT")
@@ -980,7 +980,7 @@ local function CreatePopupFrame()
     f.QuestionText = questionText
 
     -- Description text (wizard mode, optional)
-    local descText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local descText = content:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     descText:SetPoint("TOPLEFT", questionText, "BOTTOMLEFT", 0, -6)
     descText:SetPoint("TOPRIGHT", questionText, "BOTTOMRIGHT", 0, -6)
     descText:SetJustifyH("LEFT")
@@ -988,7 +988,7 @@ local function CreatePopupFrame()
     f.DescText = descText
 
     -- Message text (alert mode)
-    local messageText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local messageText = content:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     messageText:SetPoint("TOPLEFT")
     messageText:SetPoint("TOPRIGHT")
     messageText:SetJustifyH("LEFT")
@@ -1525,14 +1525,14 @@ RenderSummary = function()
                 f.summaryRows[rowIndex] = row
 
                 -- Label at top of row (question text)
-                row.Label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                row.Label = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
                 row.Label:SetPoint("TOPLEFT", 12, -8)
                 row.Label:SetPoint("TOPRIGHT", -12, -8)
                 row.Label:SetJustifyH("LEFT")
                 row.Label:SetTextColor(C.textDim.r, C.textDim.g, C.textDim.b)
 
                 -- Value below label (answer text)
-                row.Value = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                row.Value = row:CreateFontString(nil, "OVERLAY", "DFFontNormal")
                 row.Value:SetPoint("TOPLEFT", row.Label, "BOTTOMLEFT", 0, -2)
                 row.Value:SetPoint("TOPRIGHT", row.Label, "BOTTOMRIGHT", 0, -2)
                 row.Value:SetJustifyH("LEFT")

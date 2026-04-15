@@ -33,6 +33,7 @@ local TEMPLATES = {
     "GameFontNormalHuge",            -- one-off oversized header
     "GameFontHighlightSmallOutline", -- small white with outline
     "GameFontDisableSmall",          -- greyed-out small hint text
+    "GameFontDisable",               -- greyed-out normal hint text
 }
 
 -- Registry of DFFont objects (DFFont<suffix> = font object)
@@ -97,13 +98,14 @@ function DF.GUI:ApplySettingsFont()
         if dfFont then
             -- Preserve the template's existing size (different templates
             -- have different sizes — Small vs Normal vs Large).
-            local _, size, existingFlags = dfFont:GetFont()
+            local _, size = dfFont:GetFont()
             size = size or DEFAULT_FONT_SIZE
-            -- Respect the per-template outline if the user picked "None".
-            -- Otherwise the user's outline choice overrides.
-            local flagsToUse = (outline ~= "") and outline or (existingFlags or "")
+            -- The user's outline choice is absolute: "None" means no outline
+            -- on every DFFont, including templates that originally had an
+            -- outline (e.g. GameFontHighlightSmallOutline). Users expect
+            -- the dropdown to directly control the outline state.
             pcall(function()
-                dfFont:SetFont(fontPath, size, flagsToUse)
+                dfFont:SetFont(fontPath, size, outline)
             end)
         end
     end

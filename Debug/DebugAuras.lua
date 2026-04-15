@@ -533,7 +533,7 @@ function DA:CreateOptionsPanel()
     frame:Hide()
     
     -- Title
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = frame:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
     title:SetText("|cff00ccffDebug Aura Explorer|r")
     
@@ -571,7 +571,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 30
     
     -- ======== BASE FILTERS ========
-    local baseHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local baseHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     baseHeader:SetPoint("TOPLEFT", 20, yOffset)
     baseHeader:SetText("|cff88ff88--- Base Filters ---|r")
     yOffset = yOffset - 22
@@ -585,7 +585,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 24
     
     -- ======== STANDARD FILTERS ========
-    local stdHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local stdHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     stdHeader:SetPoint("TOPLEFT", 20, yOffset)
     stdHeader:SetText("|cffffcc00--- Standard Filters ---|r")
     yOffset = yOffset - 22
@@ -615,7 +615,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 28
     
     -- ======== NEW 11.1+ FILTERS ========
-    local newHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local newHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     newHeader:SetPoint("TOPLEFT", 20, yOffset)
     newHeader:SetText("|cff00ccff--- New API Filters (use Dump to check) ---|r")
     yOffset = yOffset - 22
@@ -641,7 +641,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 28
     
     -- ======== POST-FETCH FILTERS ========
-    local postHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local postHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     postHeader:SetPoint("TOPLEFT", 20, yOffset)
     postHeader:SetText("|cffff8800--- Post-Fetch Filters ---|r")
     yOffset = yOffset - 22
@@ -657,13 +657,13 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 28
     
     -- ======== DISPLAY OPTIONS ========
-    local dispHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local dispHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     dispHeader:SetPoint("TOPLEFT", 20, yOffset)
     dispHeader:SetText("|cffaaaaaa--- Display Options ---|r")
     yOffset = yOffset - 22
     
     -- Max icons slider
-    local maxLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local maxLabel = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
     maxLabel:SetPoint("TOPLEFT", 20, yOffset)
     maxLabel:SetText("Max Icons: " .. DA.maxIcons)
     
@@ -684,7 +684,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 35
     
     -- Icon size slider
-    local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local sizeLabel = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
     sizeLabel:SetPoint("TOPLEFT", 20, yOffset)
     sizeLabel:SetText("Icon Size: " .. DA.iconSize)
     
@@ -718,7 +718,7 @@ function DA:CreateOptionsPanel()
     yOffset = yOffset - 30
     
     -- ======== UTILITY BUTTONS ========
-    local utilHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local utilHeader = frame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     utilHeader:SetPoint("TOPLEFT", 20, yOffset)
     utilHeader:SetText("|cff8888ff--- Utilities ---|r")
     yOffset = yOffset - 25

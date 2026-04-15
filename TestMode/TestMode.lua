@@ -6051,7 +6051,7 @@ function DF:CreateTestPanel()
     -- HEADER
     -- ============================================================
     -- Title
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = panel:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     title:SetPoint("TOPLEFT", 12, -10)
     title:SetText("Test Mode")
     panel.title = title
@@ -6065,7 +6065,7 @@ function DF:CreateTestPanel()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    badge.text = badge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    badge.text = badge:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     badge.text:SetPoint("CENTER", 0, 0)
     badge.text:SetText("Party")
     panel.badge = badge
@@ -6081,7 +6081,7 @@ function DF:CreateTestPanel()
     })
     closeBtn:SetBackdropColor(1, 1, 1, 0.04)
     closeBtn:SetBackdropBorderColor(0, 0, 0, 0)
-    closeBtn.Text = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    closeBtn.Text = closeBtn:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     closeBtn.Text:SetPoint("CENTER", 0, 0)
     closeBtn.Text:SetText("×")
     closeBtn.Text:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -6113,7 +6113,7 @@ function DF:CreateTestPanel()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    toggleBtn.Text = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    toggleBtn.Text = toggleBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
     toggleBtn.Text:SetPoint("CENTER")
     toggleBtn.Text:SetText("Enable Test Mode")
     toggleBtn:SetScript("OnClick", function()
@@ -6123,7 +6123,7 @@ function DF:CreateTestPanel()
     panel.toggleBtn = toggleBtn
 
     -- Description text
-    local desc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local desc = panel:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     desc:SetPoint("TOPLEFT", 12, -74)
     desc:SetPoint("TOPRIGHT", -12, -74)
     desc:SetJustifyH("LEFT")
@@ -6187,11 +6187,11 @@ function DF:CreateTestPanel()
             local labelBtn = CreateFrame("Button", nil, container)
             labelBtn:SetPoint("LEFT", box, "RIGHT", 6, 0)
             labelBtn:SetHeight(18)
-            local labelText = labelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local labelText = labelBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             labelText:SetPoint("LEFT", 0, 0)
             labelText:SetText(text)
             labelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-            local arrow = labelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local arrow = labelBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             arrow:SetPoint("LEFT", labelText, "RIGHT", 2, 0)
             arrow:SetText("›")
             arrow:SetTextColor(0.4, 0.4, 0.4, 0.6)
@@ -6216,7 +6216,7 @@ function DF:CreateTestPanel()
             end)
             container.labelText = labelText
         else
-            local labelText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local labelText = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             labelText:SetPoint("LEFT", box, "RIGHT", 6, 0)
             labelText:SetText(text)
             labelText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -6378,14 +6378,14 @@ function DF:CreateTestPanel()
         section.chevron = chevron
 
         -- Title
-        local titleText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local titleText = header:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         titleText:SetPoint("LEFT", 26, 0)
         titleText:SetText(string.upper(sectionTitle))
         titleText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
         section.titleText = titleText
 
         -- Active count badge
-        local badgeText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local badgeText = header:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         badgeText:SetPoint("RIGHT", -8, 0)
         badgeText:SetText("")
         section.badgeText = badgeText
@@ -6558,11 +6558,11 @@ function DF:CreateTestPanel()
     -- Frame count slider (below checkboxes)
     local fcRow = CreateFrame("Frame", nil, secGeneral.content)
     fcRow:SetHeight(28)
-    local fcLabel = fcRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local fcLabel = fcRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     fcLabel:SetPoint("LEFT", 0, 0)
     fcLabel:SetText("Frame Count")
     fcLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-    local fcValue = fcRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local fcValue = fcRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     fcValue:SetPoint("LEFT", fcLabel, "RIGHT", 6, 0)
     panel.frameCountValue = fcValue
 
@@ -6660,26 +6660,26 @@ function DF:CreateTestPanel()
     local auraSliderRow = CreateFrame("Frame", nil, secAuras.content)
     auraSliderRow:SetHeight(18)
 
-    local buffLabel = auraSliderRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local buffLabel = auraSliderRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     buffLabel:SetPoint("LEFT", 0, 0)
     buffLabel:SetText("Buffs:")
     buffLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
     local buffSlider = CreateThemedSlider(auraSliderRow, 55, 0, 5, 1)
     buffSlider:SetPoint("LEFT", buffLabel, "RIGHT", 5, 0)
-    local buffValue = auraSliderRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local buffValue = auraSliderRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     buffValue:SetPoint("LEFT", buffSlider, "RIGHT", 4, 0)
     buffValue:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     panel.buffValueText = buffValue
 
-    local debuffLabel = auraSliderRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local debuffLabel = auraSliderRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     debuffLabel:SetPoint("LEFT", buffValue, "RIGHT", 12, 0)
     debuffLabel:SetText("Debuffs:")
     debuffLabel:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
 
     local debuffSlider = CreateThemedSlider(auraSliderRow, 55, 0, 5, 1)
     debuffSlider:SetPoint("LEFT", debuffLabel, "RIGHT", 5, 0)
-    local debuffValue = auraSliderRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local debuffValue = auraSliderRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     debuffValue:SetPoint("LEFT", debuffSlider, "RIGHT", 4, 0)
     debuffValue:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     panel.debuffValueText = debuffValue
@@ -6778,7 +6778,7 @@ function DF:CreateTestPanel()
     presetSep:SetHeight(1)
     presetSep:SetColorTexture(1, 1, 1, 0.06)
 
-    local presetLabel = presetsFooter:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local presetLabel = presetsFooter:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     presetLabel:SetPoint("TOPLEFT", 12, -8)
     presetLabel:SetText("QUICK PRESETS")
     presetLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
@@ -6802,7 +6802,7 @@ function DF:CreateTestPanel()
         })
         btn:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
         btn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         btn.Text:SetPoint("CENTER")
         btn.Text:SetText(presetNames[preset])
         btn.preset = preset

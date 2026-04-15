@@ -2964,7 +2964,7 @@ function DF:CheckElvUICompatibility()
             btn:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
         end
         
-        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local btnText = btn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         btnText:SetPoint("CENTER")
         btnText:SetText(text)
         btnText:SetTextColor(1, 1, 1)
@@ -3007,7 +3007,7 @@ function DF:CheckElvUICompatibility()
     popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
     
     -- Title
-    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = popup:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
     title:SetText("ElvUI Compatibility Issue")
     title:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
@@ -3026,7 +3026,7 @@ function DF:CheckElvUICompatibility()
     rightWarning:SetVertexColor(themeColor.r, themeColor.g, themeColor.b)
     
     -- Explanation
-    local msg = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local msg = popup:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
     msg:SetPoint("TOP", title, "BOTTOM", 0, -12)
     msg:SetPoint("LEFT", 25, 0)
     msg:SetPoint("RIGHT", -25, 0)
@@ -3041,7 +3041,7 @@ function DF:CheckElvUICompatibility()
     msg:SetTextColor(0.9, 0.9, 0.9)
     
     -- Settings path callout
-    local pathLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local pathLabel = popup:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     pathLabel:SetPoint("TOP", msg, "BOTTOM", 0, -12)
     pathLabel:SetPoint("LEFT", 25, 0)
     pathLabel:SetPoint("RIGHT", -25, 0)
@@ -3119,7 +3119,7 @@ function DF:CheckElvUICompatibility()
     ignoreBtn:SetSize(200, 26)
     ignoreBtn:ClearAllPoints()
     ignoreBtn:SetPoint("TOP", manualBtn, "BOTTOM", 0, -6)
-    ignoreBtn.label:SetFontObject("GameFontHighlightSmall")
+    ignoreBtn.label:SetFontObject("DFFontHighlightSmall")
     ignoreBtn.label:SetTextColor(0.5, 0.5, 0.5)
     
     -- Store reference
@@ -3967,7 +3967,7 @@ DF._MainEventDispatcher = function(self, event, arg1)
                     btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
                 end
                 
-                local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                local btnText = btn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
                 btnText:SetPoint("CENTER")
                 btnText:SetText(text)
                 btnText:SetTextColor(1, 1, 1)
@@ -4007,7 +4007,7 @@ DF._MainEventDispatcher = function(self, event, arg1)
             popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
             
             -- Title
-            local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            local title = popup:CreateFontString(nil, "OVERLAY", "DFFontNormalLarge")
             title:SetPoint("TOP", 0, -15)
             title:SetText("Addon Conflict Detected")
             title:SetTextColor(1, 0.3, 0.3)
@@ -4029,7 +4029,7 @@ DF._MainEventDispatcher = function(self, event, arg1)
             popup.rightWarning = rightWarning
             
             -- Message
-            local msg = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            local msg = popup:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
             msg:SetPoint("TOP", title, "BOTTOM", 0, -15)
             msg:SetPoint("LEFT", 25, 0)
             msg:SetPoint("RIGHT", -25, 0)
@@ -4039,7 +4039,7 @@ DF._MainEventDispatcher = function(self, event, arg1)
             popup.msg = msg
             
             -- Warning text
-            local warning = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local warning = popup:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             warning:SetPoint("TOP", msg, "BOTTOM", 0, -10)
             warning:SetPoint("LEFT", 25, 0)
             warning:SetPoint("RIGHT", -25, 0)
