@@ -1066,6 +1066,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 message = L["Enabling or disabling a frame mode requires a UI reload to take effect.\n\nReload now?"],
                 width = 560,
                 buttonWidth = 170,
+                buttonHeight = 44,
                 buttons = buttons,
             })
         end

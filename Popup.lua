@@ -63,7 +63,13 @@ local function CreatePopupButton(parent, text, width, height)
     ApplyBackdrop(btn, C.element, C.border)
 
     btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
-    btn.Text:SetPoint("CENTER")
+    -- Anchor to both left and right edges (with a small inset) so SetWordWrap
+    -- can flow long labels onto multiple lines within the button.
+    btn.Text:SetPoint("LEFT", 6, 0)
+    btn.Text:SetPoint("RIGHT", -6, 0)
+    btn.Text:SetJustifyH("CENTER")
+    btn.Text:SetJustifyV("MIDDLE")
+    btn.Text:SetWordWrap(true)
     btn.Text:SetText(text)
     btn.Text:SetTextColor(C.text.r, C.text.g, C.text.b)
 
@@ -1846,9 +1852,14 @@ local function ConfigureForAlert(config)
     local buttons = config.buttons or {}
     local numButtons = #buttons
     local btnWidth = config.buttonWidth or 100
+    local btnHeight = config.buttonHeight or 26
     local btnSpacing = 8
     local totalBtnWidth = numButtons * btnWidth + (numButtons - 1) * btnSpacing
     local startX = -totalBtnWidth / 2 + btnWidth / 2
+
+    -- Resize the ButtonBar to fit taller buttons (default bar is 36px)
+    local desiredBarHeight = math.max(36, btnHeight + 10)
+    f.ButtonBar:SetHeight(desiredBarHeight)
 
     -- Hide old alert buttons
     for _, btn in ipairs(f.alertButtonFrames) do
@@ -1858,12 +1869,12 @@ local function ConfigureForAlert(config)
     for i, btnConfig in ipairs(buttons) do
         local btn = f.alertButtonFrames[i]
         if not btn then
-            btn = CreatePopupButton(f.ButtonBar, "", btnWidth, 26)
+            btn = CreatePopupButton(f.ButtonBar, "", btnWidth, btnHeight)
             f.alertButtonFrames[i] = btn
         end
 
         btn.Text:SetText(btnConfig.label or L["OK"])
-        btn:SetWidth(btnWidth)
+        btn:SetSize(btnWidth, btnHeight)
         btn:ClearAllPoints()
         btn:SetPoint("CENTER", f.ButtonBar, "CENTER", startX + (i - 1) * (btnWidth + btnSpacing), 0)
         btn.onClick = function()
@@ -1893,7 +1904,9 @@ local function ConfigureForAlert(config)
     local messageHeight = f.MessageText:GetStringHeight() or 18
     local iconHeight = config.icon and 32 or 0
     local contentHeight = max(messageHeight, iconHeight)
-    local totalHeight = 34 + CONTENT_PADDING + contentHeight + CONTENT_PADDING + 38
+    -- Account for dynamically-sized ButtonBar (36 default, more when buttons are taller)
+    local barHeight = (f.ButtonBar and f.ButtonBar:GetHeight()) or 36
+    local totalHeight = 34 + CONTENT_PADDING + contentHeight + CONTENT_PADDING + (barHeight + 2)
     totalHeight = max(totalHeight, 140)
     totalHeight = min(totalHeight, 500)
     f:SetHeight(totalHeight)
