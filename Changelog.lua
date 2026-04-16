@@ -1,8 +1,14 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-15T20:39:32Z"
+DF.BUILD_DATE = "2026-04-16T11:06:33Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
+
+## [Unreleased]
+
+### New Features
+
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters like Larodar where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
 
 ## [4.3.1] - 2026-04-15
 
