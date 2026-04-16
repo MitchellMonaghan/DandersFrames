@@ -35,8 +35,9 @@ local overlayAnchors = {}
 -- Track container overlay anchor IDs per frame for cleanup
 local containerOverlayAnchors = {}
 
--- Forward declaration (defined after SetupPrivateAuraAnchors)
+-- Forward declarations (defined after SetupPrivateAuraAnchors)
 local SetupOverlayAnchors
+local SetupContainerOverlay
 
 -- Pending updates queue (for changes made during combat)
 local pendingUpdates = {}
@@ -417,7 +418,7 @@ end
 -- Blizzard's native dispel overlay for private auras.
 -- ============================================================
 
-local function SetupContainerOverlay(frame, unit, db)
+SetupContainerOverlay = function(frame, unit, db)
     if not IS_CONTAINER_SUPPORTED then return end
     if not db.bossDebuffsContainerOverlayEnabled then return end
 
