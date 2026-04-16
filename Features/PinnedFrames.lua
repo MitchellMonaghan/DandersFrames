@@ -12,6 +12,7 @@ DF.PinnedFrames = PinnedFrames
 PinnedFrames.containers = {}  -- [setIndex] = container frame
 PinnedFrames.headers = {}     -- [setIndex] = SecureGroupHeaderTemplate
 PinnedFrames.labels = {}      -- [setIndex] = label fontstring
+PinnedFrames.bossFrames = {}  -- [setIndex] = { [1..8] = boss frame }
 PinnedFrames.initialized = false
 PinnedFrames.currentMode = nil  -- Track what mode we initialized for
 
@@ -34,6 +35,11 @@ end
 local function GetSetDB(setIndex)
     local hlDB = GetPinnedDB()
     return hlDB and hlDB.sets and hlDB.sets[setIndex]
+end
+
+-- Returns true if the set is configured to show friendly boss NPCs instead of players
+local function IsBossSet(set)
+    return set and set.frameType == "friendlyBoss"
 end
 
 -- Build nameList from player array
@@ -384,7 +390,52 @@ end
 -- FRAME CREATION
 -- ============================================================
 
--- Create container and header for a pinned set
+-- Create 8 standalone SecureUnitButtonTemplate frames for a boss-mode set
+-- Parented to the container; unit attributes are hardcoded to boss1..boss8
+function PinnedFrames:CreateBossFrames(setIndex, container)
+    if self.bossFrames[setIndex] then return end
+    if InCombatLockdown() then
+        if DF.debugPinnedFrames then
+            print("|cFF00FFFF[DF Pinned]|r CreateBossFrames: In combat, cannot create frames!")
+        end
+        return
+    end
+
+    local modeSuffix = IsInRaid() and "Raid" or "Party"
+    local frames = {}
+
+    for i = 1, 8 do
+        local name = "DandersPinnedBoss" .. setIndex .. modeSuffix .. "_" .. i
+        local frame = CreateFrame(
+            "Button",
+            name,
+            container,
+            "DandersUnitButtonTemplate,SecureUnitButtonTemplate"
+        )
+        frame:SetAttribute("unit", "boss" .. i)
+        frame.unit = "boss" .. i
+        frame.isPinnedFrame = true
+        frame.isPinnedBossFrame = true
+        frame.bossIndex = i
+
+        if DF.InitializeHeaderChild then
+            DF:InitializeHeaderChild(frame)
+        end
+
+        -- State driver: show only when bossN exists and is friendly (healable)
+        RegisterStateDriver(frame, "visibility", "[@boss" .. i .. ",help]show;hide")
+
+        frame:Hide()
+        frames[i] = frame
+    end
+
+    self.bossFrames[setIndex] = frames
+
+    if DF.debugPinnedFrames then
+        print("|cFF00FFFF[DF Pinned]|r Set", setIndex, "created 8 boss frames")
+    end
+end
+
 function PinnedFrames:CreateSetFrames(setIndex)
     if self.containers[setIndex] then return end
     
