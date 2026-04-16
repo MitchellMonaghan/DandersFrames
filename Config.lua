@@ -855,6 +855,12 @@ DF.PartyDefaults = {
     bossDebuffsOverlayMaxSlots = 3,
     bossDebuffsOverlayScale = 1.05,
 
+    -- Container overlay (12.0.5+ native dispel overlay for private auras)
+    bossDebuffsContainerOverlayEnabled = false,
+    bossDebuffsContainerOverlayDispelMode = 2,
+    bossDebuffsContainerOverlayGradientDir = 0,
+    bossDebuffsContainerOverlayShowIcons = false,
+
     -- Buff settings
     buffAlpha = 1,
     buffAnchor = "BOTTOMRIGHT",
@@ -2155,6 +2161,12 @@ DF.RaidDefaults = {
     bossDebuffsOverlayIconRatio = 2.6,
     bossDebuffsOverlayMaxSlots = 3,
     bossDebuffsOverlayScale = 1.05,
+
+    -- Container overlay (12.0.5+ native dispel overlay for private auras)
+    bossDebuffsContainerOverlayEnabled = false,
+    bossDebuffsContainerOverlayDispelMode = 2,
+    bossDebuffsContainerOverlayGradientDir = 0,
+    bossDebuffsContainerOverlayShowIcons = false,
 
     -- Buff settings
     buffAlpha = 1,
