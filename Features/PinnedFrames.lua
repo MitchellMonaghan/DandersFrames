@@ -465,6 +465,30 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
         -- State driver: show only when bossN exists and is friendly (healable)
         RegisterStateDriver(frame, "visibility", "[@boss" .. i .. ",help]show;hide")
 
+        -- Register UNIT_AURA directly so boss frames populate the aura cache
+        frame:RegisterUnitEvent("UNIT_AURA", "boss" .. i)
+        frame:SetScript("OnEvent", function(self, event, unit, updateInfo)
+            if event == "UNIT_AURA" and unit then
+                -- Populate aura cache (same logic as directModeSubscriber)
+                local cache = DF.AuraCache and DF.AuraCache[unit]
+                local needsFull = not updateInfo or updateInfo.isFullUpdate or not cache or not cache.hasFullScan
+                if needsFull then
+                    if DF.ScanUnitFull then DF:ScanUnitFull(unit) end
+                else
+                    if DF.ApplyAuraDelta then
+                        if not DF:ApplyAuraDelta(unit, updateInfo) then
+                            if DF.ScanUnitFull then DF:ScanUnitFull(unit) end
+                        end
+                    end
+                end
+                -- Update visuals on this frame
+                if self:IsVisible() then
+                    if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(self) end
+                    if DF.UpdateDefensiveBar then DF:UpdateDefensiveBar(self) end
+                end
+            end
+        end)
+
         frame:Hide()
         frames[i] = frame
     end
@@ -1469,6 +1493,7 @@ function PinnedFrames:Reinitialize()
                 local f = self.bossFrames[i][j]
                 if f then
                     UnregisterStateDriver(f, "visibility")
+                    f:UnregisterAllEvents()
                     f:Hide()
                 end
             end
