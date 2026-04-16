@@ -5214,6 +5214,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
         end), 55)
         containerGradientDir.hideOn = HideContainerOverlayOptions
+        local gradientNote = containerGroup:AddWidget(GUI:CreateLabel(self.child, "|cFF888888" .. L["Right Edge is not available in the Blizzard API."] .. "|r", 260), 20)
+        gradientNote.hideOn = HideContainerOverlayOptions
 
         -- Show Dispel Icons checkbox
         local containerShowIcons = containerGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Dispel Icons"], db, "bossDebuffsContainerOverlayShowIcons", function()

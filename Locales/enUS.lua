@@ -1115,6 +1115,7 @@ L["Reverse Position"] = true
 L["Right"] = true
 L["Right Click"] = true
 L["Right Edge"] = true
+L["Right Edge is not available in the Blizzard API."] = true
 L["Right of Health Bar"] = true
 L["Right of Owner"] = true
 L["Right of Party"] = true
