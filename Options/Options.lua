@@ -1887,7 +1887,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local function GetCurrentSet()
             return db.pinnedFrames.sets[activeHighlightTab]
         end
-        
+
+        local function IsCurrentBossMode()
+            local s = GetCurrentSet()
+            return s and s.frameType == "friendlyBoss"
+        end
+
         local function RefreshControls()
             for _, ctrl in ipairs(controlsToRefresh) do
                 if ctrl.Refresh then ctrl:Refresh() end
@@ -2510,6 +2515,30 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         
         Add(settingsGroup, nil, 1)
         
+        -- ===== FRAME TYPE GROUP (full width) =====
+        local frameTypeGroup = GUI:CreateSettingsGroup(self.child, 560)
+        frameTypeGroup:AddWidget(GUI:CreateHeader(self.child, L["Frame Type"]), 40)
+
+        local frameTypeOptions = {
+            player = L["Player Frames"],
+            friendlyBoss = L["Friendly Boss NPCs"],
+        }
+
+        local function OnFrameTypeChanged()
+            if not DF.PinnedFrames then return end
+            if InCombatLockdown() then return end
+            DF.PinnedFrames:Reinitialize()
+            if GUI.RefreshCurrentPage then GUI.RefreshCurrentPage() end
+        end
+
+        frameTypeGroup:AddWidget(
+            CreateRefreshableDropdown(self.child, L["Frame Type"], frameTypeOptions, "frameType", OnFrameTypeChanged),
+            55
+        )
+
+        Add(frameTypeGroup, nil, "both")
+        AddSpace(10, "both")
+
         -- ===== LAYOUT GROUP (Column 2) =====
         local layoutGroup = GUI:CreateSettingsGroup(self.child, 280)
         layoutGroup:AddWidget(GUI:CreateHeader(self.child, L["Layout"]), 40)
@@ -2535,11 +2564,12 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         spacingGroup:AddWidget(CreateRefreshableSlider(self.child, L["Vertical Spacing"], -5, 50, 1, "verticalSpacing", UpdateHighlightLayout), 55)
         Add(spacingGroup, nil, 1)
         
+        if not IsCurrentBossMode() then
         -- ===== AUTO-POPULATE GROUP (Column 2) =====
         local autoPopGroup = GUI:CreateSettingsGroup(self.child, 280)
         autoPopGroup:AddWidget(GUI:CreateHeader(self.child, L["Auto-Populate"]), 40)
         autoPopGroup:AddWidget(GUI:CreateLabel(self.child, L["Automatically add players by role when they join your group."], 250), 30)
-        
+
         autoPopGroup:AddWidget(CreateRefreshableCheckbox(self.child, L["Auto-add Tanks"], "autoAddTanks", function()
             if GetCurrentSet().autoAddTanks and DF.PinnedFrames then
                 DF.PinnedFrames:AutoPopulateSet(GetCurrentSet())
@@ -2565,12 +2595,14 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             end
         end), 28)
         autoPopGroup:AddWidget(CreateRefreshableCheckbox(self.child, L["Keep when offline/left"], "keepOfflinePlayers", function() end), 28)
-        
+
         Add(autoPopGroup, nil, 2)
+        end -- not IsCurrentBossMode
         
+        if not IsCurrentBossMode() then
         -- ===== UNIT SELECTION (full width) =====
         AddSpace(10, "both")
-        
+
         -- Unit Selection header with override indicator
         unitSelHeader = CreateFrame("Frame", nil, self.child)
         unitSelHeader:SetSize(500, 40)
@@ -2578,7 +2610,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         unitSelTitle:SetPoint("LEFT", 0, 0)
         unitSelTitle:SetText(L["Unit Selection"])
         unitSelTitle:SetTextColor(1, 1, 1)
-        
+
         -- Override indicator for players list (header-level)
         AddPinnedOverrideIndicators(unitSelHeader, unitSelTitle, "players", function()
             local AutoProfilesUI = DF.AutoProfilesUI
@@ -2592,9 +2624,9 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         unitSelHeader.Refresh = function(self)
             if self.UpdateOverrideIndicators then self:UpdateOverrideIndicators() end
         end
-        
+
         Add(unitSelHeader, 40, "both")
-        
+
         rosterWidget = GUI:CreateHighlightRosterWidget(
             self.child,
             function() return GetCurrentSet().players end,
@@ -2622,7 +2654,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 if DF.PinnedFrames then DF.PinnedFrames:UpdateHeaderNameList(activeHighlightTab) end
             end
         )
-        
+
         local originalRefresh = rosterWidget.Refresh
         rosterWidget.Refresh = function(s)
             if originalRefresh then originalRefresh(s) end
@@ -2631,7 +2663,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         table.insert(controlsToRefresh, rosterWidget)
         table.insert(controlsToRefresh, unitSelHeader)
         Add(rosterWidget, 340, "both")
-        
+        end -- not IsCurrentBossMode
+
         RefreshControls()
     end)
     
