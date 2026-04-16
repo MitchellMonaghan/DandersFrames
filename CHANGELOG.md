@@ -4,7 +4,7 @@
 
 ### New Features
 
-* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters like Larodar where friendly adds need healing. All layout, positioning, and click-casting settings work the same as player-mode pinned sets.
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters like Larodar where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
 
 ## [4.3.1] - 2026-04-15
 
