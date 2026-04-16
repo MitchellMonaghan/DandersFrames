@@ -1938,7 +1938,21 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             tab.text = tab:CreateFontString(nil, "OVERLAY", "DFFontNormal")
             tab.text:SetPoint("CENTER")
             tab.text:SetText(L["Highlight"] .. " " .. i)
-            tab:SetScript("OnClick", function() activeHighlightTab = i; RefreshTabs(); RefreshControls(); if GUI.RefreshAllOverrideIndicators then GUI.RefreshAllOverrideIndicators() end end)
+            tab:SetScript("OnClick", function()
+                local oldSet = GetCurrentSet()
+                local oldType = oldSet and oldSet.frameType
+                activeHighlightTab = i
+                local newSet = GetCurrentSet()
+                local newType = newSet and newSet.frameType
+                RefreshTabs()
+                if oldType ~= newType and GUI.RefreshCurrentPage then
+                    -- Frame type differs between tabs — rebuild page to show/hide boss vs player controls
+                    GUI.RefreshCurrentPage()
+                else
+                    RefreshControls()
+                    if GUI.RefreshAllOverrideIndicators then GUI.RefreshAllOverrideIndicators() end
+                end
+            end)
             tab:SetScript("OnEnter", function(s) if activeHighlightTab ~= i then s:SetBackdropBorderColor(0.4, 0.4, 0.4, 1); s.text:SetTextColor(0.7, 0.7, 0.7) end end)
             tab:SetScript("OnLeave", function() RefreshTabs() end)
             tabButtons[i] = tab

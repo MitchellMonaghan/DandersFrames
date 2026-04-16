@@ -1441,7 +1441,7 @@ function PinnedFrames:Initialize()
     for i = 1, 2 do
         local header = self.headers[i]
         local set = GetSetDB(i)
-        if header and set and set.enabled then
+        if set and set.enabled and (header or IsBossSet(set)) then
             self:ApplyLayoutSettings(i)
         end
     end
