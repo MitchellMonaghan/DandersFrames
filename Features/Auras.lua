@@ -640,6 +640,22 @@ local function TriggerAuraUpdateForUnit(unit)
             end
         end
     end
+
+    -- Also update pinned boss frames
+    if DF.PinnedFrames and DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    local f = frames[i]
+                    if f and f:IsVisible() and f.unit == unit then
+                        if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(f) end
+                        if DF.UpdateDefensiveBar then DF:UpdateDefensiveBar(f) end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- Forward declarations: these helpers are defined later in the file (used by
