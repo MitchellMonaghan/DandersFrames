@@ -914,6 +914,105 @@ function PinnedFrames:ApplyLayoutSettings(setIndex)
     self:ResizeContainer(setIndex)
 end
 
+-- Manually position boss frames in a grid matching the set's layout settings
+-- Called when layout settings change or boss visibility changes
+function PinnedFrames:ApplyBossLayout(setIndex)
+    local frames = self.bossFrames[setIndex]
+    local set = GetSetDB(setIndex)
+    local container = self.containers[setIndex]
+
+    if not frames or not set or not container then return end
+    if InCombatLockdown() then return end
+
+    local db = IsInRaid() and DF:GetRaidDB() or DF:GetDB()
+    if not db then return end
+
+    local frameWidth = db.frameWidth or 120
+    local frameHeight = db.frameHeight or 50
+
+    -- Resize all frames to current mode's dimensions
+    for i = 1, 8 do
+        local f = frames[i]
+        if f then
+            f:SetSize(frameWidth, frameHeight)
+            f.isRaidFrame = IsInRaid()
+        end
+    end
+
+    local horizontal = set.growDirection == "HORIZONTAL"
+    local hSpacing = set.horizontalSpacing or 2
+    local vSpacing = set.verticalSpacing or 2
+    local unitsPerRow = set.unitsPerRow or 5
+    local frameAnchor = set.frameAnchor or "START"
+    local columnAnchor = set.columnAnchor or "START"
+
+    -- Determine corner to anchor from (matches GetContainerAnchorPoint logic)
+    local anchor = GetContainerAnchorPoint(set)
+
+    -- Apply scale
+    container:SetScale(set.scale or 1.0)
+
+    -- Restore/apply saved position
+    local pos = set.position
+    if pos then
+        local savedAnchor = pos.point or anchor
+        if savedAnchor ~= anchor and container:GetLeft() then
+            local newX, newY = ConvertAnchorPosition(container, savedAnchor, anchor)
+            if newX and newY then
+                local cs = container:GetScale() or 1
+                pos.point = anchor
+                pos.x = newX * cs
+                pos.y = newY * cs
+            end
+        end
+        container:ClearAllPoints()
+        local s = container:GetScale() or 1
+        container:SetPoint(anchor, UIParent, anchor, (pos.x or 0) / s, (pos.y or 0) / s)
+        pos.point = anchor
+    end
+
+    -- Layout the 8 boss frames in a grid
+    for i = 1, 8 do
+        local f = frames[i]
+        if f then
+            local row = math.floor((i - 1) / unitsPerRow)
+            local col = (i - 1) % unitsPerRow
+
+            local xOff, yOff
+            if horizontal then
+                local xStep = frameWidth + hSpacing
+                local yStep = frameHeight + vSpacing
+                if frameAnchor == "END" then
+                    xOff = -col * xStep
+                else
+                    xOff = col * xStep
+                end
+                if columnAnchor == "END" then
+                    yOff = row * yStep
+                else
+                    yOff = -row * yStep
+                end
+            else
+                local xStep = frameWidth + hSpacing
+                local yStep = frameHeight + vSpacing
+                if frameAnchor == "END" then
+                    yOff = col * yStep
+                else
+                    yOff = -col * yStep
+                end
+                if columnAnchor == "END" then
+                    xOff = -row * xStep
+                else
+                    xOff = row * xStep
+                end
+            end
+
+            f:ClearAllPoints()
+            f:SetPoint(anchor, container, anchor, xOff, yOff)
+        end
+    end
+end
+
 -- Resize container to fit content
 function PinnedFrames:ResizeContainer(setIndex)
     -- Can't resize secure frames during combat
