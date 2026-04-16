@@ -5182,7 +5182,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         containerGroup:AddWidget(GUI:CreateHeader(self.child, L["Private Aura Dispel Overlay"]), 40)
 
         -- Warning notice
-        local noticeText = containerGroup:AddWidget(GUI:CreateLabel(self.child, "|cFFFF4444Note:|r " .. L["This overlay is rendered by Blizzard and has limited customisation. It is not the same as the Dispel Overlay tab."], "DFFontNormalSmall", 260), 50)
+        local noticeText = containerGroup:AddWidget(GUI:CreateLabel(self.child, "|cFFFF4444Note:|r " .. L["This overlay is rendered by Blizzard and has limited customisation. It is not the same as the Dispel Overlay tab."], 260), 50)
 
         -- Enable checkbox
         local containerEnable = containerGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Dispel Overlay"], db, "bossDebuffsContainerOverlayEnabled", function()
