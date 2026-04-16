@@ -5086,6 +5086,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         sizeGroup.hideOn = HideBossDebuffOptions
         Add(sizeGroup, nil, 1)
 
+        -- Version detection for container overlay support
+        local CLIENT_VERSION = select(4, GetBuildInfo())
+        local IS_CONTAINER_SUPPORTED = CLIENT_VERSION >= 120005
+
+        if not IS_CONTAINER_SUPPORTED then
         -- ===== FRAME BORDER OVERLAY GROUP (Column 2) =====
         local overlayGroup = GUI:CreateSettingsGroup(self.child, 280)
         overlayGroup:AddWidget(GUI:CreateHeader(self.child, L["Frame Border Overlay"]), 40)
@@ -5169,6 +5174,56 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         ovWizard.hideOn = function(d) return not d.bossDebuffsEnabled end
         overlayGroup.hideOn = HideBossDebuffOptions
         Add(overlayGroup, nil, 2)
+        end -- not IS_CONTAINER_SUPPORTED
+
+        if IS_CONTAINER_SUPPORTED then
+        -- ===== CONTAINER DISPEL OVERLAY GROUP (Column 2, 12.0.5+ only) =====
+        local containerGroup = GUI:CreateSettingsGroup(self.child, 280)
+        containerGroup:AddWidget(GUI:CreateHeader(self.child, L["Private Aura Dispel Overlay"]), 40)
+
+        -- Warning notice
+        local noticeText = containerGroup:AddWidget(GUI:CreateLabel(self.child, "|cFFFF4444Note:|r " .. L["This overlay is rendered by Blizzard and has limited customisation. It is not the same as the Dispel Overlay tab."], "DFFontNormalSmall", 260), 50)
+
+        -- Enable checkbox
+        local containerEnable = containerGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Dispel Overlay"], db, "bossDebuffsContainerOverlayEnabled", function()
+            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
+            GUI:RefreshPage()
+        end), 30)
+
+        local function HideContainerOverlayOptions(d)
+            return not d.bossDebuffsEnabled or not d.bossDebuffsContainerOverlayEnabled
+        end
+
+        -- Show Overlay For dropdown
+        local dispelModeOptions = {
+            [1] = L["Dispellable By Me"],
+            [2] = L["All Dispellable"],
+        }
+        local containerDispelMode = containerGroup:AddWidget(GUI:CreateDropdown(self.child, L["Show Overlay For"], dispelModeOptions, db, "bossDebuffsContainerOverlayDispelMode", function()
+            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
+        end), 55)
+        containerDispelMode.hideOn = HideContainerOverlayOptions
+
+        -- Gradient Direction dropdown
+        local gradientDirOptions = {
+            [0] = L["Top Edge"],
+            [1] = L["Bottom Edge"],
+            [2] = L["Left Edge"],
+        }
+        local containerGradientDir = containerGroup:AddWidget(GUI:CreateDropdown(self.child, L["Gradient Direction"], gradientDirOptions, db, "bossDebuffsContainerOverlayGradientDir", function()
+            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
+        end), 55)
+        containerGradientDir.hideOn = HideContainerOverlayOptions
+
+        -- Show Dispel Icons checkbox
+        local containerShowIcons = containerGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Show Dispel Icons"], db, "bossDebuffsContainerOverlayShowIcons", function()
+            if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
+        end), 30)
+        containerShowIcons.hideOn = HideContainerOverlayOptions
+
+        containerGroup.hideOn = HideBossDebuffOptions
+        Add(containerGroup, nil, 2)
+        end -- IS_CONTAINER_SUPPORTED
 
         -- See Also links
         AddSpace(20, "both")
