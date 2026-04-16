@@ -602,7 +602,25 @@ function PinnedFrames:CreateSetFrames(setIndex)
     
     self.containers[setIndex] = container
     self.labels[setIndex] = label
-    
+
+    if IsBossSet(set) then
+        -- BOSS MODE: create 8 standalone boss frames instead of a header
+        self:CreateBossFrames(setIndex, container)
+        self:ApplyBossLayout(setIndex)
+
+        -- Honor enabled state
+        if set.enabled then
+            container:Show()
+            if label then label:SetShown(set.showLabel) end
+            if container.mover then container.mover:SetShown(not set.locked) end
+        else
+            container:Hide()
+            if label then label:Hide() end
+            if container.mover then container.mover:Hide() end
+        end
+        return
+    end
+
     -- Create SecureGroupHeaderTemplate
     local header = CreateFrame("Frame", "DandersPinned" .. setIndex .. modeSuffix .. "Header", container, "SecureGroupHeaderTemplate")
     
@@ -752,11 +770,18 @@ end
 
 -- Apply layout settings to a header
 function PinnedFrames:ApplyLayoutSettings(setIndex)
-    local header = self.headers[setIndex]
     local set = GetSetDB(setIndex)
-    
-    if not header or not set then return end
+    if not set then return end
     if InCombatLockdown() then return end
+
+    if IsBossSet(set) then
+        self:ApplyBossLayout(setIndex)
+        self:ResizeContainer(setIndex)
+        return
+    end
+
+    local header = self.headers[setIndex]
+    if not header then return end
     
     local db = IsInRaid() and DF:GetRaidDB() or DF:GetDB()
     if not db then
@@ -1022,12 +1047,49 @@ function PinnedFrames:ResizeContainer(setIndex)
     local header = self.headers[setIndex]
     local set = GetSetDB(setIndex)
     
-    if not container or not header or not set then return end
-    
+    if not container or not set then return end
+    if not IsBossSet(set) and not header then return end
+
     local db = IsInRaid() and DF:GetRaidDB() or DF:GetDB()
     local frameWidth = db.frameWidth or 120
     local frameHeight = db.frameHeight or 50
-    
+
+    if IsBossSet(set) then
+        local frames = self.bossFrames[setIndex]
+        if not frames then return end
+
+        local visibleCount = 0
+        for i = 1, 8 do
+            if frames[i] and frames[i]:IsShown() then
+                visibleCount = visibleCount + 1
+            end
+        end
+
+        if visibleCount == 0 then
+            container:SetSize(frameWidth, frameHeight)
+            return
+        end
+
+        local horizontal = set.growDirection == "HORIZONTAL"
+        local spacing = horizontal and (set.horizontalSpacing or 2) or (set.verticalSpacing or 2)
+        local unitsPerRow = set.unitsPerRow or 5
+
+        local rows = math.ceil(visibleCount / unitsPerRow)
+        local cols = math.min(visibleCount, unitsPerRow)
+
+        local width, height
+        if horizontal then
+            width = cols * frameWidth + (cols - 1) * spacing
+            height = rows * frameHeight + (rows - 1) * (set.verticalSpacing or 2)
+        else
+            width = rows * frameWidth + (rows - 1) * (set.horizontalSpacing or 2)
+            height = cols * frameHeight + (cols - 1) * spacing
+        end
+
+        container:SetSize(math.max(width, 50), math.max(height, 30))
+        return
+    end
+
     -- Count visible children
     local visibleCount = 0
     for i = 1, 40 do
