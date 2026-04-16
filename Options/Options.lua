@@ -1875,6 +1875,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 if set.showLabel == nil then set.showLabel = false end
                 if set.players == nil then set.players = {} end
                 if set.manualPlayers == nil then set.manualPlayers = {} end
+                if set.frameType == nil then set.frameType = "player" end
             end
         end
         
