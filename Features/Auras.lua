@@ -40,6 +40,7 @@ local function IsRosterUnit(unit)
     if unit == "player" then return true end
     if strfind(unit, "^party%d$") then return true end
     if strfind(unit, "^raid%d+$") then return true end
+    if strfind(unit, "^boss%d$") then return true end
     return false
 end
 
