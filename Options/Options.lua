@@ -5187,7 +5187,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         -- Enable checkbox
         local containerEnable = containerGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Enable Dispel Overlay"], db, "bossDebuffsContainerOverlayEnabled", function()
             if DF.PreviewPrivateAuraAnchors then DF:PreviewPrivateAuraAnchors() end
-            GUI:RefreshPage()
+            GUI:RefreshCurrentPage()
         end), 30)
 
         local function HideContainerOverlayOptions(d)

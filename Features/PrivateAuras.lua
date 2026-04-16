@@ -456,6 +456,9 @@ SetupContainerOverlay = function(frame, unit, db)
     wrapper:SetAttribute("dispel-indicator-option", db.bossDebuffsContainerOverlayDispelMode)
     wrapper:SetAttribute("aura-organization-type", db.bossDebuffsContainerOverlayGradientDir)
     wrapper:SetAttribute("group-type", groupType)
+    wrapper:SetAttribute("power-bar-used-height", 0)
+    wrapper:SetAttribute("icon-size", 10)
+    wrapper:SetAttribute("set-aura-size-to-icon-size", false)
 
     -- Register the container anchor
     local success, anchorID = pcall(function()
