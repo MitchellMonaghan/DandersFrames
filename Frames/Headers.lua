@@ -161,7 +161,7 @@ function DF:RebuildUnitFrameMap()
     -- rebuilds unitGuidCache alongside unitFrameMap so the GUID-based skip
     -- optimisation in OnAttributeChanged works correctly after a wipe.
     local function ProcessChild(child)
-        if not child or child.isPinnedFrame then return end
+        if not child or (child.isPinnedFrame and not child.isPinnedBossFrame) then return end
         
         -- Prefer the secure attribute as the source of truth; fall back to
         -- the Lua property that OnAttributeChanged keeps in sync.
@@ -627,7 +627,7 @@ function DF:InitializeHeaderChild(frame)
                 -- Update unitFrameMap: remove old entry only if this frame owns it
                 -- Skip for pinned frames - they share units with main frames
                 -- and must not overwrite or remove main frame entries
-                if not self.isPinnedFrame then
+                if not self.isPinnedFrame or self.isPinnedBossFrame then
                     if unitFrameMap[oldUnit] == self then
                         unitFrameMap[oldUnit] = nil
                     end
@@ -663,7 +663,7 @@ function DF:InitializeHeaderChild(frame)
             if oldUnit then
                 -- Remove from unitFrameMap (only if this frame owns the entry)
                 -- Skip for pinned frames - they must not remove main frame entries
-                if not self.isPinnedFrame and unitFrameMap[oldUnit] == self then
+                if (not self.isPinnedFrame or self.isPinnedBossFrame) and unitFrameMap[oldUnit] == self then
                     unitFrameMap[oldUnit] = nil
                 end
                 -- Clear legacy DF.playerFrame if this frame was the player
@@ -693,8 +693,8 @@ function DF:InitializeHeaderChild(frame)
                 ClearUnitCache(actualUnit)
                 -- Clear phased cache for new unit (force fresh evaluation)
                 if DF.ResetPhasedCache then DF:ResetPhasedCache(actualUnit) end
-                -- Skip unitFrameMap for pinned frames
-                if not self.isPinnedFrame then
+                -- Skip unitFrameMap for pinned frames (except boss-type pinned frames)
+                if not self.isPinnedFrame or self.isPinnedBossFrame then
                     unitFrameMap[actualUnit] = self
                 end
                 local cacheGuid = UnitGUID(actualUnit)
@@ -744,7 +744,8 @@ function DF:InitializeHeaderChild(frame)
     if currentUnit then
         frame.unit = currentUnit
         -- Skip unitFrameMap for pinned frames - they share units with main frames
-        if not frame.isPinnedFrame then
+        -- (boss-type pinned frames are allowed: boss1-8 units are only in these frames)
+        if not frame.isPinnedFrame or frame.isPinnedBossFrame then
             unitFrameMap[currentUnit] = frame
         end
         local num = currentUnit:match("%d+")
@@ -855,7 +856,7 @@ function DF:InitializeHeaderChild(frame)
         -- can dispatch to this frame the instant it becomes visible.
         -- Without this, frames shown after RebuildUnitFrameMap() are
         -- invisible to event dispatch until the next rebuild.
-        if self.unit and not self.isPinnedFrame then
+        if self.unit and (not self.isPinnedFrame or self.isPinnedBossFrame) then
             unitFrameMap[self.unit] = self
         end
 
