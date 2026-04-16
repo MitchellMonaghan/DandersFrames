@@ -1219,6 +1219,18 @@ function DF:UpdateAllAuras()
             end
         end
     end
+
+    -- Also update pinned boss frames
+    if DF.PinnedFrames and DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    updateFrame(frames[i])
+                end
+            end
+        end
+    end
 end
 
 -- Update click-through state on all aura icons (used when combat state changes)
