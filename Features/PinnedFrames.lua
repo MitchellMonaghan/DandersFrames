@@ -303,8 +303,48 @@ function PinnedFrames:ProcessAllSets()
     if changed then
         self:UpdateAllHeaders()
     end
-    
+
     return changed
+end
+
+-- Register/unregister boss frames in unitFrameMap based on visibility
+function PinnedFrames:UpdateBossFrameMapEntries(setIndex)
+    if not DF.unitFrameMap then return end
+    local frames = self.bossFrames[setIndex]
+    if not frames then return end
+
+    for i = 1, 8 do
+        local f = frames[i]
+        if f then
+            local unit = "boss" .. i
+            if f:IsShown() then
+                DF.unitFrameMap[unit] = f
+                f.dfEventsEnabled = true
+            else
+                if DF.unitFrameMap[unit] == f then
+                    DF.unitFrameMap[unit] = nil
+                end
+                f.dfEventsEnabled = false
+            end
+        end
+    end
+end
+
+-- Called when boss units change (appear, die, change faction)
+function PinnedFrames:OnBossFramesChanged()
+    if not self.initialized then return end
+
+    for setIndex = 1, 2 do
+        local set = GetSetDB(setIndex)
+        if set and set.enabled and IsBossSet(set) then
+            C_Timer.After(0.05, function()
+                if InCombatLockdown() then return end
+                self:ResizeContainer(setIndex)
+                self:RefreshChildFrames(setIndex)
+                self:UpdateBossFrameMapEntries(setIndex)
+            end)
+        end
+    end
 end
 
 -- ============================================================
@@ -1145,19 +1185,35 @@ end
 -- Refresh all child frames for a set (called after enabling for combat reload support)
 -- Uses FullFrameRefresh which uses Blizzard aura cache ONLY - no fallback
 function PinnedFrames:RefreshChildFrames(setIndex)
+    local set = GetSetDB(setIndex)
+    if not set then return end
+
+    if IsBossSet(set) then
+        local frames = self.bossFrames[setIndex]
+        if not frames then return end
+        for i = 1, 8 do
+            local f = frames[i]
+            if f and f.unit and f:IsVisible() then
+                if DF.FullFrameRefresh then
+                    DF:FullFrameRefresh(f)
+                end
+            end
+        end
+        return
+    end
+
     local header = self.headers[setIndex]
     if not header then return end
-    
+
     for i = 1, 40 do
         local child = header:GetAttribute("child" .. i)
         if child and child.unit and child:IsVisible() then
-            -- Full frame refresh (uses Blizzard aura cache only, no fallback)
             if DF.FullFrameRefresh then
                 DF:FullFrameRefresh(child)
             end
         end
     end
-    
+
     if DF.debugPinnedFrames then
         print("|cFF00FFFF[DF Pinned]|r Set", setIndex, "refreshed all child frames")
     end
@@ -1166,69 +1222,57 @@ end
 function PinnedFrames:SetEnabled(setIndex, enabled)
     local set = GetSetDB(setIndex)
     if not set then return end
-    
+
     set.enabled = enabled
-    
+
     local container = self.containers[setIndex]
     local header = self.headers[setIndex]
-    
-    if not container or not header then
+    local isBoss = IsBossSet(set)
+
+    if not container or (not isBoss and not header) then
         if enabled then
             self:CreateSetFrames(setIndex)
         end
         return
     end
-    
+
     if InCombatLockdown() then
         self.pendingVisibilityUpdate = self.pendingVisibilityUpdate or {}
         self.pendingVisibilityUpdate[setIndex] = enabled
         return
     end
-    
-    -- Enable/disable events on child frames
-    SetChildFrameEvents(header, enabled)
-    
-    -- Get label reference
+
+    -- Player mode: toggle header child events
+    if not isBoss and header then
+        SetChildFrameEvents(header, enabled)
+    end
+
     local label = self.labels[setIndex]
-    
+
     if enabled then
         container:Show()
-        header:Show()
-        
-        -- Update nameList first
-        self:UpdateHeaderNameList(setIndex)
-        
-        -- Apply full layout refresh (4-step clear points method)
-        -- This ensures frames are positioned correctly on enable
-        self:ApplyLayoutSettings(setIndex)
-        
-        -- Update and show label if setting says so
-        self:UpdateLabel(setIndex)
-        if label then
-            label:SetShown(set.showLabel)
+        if header then header:Show() end
+
+        if isBoss then
+            self:ApplyBossLayout(setIndex)
+            self:ResizeContainer(setIndex)
+        else
+            self:UpdateHeaderNameList(setIndex)
+            self:ApplyLayoutSettings(setIndex)
         end
-        
-        -- Show mover if unlocked
+
+        self:UpdateLabel(setIndex)
+        if label then label:SetShown(set.showLabel) end
         if container.mover and not set.locked then
             container.mover:SetShown(true)
         end
-        
-        -- CRITICAL: Force full refresh on all child frames
-        -- This ensures auras, absorbs, etc. are updated on combat reload
+
         self:RefreshChildFrames(setIndex)
     else
         container:Hide()
-        header:Hide()
-        
-        -- Hide label when disabled (must happen AFTER container hide)
-        if label then
-            label:Hide()
-        end
-        
-        -- Hide mover when disabled
-        if container.mover then
-            container.mover:Hide()
-        end
+        if header then header:Hide() end
+        if label then label:Hide() end
+        if container.mover then container.mover:Hide() end
     end
 end
 
@@ -1420,8 +1464,17 @@ function PinnedFrames:Reinitialize()
     
     -- Clean up old frames
     for i = 1, 2 do
+        if self.bossFrames[i] then
+            for j = 1, 8 do
+                local f = self.bossFrames[i][j]
+                if f then
+                    UnregisterStateDriver(f, "visibility")
+                    f:Hide()
+                end
+            end
+            self.bossFrames[i] = nil
+        end
         if self.containers[i] then
-            -- Also hide mover
             if self.containers[i].mover then
                 self.containers[i].mover:Hide()
             end
@@ -1445,13 +1498,30 @@ end
 -- Refresh all child frames (calls FullFrameRefresh on each)
 function PinnedFrames:RefreshAllChildFrames()
     for setIndex = 1, 2 do
-        local header = self.headers[setIndex]
-        if header then
-            for i = 1, 40 do
-                local child = header:GetAttribute("child" .. i)
-                if child and child:IsShown() and child.unit then
-                    if DF.FullFrameRefresh then
-                        DF:FullFrameRefresh(child)
+        local set = GetSetDB(setIndex)
+        if set then
+            if IsBossSet(set) then
+                local frames = self.bossFrames[setIndex]
+                if frames then
+                    for i = 1, 8 do
+                        local f = frames[i]
+                        if f and f:IsShown() and f.unit then
+                            if DF.FullFrameRefresh then
+                                DF:FullFrameRefresh(f)
+                            end
+                        end
+                    end
+                end
+            else
+                local header = self.headers[setIndex]
+                if header then
+                    for i = 1, 40 do
+                        local child = header:GetAttribute("child" .. i)
+                        if child and child:IsShown() and child.unit then
+                            if DF.FullFrameRefresh then
+                                DF:FullFrameRefresh(child)
+                            end
+                        end
                     end
                 end
             end
@@ -1471,6 +1541,8 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("ROLE_CHANGED_INFORM")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
+eventFrame:RegisterEvent("UNIT_FACTION")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" then
@@ -1542,6 +1614,22 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
         return
     end
     
+    if event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
+        if PinnedFrames.initialized then
+            PinnedFrames:OnBossFramesChanged()
+        end
+        return
+    end
+
+    if event == "UNIT_FACTION" then
+        if type(arg1) == "string" and arg1:match("^boss%d$") then
+            if PinnedFrames.initialized then
+                PinnedFrames:OnBossFramesChanged()
+            end
+        end
+        return
+    end
+
     -- GROUP_ROSTER_UPDATE or ROLE_CHANGED_INFORM
     if PinnedFrames.initialized then
         -- Check if mode changed (party <-> raid)
