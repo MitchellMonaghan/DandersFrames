@@ -16,6 +16,11 @@ local pairs, ipairs, pcall = pairs, ipairs, pcall
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local UnitExists = UnitExists
+local GetBuildInfo = GetBuildInfo
+
+-- 12.0.5+ requires isContainer in AddPrivateAuraAnchor args
+local CLIENT_VERSION = select(4, GetBuildInfo())
+local IS_CONTAINER_SUPPORTED = CLIENT_VERSION >= 120005
 
 -- ============================================================
 -- FILE-SCOPE STATE
@@ -227,7 +232,7 @@ function DF:SetupPrivateAuraAnchors(frame)
         -- Timer text and stack count are rendered by Blizzard as children of
         -- iconFrame and inherit its scale, giving us scaled text for free.
         local success, anchorID = pcall(function()
-            return C_UnitAuras.AddPrivateAuraAnchor({
+            local anchorArgs = {
                 unitToken = unit,
                 auraIndex = i,
                 parent    = iconFrame,
@@ -245,7 +250,11 @@ function DF:SetupPrivateAuraAnchors(frame)
                         offsetY       = 0,
                     },
                 },
-            })
+            }
+            if IS_CONTAINER_SUPPORTED then
+                anchorArgs.isContainer = false
+            end
+            return C_UnitAuras.AddPrivateAuraAnchor(anchorArgs)
         end)
 
         if DF.bossDebuffDebug then
@@ -261,8 +270,10 @@ function DF:SetupPrivateAuraAnchors(frame)
         end
     end
 
-    -- Set up frame border overlay if enabled
-    SetupOverlayAnchors(frame, unit, db)
+    -- Old border overlay hack (pre-12.0.5 only)
+    if not IS_CONTAINER_SUPPORTED then
+        SetupOverlayAnchors(frame, unit, db)
+    end
 
     -- Track which unit anchors are monitoring
     frame.bossDebuffAnchoredUnit = unit
@@ -358,7 +369,7 @@ SetupOverlayAnchors = function(frame, unit, db)
 
         -- Register anchor with invisible icon, visible border
         local success, anchorID = pcall(function()
-            return C_UnitAuras.AddPrivateAuraAnchor({
+            local anchorArgs = {
                 unitToken = unit,
                 auraIndex = i,
                 parent = sub,
@@ -376,7 +387,11 @@ SetupOverlayAnchors = function(frame, unit, db)
                         offsetY = 0,
                     },
                 },
-            })
+            }
+            if IS_CONTAINER_SUPPORTED then
+                anchorArgs.isContainer = false
+            end
+            return C_UnitAuras.AddPrivateAuraAnchor(anchorArgs)
         end)
 
         if success and anchorID then
