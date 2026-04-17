@@ -964,6 +964,7 @@ L["Not Cancelable"] = true
 L["Not in a raid group"] = true
 L["Note: Cmd + Left Click unavailable on Mac"] = true
 L["Note: Font sizes are not changed. Adjust sizes in each element's page."] = true
+L["Notifications"] = true
 L["Notify me when a newer version is available"] = true
 L["Off"] = true
 L["Offset X"] = true
