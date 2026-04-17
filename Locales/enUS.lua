@@ -571,6 +571,7 @@ L["Display"] = true
 L["Display labels above or beside each raid group."] = true
 L["Display Mode"] = true
 L["Displays class-specific resources (Holy Power, Chi, Combo Points, Soul Shards, Arcane Charges, Essence) as colored pips on your player frame."] = true
+L["DND"] = true
 L["Down"] = true
 L["DPS"] = true
 L["Drag to reorder groups. Top = first."] = true

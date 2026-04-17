@@ -1046,6 +1046,8 @@ function DF:UpdateHealthFast(frame)
     -- Clear resurrection icon if unit was pending a res and is now alive
     if DF.HasPendingResurrection and DF:HasPendingResurrection(unit) then
         DF:UpdateResurrectionIcon(frame)
+        -- Refresh auras so transient "Resurrected" buff icon clears
+        if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(frame) end
     end
 
     -- Clear status text for alive units
@@ -1280,6 +1282,7 @@ function DF:UpdateHealth(frame)
     
     -- Hide status text, show health text
     if frame.statusText then
+        frame.statusText:SetText("")
         frame.statusText:Hide()
     end
     frame.healthText:Show()

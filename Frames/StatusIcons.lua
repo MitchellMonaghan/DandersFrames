@@ -301,6 +301,12 @@ function DF:UpdateSummonIcon(frame)
         return
     end
 
+    -- Solo players cannot be summoned; incoming-summon API may return stale data
+    if not IsInGroup() then
+        frame.summonIcon:Hide()
+        return
+    end
+
     -- Check for incoming summon (secret-safe)
     if C_IncomingSummon and C_IncomingSummon.HasIncomingSummon then
         local hasSummon = nil
@@ -710,13 +716,14 @@ function DF:UpdateAFKIcon(frame)
     
     local unit = frame.unit
     local showIcon = false
-    
+    local isDND = false
+
     -- Check AFK status (secret-safe)
     local isAFK = nil
     pcall(function()
         isAFK = UnitIsAFK(unit)
     end)
-    
+
     if canaccessvalue(isAFK) and isAFK then
         -- Track AFK start time
         if not afkStartTimes[unit] then
@@ -726,34 +733,54 @@ function DF:UpdateAFKIcon(frame)
     else
         -- Clear AFK start time
         afkStartTimes[unit] = nil
+        -- AFK and DND are mutually exclusive; only check DND when not AFK
+        local dndStatus = nil
+        pcall(function()
+            dndStatus = UnitIsDND(unit)
+        end)
+        if canaccessvalue(dndStatus) and dndStatus then
+            isDND = true
+            showIcon = true
+        end
     end
-    
+
     if showIcon then
         ApplyIconSettings(frame.afkIcon, db, "afkIcon")
-        
-        local statusText = db.afkIconText or "AFK"
-        local showTimer = db.afkIconShowTimer ~= false
-        
-        -- Calculate timer if enabled
-        if showTimer and afkStartTimes[unit] then
-            local elapsed = math.floor(GetTime() - afkStartTimes[unit])
-            local timerStr = FormatAFKTime(elapsed)
-            
-            if db.afkIconShowText then
-                -- Text mode: show "AFK 1:23"
-                statusText = statusText .. " " .. timerStr
-                if frame.afkIcon.timerText then frame.afkIcon.timerText:Hide() end
-            else
-                -- Icon mode: show timer below icon
-                if frame.afkIcon.timerText then
-                    frame.afkIcon.timerText:SetText(timerStr)
-                    frame.afkIcon.timerText:Show()
-                end
-            end
-        else
+
+        local L = DF.L
+        local statusText
+        if isDND then
+            statusText = L["DND"]
+            -- Red-ish for DND to visually distinguish from orange AFK
+            frame.afkIcon.text:SetTextColor(1, 0.2, 0.2, 1)
             if frame.afkIcon.timerText then frame.afkIcon.timerText:Hide() end
+        else
+            statusText = db.afkIconText or "AFK"
+            -- Restore AFK's orange color (may have been overridden by DND branch)
+            frame.afkIcon.text:SetTextColor(1, 0.5, 0, 1)
+            local showTimer = db.afkIconShowTimer ~= false
+
+            -- Calculate timer if enabled
+            if showTimer and afkStartTimes[unit] then
+                local elapsed = math.floor(GetTime() - afkStartTimes[unit])
+                local timerStr = FormatAFKTime(elapsed)
+
+                if db.afkIconShowText then
+                    -- Text mode: show "AFK 1:23"
+                    statusText = statusText .. " " .. timerStr
+                    if frame.afkIcon.timerText then frame.afkIcon.timerText:Hide() end
+                else
+                    -- Icon mode: show timer below icon
+                    if frame.afkIcon.timerText then
+                        frame.afkIcon.timerText:SetText(timerStr)
+                        frame.afkIcon.timerText:Show()
+                    end
+                end
+            else
+                if frame.afkIcon.timerText then frame.afkIcon.timerText:Hide() end
+            end
         end
-        
+
         ShowIconAsText(frame.afkIcon, statusText, db.afkIconShowText)
         frame.afkIcon:Show()
     else
