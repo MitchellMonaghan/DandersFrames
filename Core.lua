@@ -4666,6 +4666,12 @@ DF._MainEventDispatcher = function(self, event, arg1)
             DF:UpdateRaidContainerPosition()
         end
         -- Refresh Aura Designer (per-spec aura lists may differ)
+        -- Invalidate the adapter's per-spec spellId cache first — otherwise
+        -- stale entries prevent the new spec's spell IDs (e.g., Earth Shield
+        -- for Resto Shaman) from being recognized after a spec swap.
+        if DF.AuraDesigner and DF.AuraDesigner.Adapter and DF.AuraDesigner.Adapter.InvalidateSpecCache then
+            DF.AuraDesigner.Adapter:InvalidateSpecCache()
+        end
         if DF.AuraDesigner and DF.AuraDesigner.Engine and DF.AuraDesigner.Engine.ForceRefreshAllFrames then
             DF.AuraDesigner.Engine:ForceRefreshAllFrames()
         end

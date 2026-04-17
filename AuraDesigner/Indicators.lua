@@ -1410,8 +1410,8 @@ end
 function Indicators:ConfigureIcon(frame, config, defaults, auraName, priority)
     local icon = GetOrCreateADIcon(frame, auraName)
 
-    -- Size
-    local size = config.size or (defaults and defaults.iconSize) or 24
+    -- Size (clamp to 8 minimum; old configs may have sizes below the current slider floor)
+    local size = math.max(8, config.size or (defaults and defaults.iconSize) or 24)
     local scale = config.scale or (defaults and defaults.iconScale) or 1.0
     icon:SetSize(size, size)
     icon:SetScale(scale)
