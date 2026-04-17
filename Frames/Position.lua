@@ -2139,6 +2139,7 @@ end
 
 function DF:UpdateRaidContainerPosition()
     if not DF.raidContainer then return end
+    if InCombatLockdown() then return end
 
     local db = DF:GetRaidDB()
     local x, y = db.raidAnchorX or 0, db.raidAnchorY or 0
