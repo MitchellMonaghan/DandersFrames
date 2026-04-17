@@ -3306,7 +3306,7 @@ DF.RaidAutoProfilesDefaults = {
 }
 
 function DF:GetGlobalDB()
-    if not DandersFramesDB_v2 then return DF.GlobalDefaults end
+    DandersFramesDB_v2 = DandersFramesDB_v2 or {}
     DandersFramesDB_v2.global = DandersFramesDB_v2.global or {}
     for k, v in pairs(DF.GlobalDefaults) do
         if DandersFramesDB_v2.global[k] == nil then
