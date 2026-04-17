@@ -4500,7 +4500,9 @@ DF._MainEventDispatcher = function(self, event, arg1)
         SlashCmdList["DFRL"] = function()
             ReloadUI()
         end
-        
+
+        if DF.VersionCheck then DF.VersionCheck:Init() end
+
         -- Post-initialization updates (frames already created at ADDON_LOADED)
         -- These need a delay to let Blizzard addons settle and world to be ready
         C_Timer.After(0.5, function()

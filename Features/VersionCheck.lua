@@ -113,9 +113,58 @@ function VC:RunComparatorTests()
     return pass, fail
 end
 
+-- ============================================================
+-- ADDON COMM DISPATCH
+-- ============================================================
+
+-- Cached on Init
+VC.playerFullName = nil
+
+local function getPlayerFullName()
+    local name = UnitName("player")
+    local realm = GetRealmName():gsub("%s", "")
+    return name .. "-" .. realm
+end
+
+-- Handler table: messageType -> function(sender, payload, channel)
+VC.handlers = {}
+
+function VC:Dispatch(messageType, sender, payload, channel)
+    if sender == self.playerFullName then return end  -- ignore self
+    local handler = self.handlers[messageType]
+    if handler then
+        handler(self, sender, payload, channel)
+    end
+end
+
+-- Parse incoming tab-separated message: "TYPE\tPAYLOAD..."
+function VC:OnAddonMessage(prefix, message, channel, sender)
+    if prefix ~= self.PREFIX then return end
+    local msgType, payload = match(message, "^([^\t]+)\t?(.*)$")
+    if not msgType then return end
+    self:Dispatch(msgType, sender, payload, channel)
+end
+
 -- Public entry point, called from Core.lua after PLAYER_LOGIN.
 function VC:Init()
     if self.initialized then return end
     self.initialized = true
-    -- Wiring added in later tasks
+    self.playerFullName = getPlayerFullName()
+
+    C_ChatInfo.RegisterAddonMessagePrefix(self.PREFIX)
+
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("CHAT_MSG_ADDON")
+    frame:SetScript("OnEvent", function(_, _, prefix, message, channel, sender)
+        VC:OnAddonMessage(prefix, message, channel, sender)
+    end)
+    self.eventFrame = frame
+end
+
+-- Temporary: logs everything. Removed in Task 4/5 when real handlers are added.
+VC.handlers["H"] = function(self, sender, _, channel)
+    if DF.Debug then DF:Debug("VC", "recv H from " .. sender .. " on " .. channel) end
+end
+VC.handlers["V"] = function(self, sender, payload, channel)
+    if DF.Debug then DF:Debug("VC", "recv V from " .. sender .. " on " .. channel .. " ver=" .. tostring(payload)) end
 end
