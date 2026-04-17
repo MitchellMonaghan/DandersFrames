@@ -84,7 +84,7 @@ function DF:GetTestUnitData(index, isRaid)
         }
         local testRoles = {
             "TANK", "HEALER", "DAMAGER", "DAMAGER", "DAMAGER",
-            "HEALER", "DAMAGER", "DAMAGER", "HEALER", "HEALER",
+            "HEALER", "DAMAGER", "DAMAGER", "TANK", "HEALER",
             "HEALER", "HEALER", "DAMAGER", "DAMAGER", "DAMAGER",
             "DAMAGER", "DAMAGER", "HEALER", "HEALER", "DAMAGER",
             "TANK", "DAMAGER", "DAMAGER", "TANK", "TANK",
@@ -102,7 +102,7 @@ function DF:GetTestUnitData(index, isRaid)
             264,  -- 6  SHAMAN/HEALER     - Restoration
             251,  -- 7  DEATHKNIGHT/DPS   - Frost (melee)
             265,  -- 8  WARLOCK/DAMAGER   - Affliction (ranged)
-            270,  -- 9  MONK/HEALER       - Mistweaver
+            268,  -- 9  MONK/TANK         - Brewmaster
             256,  -- 10 PRIEST/HEALER     - Discipline
             105,  -- 11 DRUID/HEALER      - Restoration
             65,   -- 12 PALADIN/HEALER    - Holy

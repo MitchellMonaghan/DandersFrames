@@ -2623,7 +2623,13 @@ function AutoProfilesUI:ExitEditing(skipUIUpdates)
 
     -- Skip UI updates when GUI is closing (UI will reset on next open anyway)
     if skipUIUpdates then return end
-    
+
+    -- Re-evaluate auto-profiles BEFORE UpdateAll so any re-applied overlay is in
+    -- place when frames read settings — otherwise UpdateAll would read globals,
+    -- then the delayed evaluator would re-apply the overlay causing a flicker.
+    -- EvaluateAndApply internally checks InCombatLockdown so this is combat-safe.
+    AutoProfilesUI:EvaluateAndApply()
+
     -- Refresh frames to show global settings again
     if DF.UpdateAll then DF:UpdateAll() end
 
@@ -2655,11 +2661,6 @@ function AutoProfilesUI:ExitEditing(skipUIUpdates)
     if GUI and GUI.SelectTab then
         GUI.SelectTab("profiles_auto")
     end
-
-    -- Re-evaluate auto-profiles (may re-apply if still in matching content)
-    C_Timer.After(0.1, function()
-        AutoProfilesUI:EvaluateAndApply()
-    end)
 end
 
 function AutoProfilesUI:GetEditingInfo()
