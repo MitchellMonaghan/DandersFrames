@@ -423,17 +423,19 @@ SetupContainerOverlay = function(frame, unit, db)
     if not db.bossDebuffsContainerOverlayEnabled then return end
 
     -- Create or reuse the wrapper frame
+    -- Parent to contentOverlay so the overlay renders above the health bar
+    local parent = frame.contentOverlay or frame
     local wrapper = frame.containerOverlayFrame
     if not wrapper then
-        wrapper = CreateFrame("Frame", nil, frame)
+        wrapper = CreateFrame("Frame", nil, parent)
         wrapper:EnableMouse(false)
         if wrapper.SetMouseClickEnabled then wrapper:SetMouseClickEnabled(false) end
         frame.containerOverlayFrame = wrapper
     end
 
-    wrapper:SetParent(frame)
+    wrapper:SetParent(parent)
     wrapper:ClearAllPoints()
-    wrapper:SetAllPoints(frame)
+    wrapper:SetAllPoints(parent)
     wrapper:Show()
 
     -- Determine group type from unit token
