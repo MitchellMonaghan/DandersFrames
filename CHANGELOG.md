@@ -1,20 +1,20 @@
 # DandersFrames Changelog
 
-## [Unreleased]
+## [4.3.2] - 2026-04-17
 
 ### New Features
 
-* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters like Larodar where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
 
 ### Bug Fixes
 
-* Fix DPS jumping order mid-dungeon when "Separate Melee & Ranged DPS" is on. Flex-spec classes (Hunter, Shaman, Monk, Paladin, Druid) were defaulting to Ranged until their spec was inspected, then flipping to the correct category on the next roster/combat event. Classification now reads from the persistent spec cache and re-applies the party sort as inspects complete.
-* (Aura Designer) Sound alert loop now picks up live edits to the sound, volume, and loop interval sliders without having to disable and re-enable the alert.
+* Fix DPS jumping order mid-dungeon when "Separate Melee & Ranged DPS" is enabled
+* (Aura Designer) Sound alerts now pick up live edits without toggling the alert off and on
 
 ### 12.0.5 Compatibility
 
-* **Private Aura Dispel Overlay** — on 12.0.5+, a new Blizzard-rendered dispel overlay for private auras replaces the old frame border overlay hack. Controlled from Boss Debuffs settings with options for dispel filter, gradient direction, and dispel type icons. The existing dispel overlay continues to handle regular (non-private) auras independently.
-* Add required `isContainer` field to all `AddPrivateAuraAnchor` calls for 12.0.5 compatibility. Existing icon anchors use `isContainer = false`, the new overlay uses `isContainer = true`.
+* **Private Aura Dispel Overlay** — on 12.0.5+, a new Blizzard-rendered dispel overlay for private auras replaces the old frame border overlay. Controlled from Boss Debuffs settings with options for dispel filter, gradient direction, and dispel type icons.
+* Fix private aura anchors for 12.0.5 API changes
 
 ## [4.3.1] - 2026-04-15
 
