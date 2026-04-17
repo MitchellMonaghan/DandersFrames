@@ -4586,21 +4586,35 @@ function DF:BuildSortedNameList(members, db, selfPosition, includesPlayer)
         DEATHKNIGHT = true, DEMONHUNTER = true, ROGUE = true, WARRIOR = true
     }
     
-    -- Get melee/ranged type for a unit
+    -- Get melee/ranged type for a unit.
+    -- Priority: SecureSort.specCache (persistent across INSPECT_READY) → game's inspect cache → class fallback.
+    -- Checking the persistent cache first avoids flipping a DPS's classification once we've learned
+    -- their real spec — if we only relied on GetInspectSpecialization, a Hunter Survival / Feral Druid /
+    -- WW Monk / Ret Pally / Enh Shaman would default to RANGED before inspect, then jump to MELEE later.
     local function GetMeleeRangedType(unit, role)
         if role ~= "DAMAGER" then return nil end
-        
+
         local specID
         if UnitIsUnit(unit, "player") then
             specID = GetSpecializationInfo(GetSpecialization())
         else
-            specID = GetInspectSpecialization(unit)
+            local cache = DF.SecureSort and DF.SecureSort.specCache
+            if cache then
+                local name = GetUnitName(unit, true)
+                local cached = name and cache[name]
+                if cached and cached.specID and cached.specID > 0 then
+                    specID = cached.specID
+                end
+            end
+            if not specID then
+                specID = GetInspectSpecialization(unit)
+            end
         end
-        
+
         if specID and specID > 0 then
             return meleeSpecs[specID] and "MELEE" or "RANGED"
         end
-        
+
         local _, class = UnitClass(unit)
         return meleeClasses[class] and "MELEE" or "RANGED"
     end
