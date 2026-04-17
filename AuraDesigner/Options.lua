@@ -3410,14 +3410,16 @@ local function CreateEnableBanner(parent)
     muteBorder:SetPoint("BOTTOMRIGHT", 1, -1)
     muteBorder:SetColorTexture(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
 
-    local muteCheck = muteCb:CreateTexture(nil, "ARTWORK")
-    muteCheck:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\check")
+    -- Match GUI:CreateCheckbox visual: solid themed square, not a tick icon.
+    local muteCheck = muteCb:CreateTexture(nil, "OVERLAY")
+    muteCheck:SetTexture("Interface\\Buttons\\WHITE8x8")
     muteCheck:SetVertexColor(tc.r, tc.g, tc.b)
     muteCheck:SetPoint("CENTER")
     muteCheck:SetSize(10, 10)
     muteCb:SetCheckedTexture(muteCheck)
 
-    -- soundEnabled = true means NOT muted, so checked = not muted
+    -- soundEnabled = true/nil means NOT muted, so checked = not muted.
+    -- nil (older profiles without this field) is treated as enabled by default.
     muteCb:SetChecked(adDB and adDB.soundEnabled ~= false)
     muteCb:SetScript("OnClick", function(self)
         local adDB = GetAuraDesignerDB()
