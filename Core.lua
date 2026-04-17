@@ -3331,6 +3331,7 @@ DF._MainEventDispatcher = function(self, event, arg1)
         if not DandersFramesDB_v2.profiles then DandersFramesDB_v2.profiles = {} end
         if not DandersFramesDB_v2.currentProfile then DandersFramesDB_v2.currentProfile = "Default" end
         if not DandersFramesDB_v2.wizardConfigs then DandersFramesDB_v2.wizardConfigs = {} end
+        if not DandersFramesDB_v2.global then DandersFramesDB_v2.global = {} end
 
         -- Track last seen version for auto-showing changelog on update
         if not DandersFramesDB_v2.lastSeenVersion then

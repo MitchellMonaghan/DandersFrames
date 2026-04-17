@@ -732,6 +732,15 @@ function DF:GetTexture(name)
 end
 
 -- ============================================================
+-- GLOBAL (account-wide) DEFAULTS
+-- Not per-profile. Lives at DandersFramesDB_v2.global.
+-- ============================================================
+
+DF.GlobalDefaults = {
+    notifyOutdated = true,
+}
+
+-- ============================================================
 -- DEFAULT SETTINGS (exported from profile v2.9.8)
 -- ============================================================
 
@@ -3295,3 +3304,14 @@ DF.RaidAutoProfilesDefaults = {
         profile = nil  -- Single profile: {name = "Mythic Setup", overrides = {}} or nil if not configured
     },
 }
+
+function DF:GetGlobalDB()
+    if not DandersFramesDB_v2 then return DF.GlobalDefaults end
+    DandersFramesDB_v2.global = DandersFramesDB_v2.global or {}
+    for k, v in pairs(DF.GlobalDefaults) do
+        if DandersFramesDB_v2.global[k] == nil then
+            DandersFramesDB_v2.global[k] = v
+        end
+    end
+    return DandersFramesDB_v2.global
+end

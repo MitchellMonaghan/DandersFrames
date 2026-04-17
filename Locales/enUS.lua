@@ -33,6 +33,7 @@ L["    Show Frame Glow"] = true
 -- ClickCasting UI strings
 L["1 = High"] = true
 L["10 = Low"] = true
+L["A newer version is available (%s). Get it on CurseForge."] = true
 L["A-Z"] = true
 L["Active Bindings"] = true
 L["Active Bindings (%d)"] = true
@@ -963,6 +964,7 @@ L["Not Cancelable"] = true
 L["Not in a raid group"] = true
 L["Note: Cmd + Left Click unavailable on Mac"] = true
 L["Note: Font sizes are not changed. Adjust sizes in each element's page."] = true
+L["Notify me when a newer version is available"] = true
 L["Off"] = true
 L["Offset X"] = true
 L["Offset Y"] = true

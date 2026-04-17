@@ -200,6 +200,27 @@ function VC:SendVersion(channel)
     self:SendMessage("V", tostring(DF.VERSION), channel)
 end
 
+-- ============================================================
+-- NAG LOGIC
+-- ============================================================
+
+function VC:ShouldNag(incomingVersion)
+    -- Incoming pre-release never triggers nag.
+    if self:IsPreRelease(incomingVersion) then return false end
+    local cmp = self:CompareVersions(incomingVersion, DF.VERSION)
+    return cmp == 1
+end
+
+function VC:ShowNag(newVersion)
+    local db = DF:GetGlobalDB()
+    if not db.notifyOutdated then return end
+    if self.hasNagged then return end
+    self.hasNagged = true
+    local L = DF.L
+    print("|cffeda55fDandersFrames:|r " ..
+        format(L["A newer version is available (%s). Get it on CurseForge."], tostring(newVersion)))
+end
+
 -- Receive H: respond with our version on the same channel type, with small jitter.
 VC.handlers["H"] = function(self, sender, _, channel)
     local delay = 1 + math.random() * 2  -- 1-3s jitter to avoid response storms
@@ -208,8 +229,17 @@ VC.handlers["H"] = function(self, sender, _, channel)
     end)
 end
 
--- V handler is replaced in Task 5. For now, keep a stub that records the message:
+-- Real V handler: record + nag
 VC.handlers["V"] = function(self, sender, payload, channel)
     if not payload or payload == "" then return end
     self.seenUsers[sender] = { version = payload, lastSeen = GetTime() }
+    if self:ShouldNag(payload) then
+        self:ShowNag(payload)
+    end
+end
+
+-- Developer-only: simulate receiving a V from a fake sender.
+function VC:TestNag(version)
+    self.hasNagged = false  -- allow re-test in same session
+    VC.handlers["V"](self, "TestDummy-TestRealm", version or "999.0.0", "PARTY")
 end
