@@ -289,3 +289,64 @@ function VC:ScheduleRebroadcast(delay)
         self:BroadcastHello()
     end)
 end
+
+-- ============================================================
+-- /df users OUTPUT
+-- ============================================================
+
+-- Returns { name, realm, fullName, version (or nil), detected (bool) } for each group member.
+function VC:CollectGroupMembers()
+    local out = {}
+    if not IsInGroup() then return out end
+    local n = GetNumGroupMembers()
+    local inRaid = IsInRaid()
+    local now = GetTime()
+    for i = 1, n do
+        local token
+        if inRaid then
+            token = "raid" .. i
+        else
+            token = (i == n) and "player" or ("party" .. i)
+        end
+        local name, realm = UnitName(token)
+        if name then
+            if not realm or realm == "" then realm = GetRealmName():gsub("%s", "") end
+            local fullName = name .. "-" .. realm
+            local entry = { name = name, realm = realm, fullName = fullName }
+            -- Self: always considered "detected" with local version
+            if fullName == self.playerFullName then
+                entry.version = DF.VERSION
+                entry.detected = true
+            else
+                local seen = self.seenUsers[fullName]
+                if seen and (now - seen.lastSeen) <= self.STALE_SECONDS then
+                    entry.version = seen.version
+                    entry.detected = true
+                else
+                    entry.detected = false
+                end
+            end
+            out[#out+1] = entry
+        end
+    end
+    return out
+end
+
+function VC:PrintUsers()
+    if not IsInGroup() then
+        print("|cffeda55fDandersFrames:|r Not in a group.")
+        return
+    end
+    local members = self:CollectGroupMembers()
+    local detected = 0
+    for _, m in ipairs(members) do
+        if m.detected then
+            detected = detected + 1
+            print(format("|cff00ff00v|r %s - %s", m.name, tostring(m.version)))
+        else
+            print(format("|cff888888x|r %s - not detected", m.name))
+        end
+    end
+    print(format("|cffeda55fDandersFrames:|r %d / %d members running DandersFrames.",
+        detected, #members))
+end

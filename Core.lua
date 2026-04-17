@@ -4210,6 +4210,8 @@ DF._MainEventDispatcher = function(self, event, arg1)
                     DF.debugEnabled = not DF.debugEnabled
                     print("|cff00ff00DandersFrames:|r " .. format(L["Debug mode %s"], DF.debugEnabled and L["enabled"] or L["disabled"]))
                 end
+            elseif msg == "users" then
+                if DF.VersionCheck then DF.VersionCheck:PrintUsers() end
             elseif msg == "console" then
                 -- Open settings directly to Debug Console tab
                 if not DF.GUIFrame then
