@@ -999,7 +999,11 @@ function DF:UpdateDefensiveBar(frame)
         local count = 0
         local adIDs = frame.dfAD_activeInstanceIDs  -- Aura Designer dedup
         if cache and cache.defensives then
-            for id in pairs(cache.defensives) do
+            -- Sort by spell ID so defensives get stable slot indices across frames.
+            local sortedIds = {}
+            for id in pairs(cache.defensives) do sortedIds[#sortedIds+1] = id end
+            table.sort(sortedIds)
+            for _, id in ipairs(sortedIds) do
                 if count >= maxDefs then break end
                 -- Skip defensives already shown by Aura Designer
                 if adIDs and adIDs[id] then

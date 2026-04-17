@@ -205,8 +205,10 @@ function DF:SetupPrivateAuraAnchors(frame)
                 -- Frames are 0.001px so chaining loses the icon dimension.
                 -- Add a full icon width/height in screen space (divided by textScale
                 -- to convert to local coordinates for SetPoint).
-                gapX = gapX + iconWidth  * xMult / textScale
-                gapY = gapY + iconHeight * yMult / textScale
+                -- abs() because xMult/yMult can be negative (LEFT/UP growth) — we
+                -- want to extend the gap, not cancel it.
+                gapX = gapX + iconWidth  * math.abs(xMult) / textScale
+                gapY = gapY + iconHeight * math.abs(yMult) / textScale
             end
             iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
@@ -798,8 +800,8 @@ local function UpdateFramePositions(frame)
             local gapX = spacing * xMult / textScale
             local gapY = spacing * yMult / textScale
             if hideTooltip then
-                gapX = gapX + iconWidth  * xMult / textScale
-                gapY = gapY + iconHeight * yMult / textScale
+                gapX = gapX + iconWidth  * math.abs(xMult) / textScale
+                gapY = gapY + iconHeight * math.abs(yMult) / textScale
             end
             iconFrame:SetPoint(pointOnCurrent, prevFrame, pointOnPrev, gapX, gapY)
         end
