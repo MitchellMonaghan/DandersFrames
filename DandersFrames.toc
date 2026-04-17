@@ -118,6 +118,7 @@ AuraBlacklist\Config.lua
 AuraBlacklist\Options.lua
 
 Features\TargetedSpells.lua
+Features\VersionCheck.lua
 Features\PinnedFrames.lua
 Features\FlatRaidFrames.lua
 
