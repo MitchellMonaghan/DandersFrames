@@ -1214,6 +1214,15 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             L["Override the addon's display language. Auto follows your WoW client language. Translations are community-contributed and may be incomplete."],
             260), 60)
         Add(languageGroup, nil, 2)
+
+        -- ===== NOTIFICATIONS GROUP (Column 2, Bottom) =====
+        local notificationsGroup = GUI:CreateSettingsGroup(self.child, 280)
+        notificationsGroup:AddWidget(GUI:CreateHeader(self.child, L["Notifications"]), 40)
+        notificationsGroup:AddWidget(GUI:CreateCheckbox(self.child, L["Notify me when a newer version is available"],
+            DF:GetGlobalDB(), "notifyOutdated", function()
+                -- Setting applies immediately; no extra callback needed.
+            end), 30)
+        Add(notificationsGroup, nil, 2)
     end)
 
     -- General > Frame
