@@ -21,7 +21,7 @@ VC.hasNagged = false
 VC.initialized = false
 
 -- Constants
-VC.PREFIX = "DandersFrames"
+VC.PREFIX = "DF_VerCheck"
 VC.STALE_SECONDS = 600
 
 -- ============================================================
