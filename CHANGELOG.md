@@ -6,9 +6,18 @@
 
 * **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
 
+### Improvements
+
+* **Pinned Frames** — movers are now color-coded per mode (orange for raid, purple-blue for party) so it's obvious which mode's position you're editing
+* **Pinned Frames** — opening a pinned-frames page for the inactive mode (e.g. Raid settings while you're solo or in a party) now shows a preview container for that mode's frames so you can reposition them without joining a group
+
 ### Bug Fixes
 
 * Fix DPS jumping order mid-dungeon when "Separate Melee & Ranged DPS" is enabled
+* (Pinned Frames) Dragging the mover while viewing the inactive mode's settings no longer silently saves the new position to the active mode's profile
+* (Pinned Frames) The Enable, Lock Position, and Show Label checkboxes no longer mutate the active mode's container when toggled from the inactive mode's settings
+* (Pinned Frames) Fix the second pinned-frames tab being unselectable when the two sets had different Frame Types — the tab now sticks across the page rebuild
+* (Pinned Frames) Boss-mode preview container now uses a single-frame placeholder (matching live behaviour when no boss is visible) instead of a four-frame-wide box
 * (Aura Designer) Sound alerts now pick up live edits without toggling the alert off and on
 
 ### 12.0.5 Compatibility

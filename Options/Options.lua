@@ -1879,8 +1879,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             end
         end
         
-        -- Current active tab
-        local activeHighlightTab = 1
+        -- Current active tab (persist across page refreshes so switching tabs
+        -- between sets with different frameTypes — which calls RefreshCurrentPage —
+        -- doesn't snap back to tab 1)
+        pagePinnedFrames.persistedTab = pagePinnedFrames.persistedTab or 1
+        local activeHighlightTab = pagePinnedFrames.persistedTab
         local tabButtons = {}
         local controlsToRefresh = {}
         
@@ -1942,6 +1945,7 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
                 local oldSet = GetCurrentSet()
                 local oldType = oldSet and oldSet.frameType
                 activeHighlightTab = i
+                pagePinnedFrames.persistedTab = i
                 local newSet = GetCurrentSet()
                 local newType = newSet and newSet.frameType
                 RefreshTabs()
@@ -2433,6 +2437,8 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
             if DF.PinnedFrames then
                 DF.PinnedFrames:ApplyLayoutSettings(activeHighlightTab)
                 DF.PinnedFrames:ResizeContainer(activeHighlightTab)
+                -- If a preview container is active for the edited mode, keep it in sync
+                DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
             end
         end
         
@@ -2457,14 +2463,36 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         local settingsGroup = GUI:CreateSettingsGroup(self.child, 280)
         settingsGroup:AddWidget(GUI:CreateHeader(self.child, L["Settings"]), 40)
         
+        -- SetEnabled / SetLocked / SetShowLabel internally use GetSetDB → IsInRaid(),
+        -- so calling them while editing the inactive mode would mutate the active
+        -- mode's state. Only call them when the selected mode matches the live mode;
+        -- otherwise the DB write from the checkbox itself is enough and the preview
+        -- reflects the change.
+        local function IsEditingActiveMode()
+            local actualMode = IsInRaid() and "raid" or "party"
+            return GUI.SelectedMode == actualMode
+        end
+
         settingsGroup:AddWidget(CreateRefreshableCheckbox(self.child, L["Enable"], "enabled", function()
-            if DF.PinnedFrames then DF.PinnedFrames:SetEnabled(activeHighlightTab, GetCurrentSet().enabled) end
+            if not DF.PinnedFrames then return end
+            if IsEditingActiveMode() then
+                DF.PinnedFrames:SetEnabled(activeHighlightTab, GetCurrentSet().enabled)
+            end
+            DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
         end), 28)
         settingsGroup:AddWidget(CreateRefreshableCheckbox(self.child, L["Lock Position"], "locked", function()
-            if DF.PinnedFrames then DF.PinnedFrames:SetLocked(activeHighlightTab, GetCurrentSet().locked) end
+            if not DF.PinnedFrames then return end
+            if IsEditingActiveMode() then
+                DF.PinnedFrames:SetLocked(activeHighlightTab, GetCurrentSet().locked)
+            end
+            DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
         end), 28)
         settingsGroup:AddWidget(CreateRefreshableCheckbox(self.child, L["Show Label"], "showLabel", function()
-            if DF.PinnedFrames then DF.PinnedFrames:SetShowLabel(activeHighlightTab, GetCurrentSet().showLabel) end
+            if not DF.PinnedFrames then return end
+            if IsEditingActiveMode() then
+                DF.PinnedFrames:SetShowLabel(activeHighlightTab, GetCurrentSet().showLabel)
+            end
+            DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
         end), 28)
 
         -- Reset Position button
@@ -2478,18 +2506,24 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         resetPosText:SetText(L["Reset Position"])
         resetPosBtn:SetScript("OnClick", function()
             local set = GetCurrentSet()
-            if set and DF.PinnedFrames then
+            if not set or not DF.PinnedFrames then return end
+
+            -- Reset position in the edited (selected) mode's DB
+            set.position = { point = "CENTER", x = 0, y = 0 }
+
+            -- Apply to the real container only if editing the actual mode
+            local actualMode = IsInRaid() and "raid" or "party"
+            if GUI.SelectedMode == actualMode then
                 local container = DF.PinnedFrames.containers[activeHighlightTab]
                 if container then
-                    -- Reset to screen center using CENTER anchor, then let layout convert
                     container:ClearAllPoints()
                     container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-                    -- Save with the current growth anchor using the converted position
-                    set.position = { point = "CENTER", x = 0, y = 0 }
-                    -- Now apply layout which will convert CENTER to the growth anchor
                     DF.PinnedFrames:ApplyLayoutSettings(activeHighlightTab)
                 end
             end
+
+            -- Keep the preview in sync if one is active for the edited mode
+            DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
         end)
         resetPosBtn:SetScript("OnEnter", function(self)
             self:SetBackdropColor(0.25, 0.25, 0.25, 0.9)
@@ -2521,7 +2555,11 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         nameInput:SetScript("OnEditFocusLost", function(s)
             GetCurrentSet().name = s:GetText()
             RefreshTabs()
-            if DF.PinnedFrames then DF.PinnedFrames:UpdateLabel(activeHighlightTab) end
+            if DF.PinnedFrames then
+                DF.PinnedFrames:UpdateLabel(activeHighlightTab)
+                -- Refresh preview label text too if a preview is active
+                DF.PinnedFrames:UpdatePreviewSet(activeHighlightTab)
+            end
         end)
         nameInputContainer.Refresh = function() nameInput:SetText(GetCurrentSet().name or "") end
         table.insert(controlsToRefresh, nameInputContainer)
@@ -2680,8 +2718,21 @@ function DF:SetupGUIPages(GUI, CreateCategory, CreateSubTab, BuildPage)
         end -- not IsCurrentBossMode
 
         RefreshControls()
+
+        -- Show preview containers if editing a non-active mode
+        -- (e.g. raid settings while actually in a party): lets the user
+        -- position/scale the pinned frames for that mode without being in it.
+        if DF.PinnedFrames then
+            DF.PinnedFrames:ShowPreview(GUI.SelectedMode)
+        end
     end)
-    
+
+    pagePinnedFrames:SetScript("OnHide", function()
+        if DF.PinnedFrames then
+            DF.PinnedFrames:HidePreview()
+        end
+    end)
+
     -- General > Sorting
     local pageSorting = CreateSubTab("general", "general_sorting", L["Sorting"])
     BuildPage(pageSorting, function(self, db, Add, AddSpace, AddSyncPoint)
