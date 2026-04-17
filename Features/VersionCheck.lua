@@ -155,8 +155,20 @@ function VC:Init()
 
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("CHAT_MSG_ADDON")
-    frame:SetScript("OnEvent", function(_, _, prefix, message, channel, sender)
-        VC:OnAddonMessage(prefix, message, channel, sender)
+    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    frame:RegisterEvent("GUILD_ROSTER_UPDATE")
+    frame:SetScript("OnEvent", function(_, event, prefix, message, channel, sender)
+        if event == "CHAT_MSG_ADDON" then
+            VC:OnAddonMessage(prefix, message, channel, sender)
+        elseif event == "GROUP_ROSTER_UPDATE" then
+            local key = VC:GroupCompositionKey()
+            if key ~= VC.lastGroupKey then
+                VC.lastGroupKey = key
+                VC:ScheduleRebroadcast(3)
+            end
+        elseif event == "GUILD_ROSTER_UPDATE" then
+            VC:ScheduleRebroadcast(5)
+        end
     end)
     self.eventFrame = frame
 
@@ -242,4 +254,36 @@ end
 function VC:TestNag(version)
     self.hasNagged = false  -- allow re-test in same session
     VC.handlers["V"](self, "TestDummy-TestRealm", version or "999.0.0", "PARTY")
+end
+
+-- ============================================================
+-- ROSTER CHANGE TRIGGERS (debounced)
+-- ============================================================
+
+VC.pendingRebroadcast = false
+VC.lastGroupKey = nil
+
+-- Returns a compact string describing current group composition. Used to
+-- skip GROUP_ROSTER_UPDATE when only unit data changed (not membership).
+function VC:GroupCompositionKey()
+    if not IsInGroup() then return "solo" end
+    local parts = {}
+    local n = GetNumGroupMembers()
+    local unit = IsInRaid() and "raid" or "party"
+    for i = 1, n do
+        local token = (unit == "party" and i == n) and "player" or (unit .. i)
+        local name, realm = UnitName(token)
+        if name then parts[#parts+1] = name .. "-" .. (realm or "") end
+    end
+    table.sort(parts)
+    return table.concat(parts, ",")
+end
+
+function VC:ScheduleRebroadcast(delay)
+    if self.pendingRebroadcast then return end
+    self.pendingRebroadcast = true
+    C_Timer.After(delay, function()
+        self.pendingRebroadcast = false
+        self:BroadcastHello()
+    end)
 end
