@@ -172,6 +172,8 @@ function VC:Init()
     end)
     self.eventFrame = frame
 
+    self.lastGroupKey = self:GroupCompositionKey()
+
     C_Timer.After(3, function()
         VC:BroadcastHello()
     end)
@@ -272,8 +274,8 @@ function VC:GroupCompositionKey()
     local unit = IsInRaid() and "raid" or "party"
     for i = 1, n do
         local token = (unit == "party" and i == n) and "player" or (unit .. i)
-        local name, realm = UnitName(token)
-        if name then parts[#parts+1] = name .. "-" .. (realm or "") end
+        local fullName = GetUnitName(token, true)
+        if fullName then parts[#parts+1] = fullName end
     end
     table.sort(parts)
     return table.concat(parts, ",")
