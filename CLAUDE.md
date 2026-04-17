@@ -67,6 +67,18 @@ Section headers:
 
 Use `DF:Debug()` / `DF:DebugWarn()` / `DF:DebugError()` — **never raw `print()`**. See `.claude/docs/debug-console.md` for full API reference.
 
+### Global name vs. `DF` local alias
+
+**Inside addon Lua files:** use `DF` (the local addon table from `local addonName, DF = ...`).
+
+**From chat / `/dump` / `/run` / macros / external callers:** use the full global `DandersFrames` (registered via `_G[addonName] = DF` in Core.lua). `DF` is a file-local, not a global — `/dump DF.foo` always errors with "attempt to index global 'DF' (a nil value)".
+
+When giving users in-game verification commands, always write `DandersFrames.X` not `DF.X`:
+```
+/dump DandersFrames.VersionCheck:RunComparatorTests()   -- works
+/dump DF.VersionCheck:RunComparatorTests()              -- fails (DF is nil globally)
+```
+
 ## Essential Patterns
 
 ### Settings Access
