@@ -159,12 +159,57 @@ function VC:Init()
         VC:OnAddonMessage(prefix, message, channel, sender)
     end)
     self.eventFrame = frame
+
+    C_Timer.After(3, function()
+        VC:BroadcastHello()
+    end)
 end
 
--- Temporary: logs everything. Removed in Task 4/5 when real handlers are added.
-VC.handlers["H"] = function(self, sender, _, channel)
-    if DF.Debug then DF:Debug("VC", "recv H from " .. sender .. " on " .. channel) end
+-- ============================================================
+-- BROADCAST HELPERS
+-- ============================================================
+
+-- Returns a list of channel strings ({"GUILD", "RAID"}, etc.) currently
+-- available to the player. Empty when solo + no guild.
+function VC:GetAvailableChannels()
+    local out = {}
+    if IsInGuild() then out[#out+1] = "GUILD" end
+    if IsInRaid() then
+        out[#out+1] = "RAID"
+    elseif IsInGroup() then
+        out[#out+1] = "PARTY"
+    end
+    return out
 end
+
+function VC:SendMessage(msgType, payload, channel)
+    local body = payload and (msgType .. "\t" .. payload) or msgType
+    C_ChatInfo.SendAddonMessage(self.PREFIX, body, channel)
+end
+
+-- Broadcasts H on every available channel.
+function VC:BroadcastHello()
+    for _, ch in ipairs(self:GetAvailableChannels()) do
+        self:SendMessage("H", nil, ch)
+    end
+end
+
+-- Sends V (our version) on one specific channel, unless we're on pre-release.
+function VC:SendVersion(channel)
+    if self:IsPreRelease(DF.VERSION) then return end  -- pre-release clients don't advertise
+    self:SendMessage("V", tostring(DF.VERSION), channel)
+end
+
+-- Receive H: respond with our version on the same channel type, with small jitter.
+VC.handlers["H"] = function(self, sender, _, channel)
+    local delay = 1 + math.random() * 2  -- 1-3s jitter to avoid response storms
+    C_Timer.After(delay, function()
+        self:SendVersion(channel)
+    end)
+end
+
+-- V handler is replaced in Task 5. For now, keep a stub that records the message:
 VC.handlers["V"] = function(self, sender, payload, channel)
-    if DF.Debug then DF:Debug("VC", "recv V from " .. sender .. " on " .. channel .. " ver=" .. tostring(payload)) end
+    if not payload or payload == "" then return end
+    self.seenUsers[sender] = { version = payload, lastSeen = GetTime() }
 end
