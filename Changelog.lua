@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-17T12:33:33Z"
+DF.BUILD_DATE = "2026-04-17T22:49:45Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -9,6 +9,7 @@ DF.CHANGELOG_TEXT = [===[
 ### New Features
 
 * **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
+* **Update notification** — if another DandersFrames user in your group or guild is running a newer stable version, you'll see a one-time chat message on login. Can be disabled in General > Settings > Notifications.
 
 ### Improvements
 
@@ -18,11 +19,25 @@ DF.CHANGELOG_TEXT = [===[
 ### Bug Fixes
 
 * Fix DPS jumping order mid-dungeon when "Separate Melee & Ranged DPS" is enabled
+* (Click-Casting) Fix "In Combat Only" and "Out of Combat Only" conditions being ignored for Target Unit and Open Menu bindings
+* (Aura Designer) Fix beacon indicators being invisible if saved at an icon size smaller than the slider minimum
+* (Aura Designer) Fix indicators inside Layout Groups not being draggable
+* (Aura Designer) Spec-specific spells (e.g. Earthshield) now appear correctly after switching specs without needing a reload
+* (Auto Profiles) Fix brief flicker to party settings when exiting the auto-profile editor before the raid override re-applies
+* (Status Text) Fix "Offline" / "AFK" text lingering on a frame after the player comes back online
+* (Status Text) Add "DND" status text display (previously only AFK was shown)
+* (Frames) Fix the Resurrected buff icon staying on a player's frame after they've come back to life
+* (Frames) Fix the summon-pending icon staying on your frame after leaving the group
+* (Auras) Raid frame aura icon borders are now pixel-perfect (were slightly blurry when raid frame scale differed from UIParent)
+* (Boss Debuffs) Fix boss debuff icons overlapping instead of spacing correctly when tooltips are hidden and growth direction is left/up
+* (Defensives) Fix defensive cooldown icons swapping slot positions / flickering when multiple cooldowns are active
+* (Defensives) Fix the second defensive cooldown icon not fading when the player is out of range or out of phase
 * (Pinned Frames) Dragging the mover while viewing the inactive mode's settings no longer silently saves the new position to the active mode's profile
 * (Pinned Frames) The Enable, Lock Position, and Show Label checkboxes no longer mutate the active mode's container when toggled from the inactive mode's settings
 * (Pinned Frames) Fix the second pinned-frames tab being unselectable when the two sets had different Frame Types — the tab now sticks across the page rebuild
 * (Pinned Frames) Boss-mode preview container now uses a single-frame placeholder (matching live behaviour when no boss is visible) instead of a four-frame-wide box
 * (Aura Designer) Sound alerts now pick up live edits without toggling the alert off and on
+* (Test Mode) Correct Monkbrew test unit from Mistweaver (healer) to Brewmaster (tank)
 
 ### 12.0.5 Compatibility
 
