@@ -1699,6 +1699,7 @@ end
 -- Expose on DF so the dev slash command and tests can call them directly
 DF.ScanUnitFull   = function(self, unit) ScanUnitFull(unit) end
 DF.ApplyAuraDelta = function(self, unit, updateInfo) return ApplyAuraDelta(unit, updateInfo) end
+DF.TriggerAuraUpdateForUnit = function(self, unit) TriggerAuraUpdateForUnit(unit) end
 
 -- ============================================================
 -- DEFENSIVE CACHE POPULATOR (mode-independent)

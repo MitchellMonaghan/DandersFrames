@@ -1173,6 +1173,18 @@ function DF:CommitAllClickCastRegistrations()
             end
         end
     end
+
+    -- Pinned boss frames
+    if DF.PinnedFrames and DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    commitFrame(frames[i])
+                end
+            end
+        end
+    end
 end
 
 -- Legacy functions — now just call CommitAllClickCastRegistrations

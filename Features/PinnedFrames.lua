@@ -503,13 +503,17 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
                         end
                     end
                 end
-                -- Update visuals on this frame
-                if self:IsVisible() then
-                    if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(self) end
-                    if DF.UpdateDefensiveBar then DF:UpdateDefensiveBar(self) end
+                -- Trigger the full filtered aura update pipeline (same path as party/raid frames)
+                if DF.TriggerAuraUpdateForUnit then
+                    DF:TriggerAuraUpdateForUnit(unit)
                 end
             end
         end)
+
+        -- Register with click-casting system
+        if ClickCastFrames then
+            ClickCastFrames[frame] = true
+        end
 
         frame:Hide()
         frames[i] = frame
