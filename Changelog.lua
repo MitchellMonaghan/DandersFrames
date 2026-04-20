@@ -1,5 +1,5 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-19T21:58:38Z"
+DF.BUILD_DATE = "2026-04-20T14:04:25Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
@@ -8,6 +8,7 @@ DF.CHANGELOG_TEXT = [===[
 
 ### New Features
 
+* **OnFramesSorted API callback** — External addons can subscribe to `DandersFrames.RegisterCallback(self, "OnFramesSorted", ...)` to be notified whenever party, raid, or arena frames are reshuffled. Fires once per sortType per tick (coalesced) in both combat and non-combat — covers settings changes, roster updates, role swaps, spec detection, and Blizzard's internal ASSIGNEDROLE re-sorts. Callback receives `(event, sortType)` where sortType is `"party"`, `"raid"`, or `"arena"`. Safe to call `DandersFrames_GetFrameForUnit(unit)` from inside the handler.
 * **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
 * **Update notification** — if another DandersFrames user in your group or guild is running a newer stable version, you'll see a one-time chat message on login. Can be disabled in General > Settings > Notifications.
 
