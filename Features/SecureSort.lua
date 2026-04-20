@@ -160,6 +160,14 @@ function SecureSort:CreateHandler()
     
     -- Attach debug callback so secure code can output messages
     handler.DebugPrint = SecureDebugCallback
+
+    -- Fired from the sort snippets via CallMethod after sorting+positioning completes.
+    -- Routes to the external API CallbackHandler registry (OnFramesSorted event).
+    handler.NotifySortComplete = function(_, sortType)
+        if DF and DF.FireAPICallback then
+            DF:FireAPICallback("OnFramesSorted", sortType)
+        end
+    end
     
     -- Initialize the secure environment with our base tables
     -- This code runs ONCE to set up the environment
@@ -819,9 +827,12 @@ function SecureSort:CreateHandler()
             if posSnippet then
                 self:Run(posSnippet)
             end
+
+            -- Notify external API subscribers that the sort completed.
+            self:CallMethod("NotifySortComplete", "party")
         ]]
     ]=])
-    
+
     -- ============================================================
     -- RAID SORTING SNIPPET (sortRaidFrames)
     -- ============================================================
@@ -1178,9 +1189,12 @@ function SecureSort:CreateHandler()
             else
                 self:CallMethod("DebugPrint", "RAID SORT: No position snippet found!")
             end
+
+            -- Notify external API subscribers that the sort completed.
+            self:CallMethod("NotifySortComplete", "raid")
         ]]
     ]=])
-    
+
     -- Wrap handler's OnAttributeChanged to trigger sorting
     -- When "state-sortTrigger" changes, run the sort
     -- NOTE: Throttling is done on the Lua side in TriggerSecureRaidSort/TriggerSecureSort
