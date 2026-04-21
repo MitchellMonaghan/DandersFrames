@@ -363,9 +363,11 @@ function PinnedFrames:OnBossFramesChanged()
             self:UpdateBossFrameMapEntries(setIndex)
             self:RefreshChildFrames(setIndex)
 
-            -- Container resize modifies secure frame size — defer if in combat
+            -- Recompact positioning + container resize need out-of-combat
+            -- (both call SetPoint/SetSize on secure frames)
             C_Timer.After(0.05, function()
                 if not InCombatLockdown() then
+                    self:ApplyBossLayout(setIndex)
                     self:ResizeContainer(setIndex)
                 end
             end)
@@ -525,6 +527,18 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
                     if DF.FullFrameRefresh then DF:FullFrameRefresh(self) end
                 end
             end)
+        end)
+
+        -- OnHide hook: clear Aura Designer state so the next OnShow reinitializes
+        -- from scratch. Without this, when a boss slot is reassigned to a new NPC,
+        -- the stale dfAD_* pools cause AD indicators to not apply on first render.
+        frame:HookScript("OnHide", function(self)
+            self.dfAD = nil
+            self.dfAD_icons = nil
+            self.dfAD_squares = nil
+            self.dfAD_bars = nil
+            self.dfAD_configVersion = nil
+            self.dfAD_activeInstanceIDs = nil
         end)
 
         -- Register with click-casting system
@@ -1106,12 +1120,36 @@ function PinnedFrames:ApplyBossLayout(setIndex)
         pos.point = anchor
     end
 
+    -- Build list of currently visible/friendly boss indices so we can assign
+    -- grid positions by visible index (compacted) rather than by bossIndex.
+    -- LIMITATION: During combat, SetPoint on SecureUnitButtonTemplate frames
+    -- is restricted, so frames that transition visible mid-combat will stay
+    -- at their previous position until the next out-of-combat recomputation.
+    local visibleOrder = {}
+    for i = 1, 8 do
+        local unit = "boss" .. i
+        if UnitExists(unit) and UnitIsFriend("player", unit) then
+            table.insert(visibleOrder, i)
+        end
+    end
+
+    -- Build reverse lookup: bossIndex -> visibleIndex (nil if hidden)
+    local visibleIndexByBoss = {}
+    for vi, bi in ipairs(visibleOrder) do
+        visibleIndexByBoss[bi] = vi
+    end
+
     -- Layout the 8 boss frames in a grid
     for i = 1, 8 do
         local f = frames[i]
         if f then
-            local row = math.floor((i - 1) / unitsPerRow)
-            local col = (i - 1) % unitsPerRow
+            local visibleIndex = visibleIndexByBoss[i]
+            -- Hidden frames get position 0 so they don't affect container size
+            -- or cause weird layout artifacts if their visibility flips later
+            local slotIndex = visibleIndex and (visibleIndex - 1) or 0
+
+            local row = math.floor(slotIndex / unitsPerRow)
+            local col = slotIndex % unitsPerRow
 
             local xOff, yOff
             if horizontal then
@@ -1961,6 +1999,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
                 PinnedFrames:SetEnabled(setIndex, enabled)
             end
             PinnedFrames.pendingVisibilityUpdate = nil
+        end
+
+        -- Recompact boss frames — positioning can only happen out of combat
+        if PinnedFrames.initialized then
+            for setIndex = 1, 2 do
+                local set = GetSetDB(setIndex)
+                if set and set.enabled and IsBossSet(set) then
+                    PinnedFrames:ApplyBossLayout(setIndex)
+                    PinnedFrames:ResizeContainer(setIndex)
+                end
+            end
         end
         return
     end
