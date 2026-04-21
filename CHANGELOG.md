@@ -1,5 +1,11 @@
 # DandersFrames Changelog
 
+## [4.3.3] - 2026-04-21
+
+### Internal
+
+* Opt-in debug instrumentation for raid group layout params investigation. Enable with `/run DandersFrames.debugLeakTest = true` to log every `PositionRaidFrameToGroupSlot` call and every rebuild of `SecureSort.raidGroupLayoutParams`, to verify whether test-mode state can leak into the live positioning path.
+
 ## [4.3.2] - 2026-04-21
 
 ### New Features
