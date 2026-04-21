@@ -10,7 +10,7 @@
 
 ### New Features
 
-* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, and Aura Designer indicators work the same as player-mode pinned sets.
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, Aura Designer indicators, and out-of-range fading work the same as player-mode pinned sets. Visible frames compact to the set's anchor so there are no empty slots when only some boss units are friendly.
 * **Update notification** — if another DandersFrames user in your group or guild is running a newer stable version, you'll see a one-time chat message on login. Can be disabled in General > Settings > Notifications.
 
 ### Improvements
