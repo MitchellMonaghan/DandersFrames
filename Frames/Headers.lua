@@ -3421,7 +3421,9 @@ end
 -- Update raid position attributes - SECURE ONLY (no Lua fallback for debugging)
 function DF:UpdateRaidPositionAttributes()
     if not DF.raidPositionHandler then
-        print("|cFFFF0000[DF Headers]|r No secure position handler!")
+        -- Handler is only created when raid frames are enabled (see CreateRaidHeaders
+        -- gated on db.raidEnabled). If raid is disabled, this is a no-op, not an error.
+        DF:Debug("HEADERS", "UpdateRaidPositionAttributes: no raid position handler (raid frames disabled?)")
         return
     end
     
@@ -5434,9 +5436,9 @@ function DF:PositionRaidHeaders()
     end
     
     local db = DF:GetRaidDB()
-    
+
     if not DF.raidContainer then return end
-    
+
     -- Combined header mode (flat layout) - uses FlatRaidFrames
     if not db.raidUseGroups then
         if DF.FlatRaidFrames then
@@ -5444,7 +5446,7 @@ function DF:PositionRaidHeaders()
         end
         return
     end
-    
+
     -- Separated headers mode - delegate to secure handler
     -- This updates attributes and triggers secure repositioning
     -- Works both in and out of combat!
