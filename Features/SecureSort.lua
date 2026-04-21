@@ -3569,9 +3569,25 @@ function SecureSort:UpdateRaidGroupLayoutParams()
     local db = DF:GetRaidDB()
     if not db then
         DebugPrint("WARNING: No raid db, using defaults for group layout")
+        -- [LEAK-TEST] Early-return case: shared table NOT replaced, stale fields survive.
+        if DF.debugLeakTest then
+            print(string.format(
+                "|cffffa500[DF LEAK-TEST]|r UpdateRaidGroupLayoutParams EARLY RETURN (no db) -- table NOT replaced. Existing testMode=%s",
+                tostring(self.raidGroupLayoutParams and self.raidGroupLayoutParams.testMode)
+            ))
+        end
         return
     end
-    
+
+    -- [LEAK-TEST] About to replace shared table. Capture existing testMode so we can prove
+    -- whether fields survive the assignment at the next line.
+    if DF.debugLeakTest then
+        print(string.format(
+            "|cffffa500[DF LEAK-TEST]|r UpdateRaidGroupLayoutParams REPLACING table  old.testMode=%s",
+            tostring(self.raidGroupLayoutParams and self.raidGroupLayoutParams.testMode)
+        ))
+    end
+
     self.raidGroupLayoutParams = {
         frameWidth = db.frameWidth or 80,
         frameHeight = db.frameHeight or 35,
@@ -3830,6 +3846,23 @@ end
 -- @param container: the container frame
 -- @return true if frame was moved, false if already in position
 function SecureSort:PositionRaidFrameToGroupSlot(frame, groupNum, posInGroup, playersInGroup, activeGroupList, layoutParams, container)
+    -- [LEAK-TEST] Instrumentation: per-call visibility into which frames use this function
+    -- and whether the testMode flag leaks onto the shared table. Toggle:
+    --   /run DandersFrames.debugLeakTest = true
+    if DF.debugLeakTest then
+        local frameName = (frame and frame.GetName and frame:GetName()) or "?"
+        local containerName = (container and container.GetName and container:GetName()) or "?"
+        local isTestFrame = frame and frame.dfIsTestFrame and true or false
+        print(string.format(
+            "|cffffa500[DF LEAK-TEST]|r PositionRaidFrameToGroupSlot frame=%s container=%s dfIsTestFrame=%s lp.testMode=%s DF.raidTestMode=%s",
+            tostring(frameName),
+            tostring(containerName),
+            tostring(isTestFrame),
+            tostring(layoutParams and layoutParams.testMode),
+            tostring(DF.raidTestMode)
+        ))
+    end
+
     if not frame or not container then
         return false
     end
