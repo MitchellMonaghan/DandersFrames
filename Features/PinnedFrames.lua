@@ -516,9 +516,15 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
             end
         end)
 
-        -- OnShow hook: when state driver makes this frame visible, ensure
-        -- full initialization (Aura Designer state, icon pools, etc.)
+        -- OnShow hook: when state driver makes this frame visible, register in
+        -- unitFrameMap synchronously so UNIT_HEALTH/UNIT_AURA/etc. events route
+        -- here immediately (otherwise the health bar won't update until
+        -- OnBossFramesChanged's deferred registration fires).
         frame:HookScript("OnShow", function(self)
+            if DF.unitFrameMap and self.unit then
+                DF.unitFrameMap[self.unit] = self
+                self.dfEventsEnabled = true
+            end
             C_Timer.After(0.1, function()
                 if self and self.unit and self:IsVisible() then
                     -- Populate aura cache for this unit if not yet done
@@ -532,7 +538,12 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
         -- OnHide hook: clear Aura Designer state so the next OnShow reinitializes
         -- from scratch. Without this, when a boss slot is reassigned to a new NPC,
         -- the stale dfAD_* pools cause AD indicators to not apply on first render.
+        -- Also remove from unitFrameMap so events don't route to a hidden frame.
         frame:HookScript("OnHide", function(self)
+            if DF.unitFrameMap and self.unit and DF.unitFrameMap[self.unit] == self then
+                DF.unitFrameMap[self.unit] = nil
+            end
+            self.dfEventsEnabled = false
             self.dfAD = nil
             self.dfAD_icons = nil
             self.dfAD_squares = nil
