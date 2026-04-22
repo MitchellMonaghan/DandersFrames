@@ -493,26 +493,77 @@ function PinnedFrames:CreateBossFrames(setIndex, container)
         -- State driver: show only when bossN exists and is friendly (healable)
         RegisterStateDriver(frame, "visibility", "[@boss" .. i .. ",help]show;hide")
 
-        -- Register UNIT_AURA directly so boss frames populate the aura cache
-        frame:RegisterUnitEvent("UNIT_AURA", "boss" .. i)
+        -- Self-sufficient event system (ElvUI/oUF-style).
+        -- Register all unit-specific events directly on the frame with
+        -- `RegisterUnitEvent` so they're filtered at the C level — the handler
+        -- only fires when the event is for this frame's boss unit. No dispatcher
+        -- lookup needed. Each event routes to the appropriate DF update
+        -- function on `self`. This avoids "dispatcher forgot boss frames"
+        -- bugs because each frame listens for what it needs directly.
+        local bossUnit = "boss" .. i
+        frame:RegisterUnitEvent("UNIT_HEALTH", bossUnit)
+        frame:RegisterUnitEvent("UNIT_MAXHEALTH", bossUnit)
+        frame:RegisterUnitEvent("UNIT_MAX_HEALTH_MODIFIERS_CHANGED", bossUnit)
+        frame:RegisterUnitEvent("UNIT_POWER_UPDATE", bossUnit)
+        frame:RegisterUnitEvent("UNIT_MAXPOWER", bossUnit)
+        frame:RegisterUnitEvent("UNIT_DISPLAYPOWER", bossUnit)
+        frame:RegisterUnitEvent("UNIT_AURA", bossUnit)
+        frame:RegisterUnitEvent("UNIT_NAME_UPDATE", bossUnit)
+        frame:RegisterUnitEvent("UNIT_FACTION", bossUnit)
+        frame:RegisterUnitEvent("UNIT_ABSORB_AMOUNT_CHANGED", bossUnit)
+        frame:RegisterUnitEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", bossUnit)
+        frame:RegisterUnitEvent("UNIT_HEAL_PREDICTION", bossUnit)
+
         frame:SetScript("OnEvent", function(self, event, unit, updateInfo)
-            if event == "UNIT_AURA" and unit then
+            -- Skip work if hidden (state driver keeps us hidden when bossN
+            -- doesn't exist / isn't friendly, so events shouldn't really
+            -- fire then, but cheap to guard).
+            if not self:IsShown() then return end
+
+            if event == "UNIT_HEALTH"
+                    or event == "UNIT_MAXHEALTH"
+                    or event == "UNIT_MAX_HEALTH_MODIFIERS_CHANGED" then
+                if DF.UpdateHealthFast then DF:UpdateHealthFast(self) end
+
+            elseif event == "UNIT_POWER_UPDATE"
+                    or event == "UNIT_MAXPOWER"
+                    or event == "UNIT_DISPLAYPOWER" then
+                if DF.UpdatePower then DF:UpdatePower(self) end
+
+            elseif event == "UNIT_AURA" then
                 -- Populate aura cache (same logic as directModeSubscriber)
                 local cache = DF.AuraCache and DF.AuraCache[unit]
-                local needsFull = not updateInfo or updateInfo.isFullUpdate or not cache or not cache.hasFullScan
+                local needsFull = not updateInfo or updateInfo.isFullUpdate
+                    or not cache or not cache.hasFullScan
                 if needsFull then
                     if DF.ScanUnitFull then DF:ScanUnitFull(unit) end
                 else
-                    if DF.ApplyAuraDelta then
-                        if not DF:ApplyAuraDelta(unit, updateInfo) then
-                            if DF.ScanUnitFull then DF:ScanUnitFull(unit) end
-                        end
+                    if DF.ApplyAuraDelta and not DF:ApplyAuraDelta(unit, updateInfo) then
+                        if DF.ScanUnitFull then DF:ScanUnitFull(unit) end
                     end
                 end
-                -- Trigger the full filtered aura update pipeline (same path as party/raid frames)
+                -- Trigger the full filtered aura update pipeline (same path as
+                -- party/raid frames — applies filters, limits, dedup, etc.)
                 if DF.TriggerAuraUpdateForUnit then
                     DF:TriggerAuraUpdateForUnit(unit)
                 end
+
+            elseif event == "UNIT_NAME_UPDATE" then
+                if DF.UpdateName then DF:UpdateName(self) end
+
+            elseif event == "UNIT_FACTION" then
+                -- Faction change can flip friendly→hostile — full refresh
+                -- (state driver will then hide the frame if no longer friendly)
+                if DF.FullFrameRefresh then DF:FullFrameRefresh(self) end
+
+            elseif event == "UNIT_ABSORB_AMOUNT_CHANGED" then
+                if DF.UpdateAbsorb then DF:UpdateAbsorb(self) end
+
+            elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
+                if DF.UpdateHealAbsorb then DF:UpdateHealAbsorb(self) end
+
+            elseif event == "UNIT_HEAL_PREDICTION" then
+                if DF.UpdateHealPrediction then DF:UpdateHealPrediction(self) end
             end
         end)
 
