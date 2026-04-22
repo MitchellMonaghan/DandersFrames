@@ -424,20 +424,22 @@ SetupContainerOverlay = function(frame, unit, db)
     if not IS_CONTAINER_SUPPORTED then return end
     if not db.bossDebuffsContainerOverlayEnabled then return end
 
-    -- Create or reuse the wrapper frame
-    -- Parent to contentOverlay so the overlay renders above the health bar
-    local parent = frame.contentOverlay or frame
+    -- Parent to the unit frame and match dfDispelOverlay's level (frame+6) so the
+    -- native dispel overlay renders at the same depth as DF's own dispel overlay
+    -- instead of above the frame border / text / icons.
     local wrapper = frame.containerOverlayFrame
     if not wrapper then
-        wrapper = CreateFrame("Frame", nil, parent)
+        wrapper = CreateFrame("Frame", nil, frame)
         wrapper:EnableMouse(false)
         if wrapper.SetMouseClickEnabled then wrapper:SetMouseClickEnabled(false) end
         frame.containerOverlayFrame = wrapper
     end
 
-    wrapper:SetParent(parent)
+    wrapper:SetParent(frame)
     wrapper:ClearAllPoints()
-    wrapper:SetAllPoints(parent)
+    wrapper:SetAllPoints(frame)
+    wrapper:SetFrameLevel(frame:GetFrameLevel() + 6)
+    wrapper:SetAlpha(db.bossDebuffsContainerOverlayAlpha or 1.0)
     wrapper:Show()
 
     -- Determine group type from unit token
@@ -455,9 +457,15 @@ SetupContainerOverlay = function(frame, unit, db)
     wrapper:SetAttribute("max-dispel-debuffs", 1)
     wrapper:SetAttribute("ignore-buffs", true)
     wrapper:SetAttribute("ignore-debuffs", true)
+    wrapper:SetAttribute("ignore-dispel-debuffs", true)
     wrapper:SetAttribute("show-dispel-indicator-overlay", true)
-    wrapper:SetAttribute("suppress-dispel-border-icons", not db.bossDebuffsContainerOverlayShowIcons)
-    wrapper:SetAttribute("dispel-indicator-option", db.bossDebuffsContainerOverlayDispelMode)
+    wrapper:SetAttribute("suppress-dispel-border-icons", true)
+    -- dispel-indicator-option drives both the TOPRIGHT dispel icons and the
+    -- gradient: Blizzard only calls SetDispelOverlayAura from inside
+    -- SetDispelDebuff, which always shows the icon first, so there's no way to
+    -- hide the icons without also hiding the gradient.
+    -- 1 = dispellable by me. 2 = all dispellable.
+    wrapper:SetAttribute("dispel-indicator-option", db.bossDebuffsContainerOverlayDispelMode or 2)
     wrapper:SetAttribute("aura-organization-type", db.bossDebuffsContainerOverlayGradientDir)
     wrapper:SetAttribute("group-type", groupType)
     wrapper:SetAttribute("power-bar-used-height", 0)
@@ -521,9 +529,11 @@ function DF:UpdateContainerOverlaySettings(frame)
     end
 
     -- Update attributes for live changes
-    wrapper:SetAttribute("suppress-dispel-border-icons", not db.bossDebuffsContainerOverlayShowIcons)
-    wrapper:SetAttribute("dispel-indicator-option", db.bossDebuffsContainerOverlayDispelMode)
+    wrapper:SetAttribute("dispel-indicator-option", db.bossDebuffsContainerOverlayDispelMode or 2)
     wrapper:SetAttribute("aura-organization-type", db.bossDebuffsContainerOverlayGradientDir)
+
+    -- Alpha cascades to Blizzard's child overlay
+    wrapper:SetAlpha(db.bossDebuffsContainerOverlayAlpha or 1.0)
 
     -- Signal the container to re-read settings
     wrapper:SetAttribute("update-settings", true)

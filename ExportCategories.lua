@@ -417,7 +417,7 @@ DF.ExportCategories = {
         "bossDebuffsContainerOverlayEnabled",
         "bossDebuffsContainerOverlayDispelMode",
         "bossDebuffsContainerOverlayGradientDir",
-        "bossDebuffsContainerOverlayShowIcons",
+        "bossDebuffsContainerOverlayAlpha",
 
         -- Buff Filters
         "buffFilterCancelable",

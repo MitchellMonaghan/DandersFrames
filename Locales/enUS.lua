@@ -1183,7 +1183,6 @@ L["Show Buffs"] = true
 L["Show Cooldown Swipe"] = true
 L["Show Debuffs"] = true
 L["Show Dispel Icon"] = true
-L["Show Dispel Icons"] = true
 L["Show DPS"] = true
 L["Show Duration"] = true
 L["Show Duration Numbers"] = true

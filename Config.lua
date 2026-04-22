@@ -868,7 +868,7 @@ DF.PartyDefaults = {
     bossDebuffsContainerOverlayEnabled = false,
     bossDebuffsContainerOverlayDispelMode = 2,
     bossDebuffsContainerOverlayGradientDir = 0,
-    bossDebuffsContainerOverlayShowIcons = false,
+    bossDebuffsContainerOverlayAlpha = 1.0,
 
     -- Buff settings
     buffAlpha = 1,
@@ -2175,7 +2175,7 @@ DF.RaidDefaults = {
     bossDebuffsContainerOverlayEnabled = false,
     bossDebuffsContainerOverlayDispelMode = 2,
     bossDebuffsContainerOverlayGradientDir = 0,
-    bossDebuffsContainerOverlayShowIcons = false,
+    bossDebuffsContainerOverlayAlpha = 1.0,
 
     -- Buff settings
     buffAlpha = 1,
