@@ -7,6 +7,10 @@
 * (Private Aura Dispel Overlay) The overlay now renders at the same frame level as the regular Dispel Overlay (frame+6) instead of above the frame border, text, and icons
 * (Private Aura Dispel Overlay) Added an Alpha slider to dim the overlay (default 1.0, range 0.1–1.0)
 
+### Changes
+
+* (Private Aura Dispel Overlay) Removed the "Show Dispel Icons" toggle — Blizzard couples the TOPRIGHT icons to the gradient overlay (both run through the same `SetDispelDebuff` path), so the option was never actually toggleable. The icons now always show when the overlay is active.
+
 ### Bug Fixes
 
 * **Friendly Boss NPC Frames** — visible boss frames now compact to the set's anchor instead of leaving empty slots when some boss units are hostile or absent (e.g. if boss1 is hostile and boss2 is friendly, boss2 now appears in the first slot)
