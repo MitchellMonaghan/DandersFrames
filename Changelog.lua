@@ -1,16 +1,26 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-21T21:11:35Z"
+DF.BUILD_DATE = "2026-04-22T10:43:13Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
 ## [4.3.3] - 2026-04-21
 
+### Improvements
+
+* (Private Aura Dispel Overlay) The overlay now renders at the same frame level as the regular Dispel Overlay (frame+6) instead of above the frame border, text, and icons
+* (Private Aura Dispel Overlay) Added an Alpha slider to dim the overlay (default 1.0, range 0.1–1.0)
+
+### Changes
+
+* (Private Aura Dispel Overlay) Removed the "Show Dispel Icons" toggle — Blizzard couples the TOPRIGHT icons to the gradient overlay (both run through the same `SetDispelDebuff` path), so the option was never actually toggleable. The icons now always show when the overlay is active.
+
 ### Bug Fixes
 
 * **Friendly Boss NPC Frames** — visible boss frames now compact to the set's anchor instead of leaving empty slots when some boss units are hostile or absent (e.g. if boss1 is hostile and boss2 is friendly, boss2 now appears in the first slot)
 * **Friendly Boss NPC Frames** — Aura Designer indicators now apply correctly when a boss slot is reassigned to a new friendly NPC mid-encounter (previously buffs briefly showed in the standard buff row instead)
 * **Friendly Boss NPC Frames** — out-of-range fading now works on boss frames (boss units don't fire the roster range event, so range is now tracked via the polling loop)
+* **Friendly Boss NPC Frames** — health, power, name, absorb, heal prediction, and aura updates now apply reliably. Boss frames now register their own unit events directly (`UNIT_HEALTH`, `UNIT_POWER_UPDATE`, `UNIT_AURA`, `UNIT_NAME_UPDATE`, `UNIT_FACTION`, `UNIT_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_PREDICTION`, etc.) rather than depending on the roster event dispatcher, which was designed for stable party/raid units and kept missing the ephemeral boss unit tokens. This follows the same pattern ElvUI uses for its boss frames.
 
 ### Internal
 
