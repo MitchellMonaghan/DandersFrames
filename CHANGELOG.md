@@ -7,6 +7,7 @@
 * **Friendly Boss NPC Frames** — visible boss frames now compact to the set's anchor instead of leaving empty slots when some boss units are hostile or absent (e.g. if boss1 is hostile and boss2 is friendly, boss2 now appears in the first slot)
 * **Friendly Boss NPC Frames** — Aura Designer indicators now apply correctly when a boss slot is reassigned to a new friendly NPC mid-encounter (previously buffs briefly showed in the standard buff row instead)
 * **Friendly Boss NPC Frames** — out-of-range fading now works on boss frames (boss units don't fire the roster range event, so range is now tracked via the polling loop)
+* **Friendly Boss NPC Frames** — health bar now updates correctly on boss frames. Unit events (`UNIT_HEALTH`, `UNIT_AURA`, etc.) were not routing to boss frames because the event dispatcher's fallback lookup only searched player-mode pinned frames. Boss frames now register in the event lookup map synchronously when shown.
 
 ### Internal
 
