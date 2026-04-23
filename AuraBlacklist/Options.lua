@@ -112,7 +112,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
         -- Label text
         local text = cb:CreateFontString(nil, "OVERLAY")
-        text:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+        GUI:SetSettingsFont(text, 8, "")
         text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
         text:SetText(label)
         text:SetTextColor(0.55, 0.55, 0.55)
@@ -174,7 +174,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         end
 
         -- Spell name
-        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local nameText = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         nameText:SetPoint("RIGHT", -160, 0)
         nameText:SetJustifyH("LEFT")
@@ -183,6 +183,25 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
             nameText:SetTextColor(0.90, 0.90, 0.90)
         else
             nameText:SetTextColor(0.55, 0.55, 0.55)
+        end
+
+        -- Warning icon for spells with known limitations
+        if spell.spellId == 474754 then  -- Symbiotic Relationship
+            local warnIcon = CreateFrame("Button", nil, row)
+            warnIcon:SetSize(18, 18)
+            warnIcon:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
+            local warnTex = warnIcon:CreateTexture(nil, "OVERLAY")
+            warnTex:SetAllPoints()
+            warnTex:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
+            warnIcon:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L["Symbiotic Relationship"], 1, 0.82, 0)
+                GameTooltip:AddLine(L["Only the aura on the caster can be blacklisted. The aura on the target cannot be blacklisted due to Blizzard limitations."], 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            warnIcon:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
         end
 
         -- Checkboxes (always visible — checked state reflects blacklist)
@@ -278,13 +297,13 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
 
         -- Header
         local tc = GetThemeColor()
-        local header = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local header = container:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         header:SetPoint("TOPLEFT", 0, 0)
         header:SetText(headerText)
         header:SetTextColor(tc.r, tc.g, tc.b)
 
         -- Blacklisted count (right-aligned next to header)
-        local countText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local countText = container:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         countText:SetPoint("LEFT", header, "RIGHT", 10, 0)
         countText:SetTextColor(0.5, 0.5, 0.5)
 
@@ -311,7 +330,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         scrollFrame:SetScrollChild(scrollContent)
 
         -- Empty hint
-        local emptyText = listBg:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        local emptyText = listBg:CreateFontString(nil, "OVERLAY", "DFFontDisableSmall")
         emptyText:SetPoint("CENTER", listBg, "CENTER", 0, 0)
         emptyText:SetText(L["No spells available for this class"])
 
@@ -355,9 +374,31 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         return container
     end
 
+    -- ========== CURATED LIST NOTICE ==========
+    local noticeBanner = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    noticeBanner:SetPoint("TOPLEFT", 10, -10)
+    noticeBanner:SetPoint("RIGHT", -10, 0)
+    noticeBanner:SetHeight(44)
+    if not noticeBanner.SetBackdrop then Mixin(noticeBanner, BackdropTemplateMixin) end
+    noticeBanner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    noticeBanner:SetBackdropColor(0.25, 0.22, 0.10, 1)
+    noticeBanner:SetBackdropBorderColor(0.6, 0.55, 0.2, 0.6)
+
+    local noticeIcon = noticeBanner:CreateTexture(nil, "OVERLAY")
+    noticeIcon:SetPoint("LEFT", 10, 0)
+    noticeIcon:SetSize(20, 20)
+    noticeIcon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\warning")
+
+    local noticeText = noticeBanner:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    noticeText:SetPoint("LEFT", noticeIcon, "RIGHT", 8, 0)
+    noticeText:SetPoint("RIGHT", noticeBanner, "RIGHT", -10, 0)
+    noticeText:SetJustifyH("LEFT")
+    noticeText:SetText(L["This is a curated list selected by Blizzard. Additional spells cannot be added as these are the only spells Blizzard has allowed. If more are permitted in the future, they will be added to this list."])
+    noticeText:SetTextColor(1, 0.82, 0)
+
     -- ========== DESCRIPTION ==========
-    local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", 10, -10)
+    local desc = parent:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", noticeBanner, "BOTTOMLEFT", 0, -8)
     desc:SetPoint("RIGHT", -10, 0)
     desc:SetJustifyH("LEFT")
     desc:SetText(L["Hide specific buffs and debuffs from your frames. Click a spell to toggle blacklisting. Blacklisted auras will not appear on buff bars or Aura Designer indicators."])
@@ -366,9 +407,9 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
     -- ========== CLASS DROPDOWN ==========
     local dropdownContainer = CreateFrame("Frame", nil, parent)
     dropdownContainer:SetSize(280, 55)
-    dropdownContainer:SetPoint("TOPLEFT", 10, -30)
+    dropdownContainer:SetPoint("TOPLEFT", 10, -80)
 
-    local classLabel = dropdownContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local classLabel = dropdownContainer:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     classLabel:SetPoint("TOPLEFT", 0, 0)
     classLabel:SetText(L["Class"])
     classLabel:SetTextColor(0.7, 0.7, 0.7)
@@ -394,7 +435,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
     dropdownBtn:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
     dropdownBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
 
-    local dropdownText = dropdownBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local dropdownText = dropdownBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     dropdownText:SetPoint("LEFT", 8, 0)
     dropdownText:SetPoint("RIGHT", -20, 0)
     dropdownText:SetJustifyH("LEFT")
@@ -456,7 +497,7 @@ function DF.BuildAuraBlacklistPage(guiRef, pageRef, dbRef)
         optBg:SetColorTexture(0, 0, 0, 0)
         optBtn._bg = optBg
 
-        local optText = optBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local optText = optBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         optText:SetPoint("LEFT", 8, 0)
         optText:SetText(opt.text)
 

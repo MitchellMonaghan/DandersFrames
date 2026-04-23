@@ -82,8 +82,10 @@ function DF:InitializeFrames()
     -- Create mover frame
     DF:CreateMoverFrame()
 
-    -- Create permanent mover handle for party
-    DF:CreatePermanentMover(DF.container, "party")
+    -- Create permanent mover handle for party (skip if party mode disabled)
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePermanentMover(DF.container, "party")
+    end
 
     -- Initialize raid container (needed by Headers.lua)
     DF:InitializeRaidFrames()
@@ -121,8 +123,10 @@ function DF:InitializeRaidFrames()
     -- Create raid mover frame
     DF:CreateRaidMoverFrame()
 
-    -- Create permanent mover handle for raid
-    DF:CreatePermanentMover(DF.raidContainer, "raid")
+    -- Create permanent mover handle for raid (skip if raid mode disabled)
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreatePermanentMover(DF.raidContainer, "raid")
+    end
 end
 
 function DF:CreateRaidFrame(unit, index)
@@ -269,6 +273,17 @@ function DF:UpdateRaidGroupedLayout()
     -- Update group layout params from current settings
     SecureSort:UpdateRaidGroupLayoutParams()
     local lp = SecureSort.raidGroupLayoutParams
+
+    -- [LEAK-TEST] Instrumentation: does the live Lua path run, and what's lp.testMode?
+    -- Toggle: /run DandersFrames.debugLeakTest = true (or false to silence)
+    if DF.debugLeakTest then
+        print(string.format(
+            "|cffffa500[DF LEAK-TEST]|r UpdateRaidGroupedLayout -> Lua fallback  raidTestMode=%s  lp.testMode=%s  db.sortEnabled=%s",
+            tostring(DF.raidTestMode),
+            tostring(lp and lp.testMode),
+            tostring(db and db.sortEnabled)
+        ))
+    end
     
     -- Count visible frames and build group membership data
     -- PERFORMANCE FIX: Reuse tables instead of creating new ones
@@ -701,7 +716,7 @@ function DF:CreateRaidMoverFrame()
     
     local label = mover:CreateFontString(nil, "OVERLAY")
     label:SetPoint("CENTER", mover, "CENTER", 0, 0)
-    label:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    DF:SafeSetFont(label, nil, 14, "OUTLINE")
     label:SetText("Raid Frames\nDrag to move")
     label:SetTextColor(1, 0.7, 0.3, 1)
     
@@ -1165,6 +1180,18 @@ function DF:CommitAllClickCastRegistrations()
             if header then
                 for i = 1, 40 do
                     commitFrame(header:GetAttribute("child" .. i))
+                end
+            end
+        end
+    end
+
+    -- Pinned boss frames
+    if DF.PinnedFrames and DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    commitFrame(frames[i])
                 end
             end
         end

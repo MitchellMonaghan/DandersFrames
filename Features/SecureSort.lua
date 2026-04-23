@@ -160,6 +160,14 @@ function SecureSort:CreateHandler()
     
     -- Attach debug callback so secure code can output messages
     handler.DebugPrint = SecureDebugCallback
+
+    -- Fired from the sort snippets via CallMethod after sorting+positioning completes.
+    -- Routes to the external API CallbackHandler registry (OnFramesSorted event).
+    handler.NotifySortComplete = function(_, sortType)
+        if DF and DF.FireAPICallback then
+            DF:FireAPICallback("OnFramesSorted", sortType)
+        end
+    end
     
     -- Initialize the secure environment with our base tables
     -- This code runs ONCE to set up the environment
@@ -840,9 +848,12 @@ function SecureSort:CreateHandler()
             if posSnippet then
                 self:Run(posSnippet)
             end
+
+            -- Notify external API subscribers that the sort completed.
+            self:CallMethod("NotifySortComplete", "party")
         ]]
     ]=])
-    
+
     -- ============================================================
     -- RAID SORTING SNIPPET (sortRaidFrames)
     -- ============================================================
@@ -1199,9 +1210,12 @@ function SecureSort:CreateHandler()
             else
                 self:CallMethod("DebugPrint", "RAID SORT: No position snippet found!")
             end
+
+            -- Notify external API subscribers that the sort completed.
+            self:CallMethod("NotifySortComplete", "raid")
         ]]
     ]=])
-    
+
     -- Wrap handler's OnAttributeChanged to trigger sorting
     -- When "state-sortTrigger" changes, run the sort
     -- NOTE: Throttling is done on the Lua side in TriggerSecureRaidSort/TriggerSecureSort
@@ -2358,6 +2372,23 @@ function SecureSort:ProcessInspectQueue()
     -- Wait for result (handled by INSPECT_READY event)
 end
 
+-- Debounce party-sort re-runs driven by inspect results. Inspects arrive roughly
+-- every 0.5s via ProcessInspectQueue; coalescing into a single sort avoids
+-- Hide/Show flicker across all 4 party members' inspects.
+function SecureSort:ScheduleInspectDrivenPartySort()
+    if self.pendingInspectPartySortTimer then return end
+    self.pendingInspectPartySortTimer = C_Timer.NewTimer(0.75, function()
+        self.pendingInspectPartySortTimer = nil
+        if InCombatLockdown() then
+            self.pendingInspectPartySort = true
+            return
+        end
+        if not IsInRaid() and DF.ApplyPartyGroupSorting then
+            DF:ApplyPartyGroupSorting()
+        end
+    end)
+end
+
 -- Handle INSPECT_READY event
 function SecureSort:OnInspectReady(guid)
     -- Only process if this was an inspect WE initiated (guid is in our queue)
@@ -2390,6 +2421,12 @@ function SecureSort:OnInspectReady(guid)
                         DF:Debug("FLATRAID", "Skipping UpdateNameList from inspect: grouped mode active")
                     end
                 end
+                -- Re-apply party sorting so melee/ranged classification settles as inspects
+                -- complete, instead of waiting for an unrelated roster/combat event.
+                -- Debounced: inspects stream in ~0.5s apart, so coalesce into one sort.
+                if not IsInRaid() and DF.ApplyPartyGroupSorting then
+                    self:ScheduleInspectDrivenPartySort()
+                end
             else
                 -- Defer FlatRaidFrames re-sort until combat ends
                 if DF.FlatRaidFrames and DF.FlatRaidFrames.initialized then
@@ -2397,6 +2434,10 @@ function SecureSort:OnInspectReady(guid)
                     if rdb and not rdb.raidUseGroups then
                         DF.FlatRaidFrames.pendingNameListUpdate = true
                     end
+                end
+                -- Defer party sort until combat ends
+                if not IsInRaid() then
+                    self.pendingInspectPartySort = true
                 end
             end
         end
@@ -3552,9 +3593,25 @@ function SecureSort:UpdateRaidGroupLayoutParams()
     local db = DF:GetRaidDB()
     if not db then
         DebugPrint("WARNING: No raid db, using defaults for group layout")
+        -- [LEAK-TEST] Early-return case: shared table NOT replaced, stale fields survive.
+        if DF.debugLeakTest then
+            print(string.format(
+                "|cffffa500[DF LEAK-TEST]|r UpdateRaidGroupLayoutParams EARLY RETURN (no db) -- table NOT replaced. Existing testMode=%s",
+                tostring(self.raidGroupLayoutParams and self.raidGroupLayoutParams.testMode)
+            ))
+        end
         return
     end
-    
+
+    -- [LEAK-TEST] About to replace shared table. Capture existing testMode so we can prove
+    -- whether fields survive the assignment at the next line.
+    if DF.debugLeakTest then
+        print(string.format(
+            "|cffffa500[DF LEAK-TEST]|r UpdateRaidGroupLayoutParams REPLACING table  old.testMode=%s",
+            tostring(self.raidGroupLayoutParams and self.raidGroupLayoutParams.testMode)
+        ))
+    end
+
     self.raidGroupLayoutParams = {
         frameWidth = db.frameWidth or 80,
         frameHeight = db.frameHeight or 35,
@@ -3813,6 +3870,23 @@ end
 -- @param container: the container frame
 -- @return true if frame was moved, false if already in position
 function SecureSort:PositionRaidFrameToGroupSlot(frame, groupNum, posInGroup, playersInGroup, activeGroupList, layoutParams, container)
+    -- [LEAK-TEST] Instrumentation: per-call visibility into which frames use this function
+    -- and whether the testMode flag leaks onto the shared table. Toggle:
+    --   /run DandersFrames.debugLeakTest = true
+    if DF.debugLeakTest then
+        local frameName = (frame and frame.GetName and frame:GetName()) or "?"
+        local containerName = (container and container.GetName and container:GetName()) or "?"
+        local isTestFrame = frame and frame.dfIsTestFrame and true or false
+        print(string.format(
+            "|cffffa500[DF LEAK-TEST]|r PositionRaidFrameToGroupSlot frame=%s container=%s dfIsTestFrame=%s lp.testMode=%s DF.raidTestMode=%s",
+            tostring(frameName),
+            tostring(containerName),
+            tostring(isTestFrame),
+            tostring(layoutParams and layoutParams.testMode),
+            tostring(DF.raidTestMode)
+        ))
+    end
+
     if not frame or not container then
         return false
     end
@@ -5862,6 +5936,15 @@ roleUpdateFrame:SetScript("OnEvent", function(self, event, arg1)
             SecureSort.pendingNamesPush = false
             SecureSort:PushPartyUnitNames()
             DebugPrint("Pushed pending party names after combat")
+        end
+
+        -- Process pending inspect-driven party sort (inspects that resolved during combat)
+        if SecureSort.pendingInspectPartySort and not IsInRaid() then
+            SecureSort.pendingInspectPartySort = false
+            if DF.ApplyPartyGroupSorting then
+                DF:ApplyPartyGroupSorting()
+                DebugPrint("Applied pending inspect-driven party sort after combat")
+            end
         end
         
         -- Process pending raid settings push

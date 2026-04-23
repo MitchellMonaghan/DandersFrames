@@ -374,6 +374,60 @@ local function BuildDurationHideCurve(threshold)
     return DF.durationHideCurves[cacheKey]
 end
 
+-- Scan for the native cooldown FontString that Blizzard creates lazily.
+-- Returns true if it was newly found this call (caller should apply deferred styling).
+local function EnsureNativeCooldownText(indicator, cooldownFrame)
+    if indicator.nativeCooldownText then return false end
+    if not cooldownFrame then return false end
+    local regions = { cooldownFrame:GetRegions() }
+    for _, region in pairs(regions) do
+        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+            indicator.nativeCooldownText = region
+            indicator.nativeTextReparented = false
+            return true
+        end
+    end
+    return false
+end
+
+-- Apply deferred duration text styling when the native cooldown FontString
+-- is discovered after Configure (because Blizzard creates it lazily on
+-- first SetCooldown).  Mirrors the reparent+style+position block in Configure.
+local function ApplyDeferredDurationStyling(indicator)
+    local text = indicator.nativeCooldownText
+    if not text then return end
+    if not indicator.showDuration and indicator.showDuration ~= nil then
+        text:Hide()
+        return
+    end
+    -- Create duration hide wrapper if needed
+    if not indicator.durationHideWrapper and indicator.textOverlay then
+        indicator.durationHideWrapper = CreateFrame("Frame", nil, indicator.textOverlay)
+        indicator.durationHideWrapper:SetAllPoints(indicator.textOverlay)
+        indicator.durationHideWrapper:SetFrameLevel(indicator.textOverlay:GetFrameLevel())
+        indicator.durationHideWrapper:EnableMouse(false)
+    end
+    -- Reparent into wrapper
+    if not indicator.nativeTextReparented and indicator.durationHideWrapper then
+        text:SetParent(indicator.durationHideWrapper)
+        indicator.nativeTextReparented = true
+    end
+    -- Style
+    local font = indicator.dfAD_durationFont or "Fonts\\FRIZQT__.TTF"
+    local scale = indicator.dfAD_durationScale or 1.0
+    local outline = indicator.dfAD_durationOutline or "OUTLINE"
+    if outline == "NONE" then outline = "" end
+    local size = 10 * scale
+    DF:SafeSetFont(text, font, size, outline)
+    -- Position
+    local anchor = indicator.durationAnchor or indicator.dfAD_durationAnchor or "CENTER"
+    local dx = indicator.durationX or indicator.dfAD_durationX or 0
+    local dy = indicator.durationY or indicator.dfAD_durationY or 0
+    text:ClearAllPoints()
+    text:SetPoint(anchor, indicator, anchor, dx, dy)
+    text:Show()
+end
+
 local expiringFrame = CreateFrame("Frame")
 local expiringElapsed = 0
 expiringFrame:Show()  -- CRITICAL: OnUpdate only fires on visible frames
@@ -1356,8 +1410,8 @@ end
 function Indicators:ConfigureIcon(frame, config, defaults, auraName, priority)
     local icon = GetOrCreateADIcon(frame, auraName)
 
-    -- Size
-    local size = config.size or (defaults and defaults.iconSize) or 24
+    -- Size (clamp to 8 minimum; old configs may have sizes below the current slider floor)
+    local size = math.max(8, config.size or (defaults and defaults.iconSize) or 24)
     local scale = config.scale or (defaults and defaults.iconScale) or 1.0
     icon:SetSize(size, size)
     icon:SetScale(scale)
@@ -1654,6 +1708,10 @@ function Indicators:UpdateIcon(frame, config, auraData, defaults, auraName, prio
     local hasDuration = HasAuraDuration(auraData, frame.unit)
     if hasDuration then
         SafeSetCooldown(icon.cooldown, auraData, frame.unit)
+        -- Retry lazy FontString scan — SetCooldown forces Blizzard to create it
+        if EnsureNativeCooldownText(icon, icon.cooldown) then
+            ApplyDeferredDurationStyling(icon)
+        end
         icon.cooldown:SetDrawSwipe(not hideSwipe and not hideIcon)
         icon.cooldown:Show()
     else
@@ -2282,6 +2340,10 @@ function Indicators:UpdateSquare(frame, config, auraData, defaults, auraName, pr
     if sq.cooldown then
         if hasDuration then
             SafeSetCooldown(sq.cooldown, auraData, frame.unit)
+            -- Retry lazy FontString scan — SetCooldown forces Blizzard to create it
+            if EnsureNativeCooldownText(sq, sq.cooldown) then
+                ApplyDeferredDurationStyling(sq)
+            end
             sq.cooldown:SetDrawSwipe(not hideSwipe and not hideIcon)
             sq.cooldown:Show()
         else
@@ -2589,7 +2651,7 @@ local function CreateADBar(frame, auraName)
 
     -- Duration text (manual, for preview)
     bar.duration = bar.textOverlay:CreateFontString(nil, "OVERLAY")
-    bar.duration:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    DF:SafeSetFont(bar.duration, nil, 10, "OUTLINE")
     bar.duration:SetPoint("CENTER", 0, 0)
     bar.duration:SetTextColor(1, 1, 1)
 
@@ -3228,6 +3290,10 @@ function Indicators:UpdateBar(frame, config, auraData, defaults, auraName, prior
             if durationObj then
                 bar.durationCooldown:SetCooldownFromDurationObject(durationObj)
                 bar.durationCooldown:Show()
+                -- Retry lazy FontString scan — SetCooldownFromDurationObject forces creation
+                if EnsureNativeCooldownText(bar, bar.durationCooldown) then
+                    ApplyDeferredDurationStyling(bar)
+                end
             end
 
             -- Style and position the native countdown text

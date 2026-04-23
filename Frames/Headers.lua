@@ -161,7 +161,7 @@ function DF:RebuildUnitFrameMap()
     -- rebuilds unitGuidCache alongside unitFrameMap so the GUID-based skip
     -- optimisation in OnAttributeChanged works correctly after a wipe.
     local function ProcessChild(child)
-        if not child or child.isPinnedFrame then return end
+        if not child or (child.isPinnedFrame and not child.isPinnedBossFrame) then return end
         
         -- Prefer the secure attribute as the source of truth; fall back to
         -- the Lua property that OnAttributeChanged keeps in sync.
@@ -627,7 +627,7 @@ function DF:InitializeHeaderChild(frame)
                 -- Update unitFrameMap: remove old entry only if this frame owns it
                 -- Skip for pinned frames - they share units with main frames
                 -- and must not overwrite or remove main frame entries
-                if not self.isPinnedFrame then
+                if not self.isPinnedFrame or self.isPinnedBossFrame then
                     if unitFrameMap[oldUnit] == self then
                         unitFrameMap[oldUnit] = nil
                     end
@@ -663,7 +663,7 @@ function DF:InitializeHeaderChild(frame)
             if oldUnit then
                 -- Remove from unitFrameMap (only if this frame owns the entry)
                 -- Skip for pinned frames - they must not remove main frame entries
-                if not self.isPinnedFrame and unitFrameMap[oldUnit] == self then
+                if (not self.isPinnedFrame or self.isPinnedBossFrame) and unitFrameMap[oldUnit] == self then
                     unitFrameMap[oldUnit] = nil
                 end
                 -- Clear legacy DF.playerFrame if this frame was the player
@@ -693,8 +693,8 @@ function DF:InitializeHeaderChild(frame)
                 ClearUnitCache(actualUnit)
                 -- Clear phased cache for new unit (force fresh evaluation)
                 if DF.ResetPhasedCache then DF:ResetPhasedCache(actualUnit) end
-                -- Skip unitFrameMap for pinned frames
-                if not self.isPinnedFrame then
+                -- Skip unitFrameMap for pinned frames (except boss-type pinned frames)
+                if not self.isPinnedFrame or self.isPinnedBossFrame then
                     unitFrameMap[actualUnit] = self
                 end
                 local cacheGuid = UnitGUID(actualUnit)
@@ -736,15 +736,40 @@ function DF:InitializeHeaderChild(frame)
                     end
                 end)
             end
+
+            -- Fire OnFramesSorted for external API subscribers whenever a child's
+            -- unit attribute is reassigned. Catches in-combat reshuffles (roster
+            -- changes, ASSIGNEDROLE re-sorts) that ApplyPartyGroupSorting cannot
+            -- cover due to combat lockdown. Coalesced per sortType per frame so
+            -- Blizzard reshuffling N children only produces one callback.
+            local sortType
+            if self.isArenaFrame then
+                sortType = "arena"
+            elseif self.isRaidFrame then
+                sortType = "raid"
+            else
+                sortType = "party"
+            end
+            DF._sortCallbackPending = DF._sortCallbackPending or {}
+            if not DF._sortCallbackPending[sortType] then
+                DF._sortCallbackPending[sortType] = true
+                C_Timer.After(0, function()
+                    DF._sortCallbackPending[sortType] = nil
+                    if DF.FireAPICallback then
+                        DF:FireAPICallback("OnFramesSorted", sortType)
+                    end
+                end)
+            end
         end
     end)
-    
+
     -- If unit is already set (might be set before OnLoad in some cases), sync it now
     local currentUnit = frame:GetAttribute("unit")
     if currentUnit then
         frame.unit = currentUnit
         -- Skip unitFrameMap for pinned frames - they share units with main frames
-        if not frame.isPinnedFrame then
+        -- (boss-type pinned frames are allowed: boss1-8 units are only in these frames)
+        if not frame.isPinnedFrame or frame.isPinnedBossFrame then
             unitFrameMap[currentUnit] = frame
         end
         local num = currentUnit:match("%d+")
@@ -808,16 +833,30 @@ function DF:InitializeHeaderChild(frame)
                 GameTooltip_SetDefaultAnchor(GameTooltip, self)
             end
             GameTooltip:SetUnit(self.unit)
+            -- GetUnit() returns a secret value due to secure frame taint from
+            -- SecureGroupHeaderTemplate, so TooltipDataProcessor-based addons
+            -- can't read the unit. Bypass via RaiderIO's public API, but only
+            -- when the normal path fails to avoid duplicate tooltip lines.
+            local _, ttUnit = GameTooltip:GetUnit()
+            if (not ttUnit or issecretvalue(ttUnit)) and _G.RaiderIO and _G.RaiderIO.ShowProfile then
+                _G.RaiderIO.ShowProfile(GameTooltip, self.unit)
+            end
+            -- Start refresh ticker so tooltip addons (RaiderIO) can respond
+            -- to modifier key changes while hovering
+            if DF.StartTooltipRefresh then DF:StartTooltipRefresh(self) end
         end
     end)
-    
+
     frame:HookScript("OnLeave", function(self)
         -- Clear hover state and update highlights
         self.dfIsHovered = false
         if DF.UpdateHighlights then
             DF:UpdateHighlights(self)
         end
-        
+
+        -- Stop tooltip refresh ticker
+        if DF.StopTooltipRefresh then DF:StopTooltipRefresh() end
+
         -- Only hide tooltip if we're truly leaving the frame
         local focus = GetMouseFocus and GetMouseFocus() or GetMouseFoci and GetMouseFoci()[1]
         if focus and focus.unitFrame == self then
@@ -841,7 +880,7 @@ function DF:InitializeHeaderChild(frame)
         -- can dispatch to this frame the instant it becomes visible.
         -- Without this, frames shown after RebuildUnitFrameMap() are
         -- invisible to event dispatch until the next rebuild.
-        if self.unit and not self.isPinnedFrame then
+        if self.unit and (not self.isPinnedFrame or self.isPinnedBossFrame) then
             unitFrameMap[self.unit] = self
         end
 
@@ -3382,7 +3421,9 @@ end
 -- Update raid position attributes - SECURE ONLY (no Lua fallback for debugging)
 function DF:UpdateRaidPositionAttributes()
     if not DF.raidPositionHandler then
-        print("|cFFFF0000[DF Headers]|r No secure position handler!")
+        -- Handler is only created when raid frames are enabled (see CreateRaidHeaders
+        -- gated on db.raidEnabled). If raid is disabled, this is a no-op, not an error.
+        DF:Debug("HEADERS", "UpdateRaidPositionAttributes: no raid position handler (raid frames disabled?)")
         return
     end
     
@@ -4268,6 +4309,7 @@ function DF:ApplyRaidGroupSorting()
     if DF.SchedulePrivateAuraReanchor then
         DF:SchedulePrivateAuraReanchor()
     end
+    -- OnFramesSorted callback is fired from child OnAttributeChanged.
 end
 
 -- Refresh all group-based raid frames after sorting changes
@@ -4630,21 +4672,35 @@ function DF:BuildSortedNameList(members, db, selfPosition, includesPlayer)
         DEATHKNIGHT = true, DEMONHUNTER = true, ROGUE = true, WARRIOR = true
     }
     
-    -- Get melee/ranged type for a unit
+    -- Get melee/ranged type for a unit.
+    -- Priority: SecureSort.specCache (persistent across INSPECT_READY) → game's inspect cache → class fallback.
+    -- Checking the persistent cache first avoids flipping a DPS's classification once we've learned
+    -- their real spec — if we only relied on GetInspectSpecialization, a Hunter Survival / Feral Druid /
+    -- WW Monk / Ret Pally / Enh Shaman would default to RANGED before inspect, then jump to MELEE later.
     local function GetMeleeRangedType(unit, role)
         if role ~= "DAMAGER" then return nil end
-        
+
         local specID
         if UnitIsUnit(unit, "player") then
             specID = GetSpecializationInfo(GetSpecialization())
         else
-            specID = GetInspectSpecialization(unit)
+            local cache = DF.SecureSort and DF.SecureSort.specCache
+            if cache then
+                local name = GetUnitName(unit, true)
+                local cached = name and cache[name]
+                if cached and cached.specID and cached.specID > 0 then
+                    specID = cached.specID
+                end
+            end
+            if not specID then
+                specID = GetInspectSpecialization(unit)
+            end
         end
-        
+
         if specID and specID > 0 then
             return meleeSpecs[specID] and "MELEE" or "RANGED"
         end
-        
+
         local _, class = UnitClass(unit)
         return meleeClasses[class] and "MELEE" or "RANGED"
     end
@@ -4834,11 +4890,12 @@ end
 -- Apply sorting to flat raid layout (uses FlatRaidFrames)
 function DF:ApplyRaidFlatSorting()
     if InCombatLockdown() then return end
-    
+
     -- Delegate to FlatRaidFrames
     if DF.FlatRaidFrames then
         DF.FlatRaidFrames:UpdateNameList()
     end
+    -- OnFramesSorted callback is fired from child OnAttributeChanged.
 end
 
 -- Refresh all flat raid frames after sorting changes
@@ -5438,9 +5495,9 @@ function DF:PositionRaidHeaders()
     end
     
     local db = DF:GetRaidDB()
-    
+
     if not DF.raidContainer then return end
-    
+
     -- Combined header mode (flat layout) - uses FlatRaidFrames
     if not db.raidUseGroups then
         if DF.FlatRaidFrames then
@@ -5448,7 +5505,7 @@ function DF:PositionRaidHeaders()
         end
         return
     end
-    
+
     -- Separated headers mode - delegate to secure handler
     -- This updates attributes and triggers secure repositioning
     -- Works both in and out of combat!
@@ -5858,15 +5915,18 @@ function DF:InitializeHeaderFrames()
     
     -- Create containers
     DF:CreateContainers()
-    
+
     -- Create party header (single header for player + party, no separate playerHeader)
-    DF:CreatePartyHeader()
-    
-    -- Create arena header (raid units but party layout - for arena where IsInRaid()=true)
-    DF:CreateArenaHeader()
-    
+    -- Arena header rides with party (raid units but party layout)
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePartyHeader()
+        DF:CreateArenaHeader()
+    end
+
     -- Create raid headers
-    DF:CreateRaidHeaders()
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreateRaidHeaders()
+    end
     
     -- Mark frames as created (not fully initialized yet)
     DF.headersCreated = true
@@ -6054,6 +6114,9 @@ function DF:ApplyPartyGroupSorting()
     if DF.SchedulePrivateAuraReanchor then
         DF:SchedulePrivateAuraReanchor()
     end
+    -- OnFramesSorted callback is fired from the child OnAttributeChanged
+    -- handler (see CreatePartyFrame), which catches real unit-attribute
+    -- reassignments in both combat and non-combat paths.
 end
 
 -- ============================================================
@@ -6184,6 +6247,7 @@ function DF:ApplyArenaHeaderSorting()
     if DF.SchedulePrivateAuraReanchor then
         DF:SchedulePrivateAuraReanchor()
     end
+    -- OnFramesSorted callback is fired from child OnAttributeChanged.
 end
 
 -- Refresh all party frames after sorting changes
@@ -7278,13 +7342,16 @@ function DF:CreateHeaderFrames()
 
     -- Create containers and headers (this is the combat-safe part)
     DF:CreateContainers()
-    
-    DF:CreatePartyHeader()
-    
-    -- Create arena header (raid units but party layout - for arena where IsInRaid()=true)
-    DF:CreateArenaHeader()
-    
-    DF:CreateRaidHeaders()
+
+    if DF.db and DF.db.partyEnabled ~= false then
+        DF:CreatePartyHeader()
+        -- Arena header rides with party (raid units but party layout)
+        DF:CreateArenaHeader()
+    end
+
+    if DF.db and DF.db.raidEnabled ~= false then
+        DF:CreateRaidHeaders()
+    end
     
     -- Initialize secure positioning hooks (must be done out of combat, but frames exist)
     if not InCombatLockdown() then
@@ -7342,7 +7409,7 @@ function DF:FinalizeHeaderInit()
     -- and never process events!
     -- ============================================================
     DF.initialized = true
-    
+
     -- Do an immediate missing buff check
     if not InCombatLockdown() and DF.UpdateAllMissingBuffIcons then
         DF:UpdateAllMissingBuffIcons()
@@ -8365,18 +8432,35 @@ IteratePinnedFrames = function(callback)
     end
 end
 
--- Helper to find pinned frame for a specific unit
+-- Helper to find pinned frame for a specific unit (player-mode or boss-mode set)
 local function FindPinnedFrameForUnit(unit)
-    if not DF.PinnedFrames or not DF.PinnedFrames.initialized or not DF.PinnedFrames.headers then
+    if not DF.PinnedFrames or not DF.PinnedFrames.initialized then
         return nil
     end
-    for setIndex = 1, 2 do
-        local header = DF.PinnedFrames.headers[setIndex]
-        if header and header:IsShown() then
-            for i = 1, 40 do
-                local child = header:GetAttribute("child" .. i)
-                if child and child:IsVisible() and child.unit == unit then
-                    return child
+    -- Player-mode pinned sets: iterate header children
+    if DF.PinnedFrames.headers then
+        for setIndex = 1, 2 do
+            local header = DF.PinnedFrames.headers[setIndex]
+            if header and header:IsShown() then
+                for i = 1, 40 do
+                    local child = header:GetAttribute("child" .. i)
+                    if child and child:IsVisible() and child.unit == unit then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    -- Boss-mode pinned sets: iterate standalone boss frames
+    if DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    local f = frames[i]
+                    if f and f:IsVisible() and f.unit == unit then
+                        return f
+                    end
                 end
             end
         end

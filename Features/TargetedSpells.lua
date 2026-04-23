@@ -704,7 +704,7 @@ local function CreateSingleIcon(parent, index)
     
     -- Custom duration text (on overlay so it's above the swipe)
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY")
-    durationText:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    DF.GUI:SetSettingsFont(durationText, 10, "OUTLINE")
     durationText:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     durationText:SetTextColor(1, 1, 1, 1)
     container.durationText = durationText
@@ -727,7 +727,7 @@ local function CreateSingleIcon(parent, index)
     
     -- X mark for interrupted
     local interruptX = interruptOverlay:CreateFontString(nil, "OVERLAY")
-    interruptX:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
+    DF.GUI:SetSettingsFont(interruptX, 16, "OUTLINE")
     interruptX:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     interruptX:SetText("X")
     interruptX:SetTextColor(1, 0, 0, 1)
@@ -1281,7 +1281,7 @@ local function ShowInterruptedVisual(icon, db)
         if showX then
             icon.interruptX:Show()
             icon.interruptX:SetTextColor(xColor.r, xColor.g, xColor.b, 1)
-            icon.interruptX:SetFont("Fonts\\FRIZQT__.TTF", xSize, "OUTLINE")
+            DF.GUI:SetSettingsFont(icon.interruptX, xSize, "OUTLINE")
         else
             icon.interruptX:Hide()
         end
@@ -1916,8 +1916,7 @@ local function NeedsCastEvents()
         return groupOn or personalOn
     end
     if modeNeeds(DF.db.party) or modeNeeds(DF.db.raid) then return true end
-    -- Targeted List is alpha/beta-only and party-only; the call is
-    -- gated by DF.RELEASE_CHANNEL inside the helper.
+    -- Targeted List is party-only
     if DF.TargetedListNeedsCastEvents and DF:TargetedListNeedsCastEvents() then
         return true
     end
@@ -2139,7 +2138,7 @@ local function CreatePersonalIcon(index)
     
     -- Duration text
     local durationText = textOverlay:CreateFontString(nil, "OVERLAY")
-    durationText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    DF.GUI:SetSettingsFont(durationText, 12, "OUTLINE")
     durationText:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     durationText:SetTextColor(1, 1, 1, 1)
     icon.durationText = durationText
@@ -2159,7 +2158,7 @@ local function CreatePersonalIcon(index)
     icon.interruptTint = interruptTint
     
     local interruptX = interruptOverlay:CreateFontString(nil, "OVERLAY")
-    interruptX:SetFont("Fonts\\FRIZQT__.TTF", 20, "OUTLINE")
+    DF.GUI:SetSettingsFont(interruptX, 20, "OUTLINE")
     interruptX:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
     interruptX:SetText("X")
     interruptX:SetTextColor(1, 0, 0, 1)
@@ -2436,7 +2435,7 @@ local function ApplyPersonalIconSettings(icon, db, spellID)
         if interruptShowX then
             icon.interruptX:Show()
             icon.interruptX:SetTextColor(interruptXColor.r, interruptXColor.g, interruptXColor.b, 1)
-            icon.interruptX:SetFont("Fonts\\FRIZQT__.TTF", interruptXSize, "OUTLINE")
+            DF.GUI:SetSettingsFont(icon.interruptX, interruptXSize, "OUTLINE")
         else
             icon.interruptX:Hide()
         end
@@ -2745,7 +2744,7 @@ function DF:CreatePersonalTargetedSpellsMover()
     mover:RegisterForDrag("LeftButton")
     mover:Hide()
     
-    local label = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local label = mover:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     label:SetPoint("CENTER")
     label:SetText("Personal\nTargeted Spells")
     label:SetTextColor(1, 1, 1, 1)
@@ -3063,13 +3062,13 @@ function DF:CreateCastHistoryUI()
     titleBar:SetBackdropColor(C_PANEL.r, C_PANEL.g, C_PANEL.b, 1)
     titleBar:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
     
-    local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = titleBar:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     title:SetPoint("LEFT", 10, 4)
     title:SetText("Cast History")
     title:SetTextColor(C_ACCENT.r, C_ACCENT.g, C_ACCENT.b)
     
     -- Subtitle note
-    local subtitle = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local subtitle = titleBar:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, 0)
     subtitle:SetText("Persists through load screens, resets on /reload")
     subtitle:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.7)
@@ -3111,7 +3110,7 @@ function DF:CreateCastHistoryUI()
     })
     clearBtn:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
     clearBtn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-    local clearTxt = clearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local clearTxt = clearBtn:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     clearTxt:SetPoint("CENTER")
     clearTxt:SetText("Clear")
     clearTxt:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -3138,19 +3137,19 @@ function DF:CreateCastHistoryUI()
     headerFrame:SetBackdropColor(C_PANEL.r, C_PANEL.g, C_PANEL.b, 1)
     headerFrame:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.3)
     
-    local headerTime = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local headerTime = headerFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     headerTime:SetPoint("LEFT", 5, 0)
     headerTime:SetWidth(30)
     headerTime:SetText("Time")
     headerTime:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
-    local headerSpell = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local headerSpell = headerFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     headerSpell:SetPoint("LEFT", 40, 0)
     headerSpell:SetWidth(100)
     headerSpell:SetText("Spell")
     headerSpell:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
-    local headerCaster = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local headerCaster = headerFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     headerCaster:SetPoint("LEFT", 165, 0)
     headerCaster:SetWidth(70)
     headerCaster:SetText("Caster")
@@ -3159,7 +3158,7 @@ function DF:CreateCastHistoryUI()
     -- Player name headers (will be updated dynamically)
     frame.playerHeaders = {}
     for i = 1, 5 do
-        local header = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local header = headerFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         header:SetPoint("LEFT", 240 + (i-1) * 65, 0)
         header:SetWidth(60)
         header:SetJustifyH("CENTER")
@@ -3198,7 +3197,7 @@ function DF:CreateCastHistoryUI()
         row.rowIndex = i  -- Store for alternating colors
         
         -- Time text
-        local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local timeText = row:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         timeText:SetPoint("LEFT", 5, 0)
         timeText:SetWidth(30)
         timeText:SetJustifyH("LEFT")
@@ -3245,7 +3244,7 @@ function DF:CreateCastHistoryUI()
         row.importantBorder = importantBorder
         
         -- Spell name
-        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local nameText = row:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         nameText:SetPoint("LEFT", iconFrame, "RIGHT", 4, 0)
         nameText:SetWidth(100)
         nameText:SetJustifyH("LEFT")
@@ -3254,7 +3253,7 @@ function DF:CreateCastHistoryUI()
         row.nameText = nameText
         
         -- Caster name
-        local casterText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local casterText = row:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         casterText:SetPoint("LEFT", 165, 0)
         casterText:SetWidth(70)
         casterText:SetJustifyH("LEFT")
@@ -3272,7 +3271,7 @@ function DF:CreateCastHistoryUI()
             -- YES frame (shown when targeted)
             local yesFrame = CreateFrame("Frame", nil, container)
             yesFrame:SetAllPoints()
-            local yesText = yesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local yesText = yesFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
             yesText:SetAllPoints()
             yesText:SetText("|cffff6666YES|r")
             yesText:SetJustifyH("CENTER")
@@ -3281,14 +3280,14 @@ function DF:CreateCastHistoryUI()
             -- No frame (shown when not targeted)
             local noFrame = CreateFrame("Frame", nil, container)
             noFrame:SetAllPoints()
-            local noText = noFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local noText = noFrame:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
             noText:SetAllPoints()
             noText:SetText("|cff444444-|r")
             noText:SetJustifyH("CENTER")
             container.noFrame = noFrame
             
             -- N/A text
-            local naText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local naText = container:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
             naText:SetAllPoints()
             naText:SetText("|cff222222--|r")
             naText:SetJustifyH("CENTER")
@@ -3355,7 +3354,7 @@ function DF:CreateCastHistoryUI()
         btn:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
         btn:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
         
-        local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local btnText = btn:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         btnText:SetPoint("CENTER")
         btnText:SetText(text)
         btnText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -3413,7 +3412,7 @@ function DF:CreateCastHistoryUI()
     end)
     frame.nextBtn = nextBtn
     
-    local pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local pageText = pageFrame:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     pageText:SetPoint("CENTER", 0, 0)
     pageText:SetText("Page 1 / 1")
     pageText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -3617,11 +3616,6 @@ end
 -- group-frame Targeted Spells icons that Blizzard's 2026-04-07
 -- UnitIsUnit hotfix permanently broke.
 --
--- Gated by DF.RELEASE_CHANNEL — feature is fully inert on stable
--- releases. Alpha and beta builds run normally. The matching
--- settings sub-tab in Options.lua is also gated so stable users
--- never see it.
---
 -- Party-mode only by design. We will not add raid support.
 --
 -- Implementation is split across commits:
@@ -3696,9 +3690,8 @@ local TargetedList_StartFadeTicker
 
 -- Single source of truth for "is this feature allowed to run at all".
 -- Every public entry point calls this; any time it returns false, the
--- caller must be a no-op. This is the stable-release kill switch.
+-- caller must be a no-op.
 local function TargetedList_IsGateOpen()
-    if DF.RELEASE_CHANNEL == "release" then return false end
     return true
 end
 
@@ -3821,7 +3814,8 @@ local function TargetedList_IsRelevantCaster(casterUnit)
     return true
 end
 
--- File-scope cached duration APIs (added for the secret-taint fix)
+-- File-scope cached APIs
+local TL_UnitAffectingCombat = UnitAffectingCombat
 local TL_UnitCastingDuration_API = UnitCastingDuration
 local TL_UnitChannelDuration_API = UnitChannelDuration
 local TL_C_Spell_GetSpellName = C_Spell and C_Spell.GetSpellName
@@ -3856,10 +3850,15 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     if not TargetedList_ShouldPickup() then return end
     if not TargetedList_IsRelevantCaster(casterUnit) then return end
 
+    -- Combat filter: skip casters not in combat (idle mobs casting nearby)
+    local party = DF.db and DF.db.party
+    if party and party.targetedListHideOutOfCombat then
+        if not TL_UnitAffectingCombat(casterUnit) then return end
+    end
+
     -- Targeting filter: check if the cast targets a party member.
     -- If "Show Untargeted" is on, also accept casts that have no
     -- target at all (ground AoEs, self-buffs, untargeted channels).
-    local party = DF.db and DF.db.party
     local showUntargeted = party and party.targetedListShowUntargeted
     local target = casterUnit .. "target"
     local hasTarget = TL_UnitExists(target)
@@ -3895,26 +3894,26 @@ local function TargetedList_DelayedPickup(casterUnit, isChannel, eventSpellId)
     local spellId = eventSpellId
     if spellId == nil then return end
 
-    -- Pull notInterruptible only — everything else from these APIs is
-    -- secret. notInterruptible itself is also secret, but only ever
-    -- fed to SetVertexColorFromBoolean (a secret-safe sink) at render.
+    -- Re-detect cast vs channel at pickup time. The 0.2s delay means
+    -- a cast may have transitioned to a channel since the START event.
+    -- Check casting first, fall back to channel.
     local notInterruptible
-    if isChannel then
-        -- UnitChannelInfo positional 7: notInterruptible
+    if TL_UnitCastingInfo(casterUnit) ~= nil then
+        isChannel = false
+        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+    elseif TL_UnitChannelInfo(casterUnit) ~= nil then
+        isChannel = true
         notInterruptible = select(7, TL_UnitChannelInfo(casterUnit))
     else
-        -- UnitCastingInfo positional 8: notInterruptible
-        notInterruptible = select(8, TL_UnitCastingInfo(casterUnit))
+        -- Cast vanished during the 0.2s delay (CC, mob death, etc.)
+        return
     end
 
-    -- Duration: TimerDuration object (NOT a number), opaque, fed to
-    -- StatusBar:SetTimerDuration at render. Never arithmetic.
-    local duration
-    if isChannel then
-        duration = TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit)
-    else
-        duration = TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit)
-    end
+    -- Duration: try both APIs regardless of isChannel flag. A cast that
+    -- transitions to a channel may report via either API during the
+    -- brief overlap.
+    local duration = (TL_UnitCastingDuration_API and TL_UnitCastingDuration_API(casterUnit))
+        or (TL_UnitChannelDuration_API and TL_UnitChannelDuration_API(casterUnit))
 
     activeTargetedListCasts[casterUnit] = {
         spellId         = spellId,           -- secret; only feed to C_Spell.* + sinks
@@ -4001,6 +4000,30 @@ local function TargetedList_ProcessCastStart(casterUnit, event, ...)
         isChannel = false
     end
 
+    -- Cast-to-channel transition: if CHANNEL_START fires and we already
+    -- have a cast record for this unit, update the record immediately
+    -- instead of waiting 0.2s. The channel duration is available now.
+    -- We must re-apply bar content directly because the render loop
+    -- only calls ApplyBarContent for newly assigned bars, not existing ones.
+    -- Uses DF._TargetedListTransitionToChannel (defined later, after
+    -- casterToBar and ApplyBarContent are in scope).
+    if isChannel then
+        local existing = activeTargetedListCasts[casterUnit]
+        if existing and not existing.fadingStartedAt and not existing.isChannel then
+            local channelDuration = TL_UnitChannelDuration_API
+                and TL_UnitChannelDuration_API(casterUnit)
+            if channelDuration then
+                existing.duration = channelDuration
+                existing.isChannel = true
+                existing.uninterruptible = select(7, TL_UnitChannelInfo(casterUnit))
+                if DF._TargetedListTransitionToChannel then
+                    DF._TargetedListTransitionToChannel(casterUnit, existing)
+                end
+                return
+            end
+        end
+    end
+
     -- Event payload (after `unit` consumed by OnEvent): (castGuid, spellId).
     -- We only need spellId — castGuid was used for cast-ID matching, which
     -- we've removed because secret-string equality compare errors.
@@ -4021,13 +4044,17 @@ local function TargetedList_OnCastStop(casterUnit, event, ...)
     if not active then return end
 
     -- Gotcha #3: some channel spells (pulse DoTs, ground-effect zones)
-    -- emit SUCCEEDED once per tick while still channeling. Ignore.
-    -- We pull only the spellId via positional discard to avoid
-    -- truth-testing the (possibly secret) first return value.
+    -- emit SUCCEEDED once per tick while still channeling. Also covers
+    -- cast-to-channel transitions — the channel data may not be ready
+    -- yet at SUCCEEDED time, so we just skip the fade and let
+    -- CHANNEL_START handle the transition.
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local _, _, _, _, _, _, _, channelSpellId = TL_UnitChannelInfo(casterUnit)
-        if channelSpellId ~= nil then return end
+        if TL_UnitChannelInfo(casterUnit) ~= nil then return end
     end
+
+    -- INTERRUPTED fires before STOP. If the record is already fading
+    -- as interrupted, don't let STOP overwrite with the short fade.
+    if active.wasInterrupted and active.fadingStartedAt then return end
 
     -- Gotcha #2 (cast-ID matching) has been REMOVED — see gotcha #0 in
     -- the findings doc. Equality compare on a secret-tainted castID
@@ -4336,31 +4363,57 @@ local function TargetedList_BuildBar(parent)
 
     -- Text overlays on the progress bar. Anchor / offset / font are
     -- applied by ApplyBarAppearance and ApplyTextLayout per render.
-    local spellName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local spellName = progress:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     spellName:SetJustifyV("MIDDLE")
     spellName:SetWordWrap(false)
     bar.spellName = spellName
 
-    local targetName = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local targetName = progress:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     targetName:SetJustifyV("MIDDLE")
     targetName:SetWordWrap(false)
     bar.targetName = targetName
 
-    -- Duration countdown: a Cooldown frame that handles native
-    -- secret-safe countdown rendering via SetCooldownFromDurationObject.
-    -- The swirl / edge are hidden; we only use it for the countdown
-    -- number text. Positioned and sized by ApplyBarAppearance.
-    local durationCooldown = CreateFrame("Cooldown", nil, progress, "CooldownFrameTemplate")
-    durationCooldown:SetDrawEdge(false)
-    durationCooldown:SetDrawSwipe(false)
-    durationCooldown:SetDrawBling(false)
-    durationCooldown:SetHideCountdownNumbers(false)
-    bar.duration = durationCooldown
+    -- Duration countdown text. We use a custom FontString updated via
+    -- OnUpdate instead of Blizzard's native Cooldown countdown, so that
+    -- custom fonts can be applied. The remaining time is read from the
+    -- duration object stored on the bar via GetRemainingDuration().
+    local durationText = progress:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    durationText:SetJustifyV("MIDDLE")
+    durationText:SetWordWrap(false)
+    bar.duration = durationText
+
+    -- OnUpdate: refresh duration countdown text every ~100ms.
+    -- Read duration from the StatusBar via GetTimerDuration() each tick,
+    -- call GetRemainingDuration(), feed
+    -- directly to SetFormattedText (a secret-safe sink). Use explicit
+    -- == nil checks (not truthiness) to avoid secret-taint errors.
+    bar._durationElapsed = 0
+    bar:SetScript("OnUpdate", function(self, elapsed)
+        self._durationElapsed = self._durationElapsed + elapsed
+        if self._durationElapsed < 0.1 then return end
+        self._durationElapsed = self._durationElapsed - 0.1
+        if not self.duration:IsShown() then return end
+        if self._testDuration then
+            -- Test bar: compute from startTime + totalDuration (clean values)
+            local td = self._testDuration
+            local remaining = td.totalDuration - (TL_GetTime() - td.startTime)
+            if remaining > 0 then
+                self.duration:SetFormattedText("%.1f", remaining)
+            else
+                self.duration:SetText("")
+            end
+        else
+            -- Live bar: read duration fresh from the StatusBar each tick
+            local durationObj = self.progress:GetTimerDuration()
+            if durationObj == nil then return end
+            self.duration:SetFormattedText("%.1f", durationObj:GetRemainingDuration())
+        end
+    end)
 
     -- Interrupter name FontString — shown during interrupted-flash
     -- fade with the name of who kicked the cast. Overlays spell name
     -- and target name (which are hidden during the flash).
-    local interruptText = progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local interruptText = progress:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     interruptText:SetPoint("CENTER", progress, "CENTER", 0, 0)
     interruptText:SetJustifyH("CENTER")
     interruptText:SetJustifyV("MIDDLE")
@@ -4377,6 +4430,18 @@ local function TargetedList_BuildBar(parent)
     highlight:SetFrameLevel(bar:GetFrameLevel() + 5)
     highlight:Hide()
     bar.highlightFrame = highlight
+
+    -- Self-target color overlay. A frame wrapping a colored texture,
+    -- shown/hidden via SetShownFromBoolean (secret-safe sink) when
+    -- the enemy cast targets the player.
+    local selfFrame = CreateFrame("Frame", nil, progress)
+    selfFrame:SetAllPoints()
+    selfFrame:SetFrameLevel(progress:GetFrameLevel() + 1)
+    selfFrame:Hide()
+    local selfTex = selfFrame:CreateTexture(nil, "OVERLAY")
+    selfTex:SetAllPoints()
+    bar.selfTargetFrame = selfFrame
+    bar.selfTargetTex = selfTex
 
     return bar
 end
@@ -4433,19 +4498,11 @@ local function TargetedList_ApplyTextLayout(bar, db)
         "targetedListInterruptTextWidth",
         "targetedListInterruptTextX", "targetedListInterruptTextY", "CENTER", "CENTER")
 
-    -- Duration: the Cooldown frame renders its own countdown text at
-    -- its center. We position the frame itself (as a narrow box) at
-    -- the configured anchor, and the text appears centered inside.
-    if bar.duration then
-        local point = TargetedList_ResolveAnchorPoint(db.targetedListDurationAnchor or "RIGHT")
-        local fontSize = db.targetedListFontSize or 12
-        local cdW = math.max(40, fontSize * 3)
-        local cdH = math.max(14, fontSize + 4)
-        bar.duration:ClearAllPoints()
-        bar.duration:SetSize(cdW, cdH)
-        bar.duration:SetPoint(point, bar.progress, point,
-            db.targetedListDurationX or 0, db.targetedListDurationY or 0)
-    end
+    -- Duration: now a FontString like the others, positioned via applyTextElement.
+    applyTextElement(bar.duration,
+        "targetedListDurationAnchor", "targetedListDurationAlign",
+        nil,  -- no width key; duration text is short
+        "targetedListDurationX", "targetedListDurationY", "RIGHT", "RIGHT")
 end
 
 -- Apply static appearance settings to a bar. "Static" here means the
@@ -4522,30 +4579,30 @@ local function TargetedList_ApplyBarAppearance(bar, db)
         bar.border:Hide()
     end
 
-    -- ----- Font (all three text elements share one font setting) -----
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    if DF.GetFontPath then
-        local resolved = DF:GetFontPath(db.targetedListFont or "Friz Quadrata TT")
-        if type(resolved) == "string" then fontPath = resolved end
-    end
+    -- ----- Font (all text elements share one font + outline setting) -----
+    local fontName = db.targetedListFont or "Friz Quadrata TT"
     local fontSize = db.targetedListFontSize or 12
-    local outline = db.targetedListFontOutline
-    if outline == "NONE" then outline = "" end
+    local outline = db.targetedListFontOutline or ""
 
-    -- Per-element font sizes fall back to the global targetedListFontSize
-    local spellNameFontSize = db.targetedListSpellNameFontSize or fontSize
-    local targetNameFontSize = db.targetedListTargetNameFontSize or fontSize
-    bar.spellName:SetFont(fontPath, spellNameFontSize, outline)
-    bar.targetName:SetFont(fontPath, targetNameFontSize, outline)
+    -- Per-element font sizes fall back to the global targetedListFontSize.
+    -- 0 means "use global" (the default for per-element overrides).
+    local spellNameFontSize = db.targetedListSpellNameFontSize
+    if not spellNameFontSize or spellNameFontSize == 0 then spellNameFontSize = fontSize end
+    local targetNameFontSize = db.targetedListTargetNameFontSize
+    if not targetNameFontSize or targetNameFontSize == 0 then targetNameFontSize = fontSize end
+
+    DF:SafeSetFont(bar.spellName, fontName, spellNameFontSize, outline)
+    DF:SafeSetFont(bar.targetName, fontName, targetNameFontSize, outline)
     if bar.interruptText then
-        local intFontSize = db.targetedListInterruptTextFontSize or fontSize
-        bar.interruptText:SetFont(fontPath, intFontSize, outline)
+        local intFontSize = db.targetedListInterruptTextFontSize
+        if not intFontSize or intFontSize == 0 then intFontSize = fontSize end
+        DF:SafeSetFont(bar.interruptText, fontName, intFontSize, outline)
     end
-    -- NOTE: The duration Cooldown frame renders its countdown text
-    -- via Blizzard's native cooldown system, which uses a built-in
-    -- font object (NumberFontNormal-ish). Custom font paths can't
-    -- be applied — SetCountdownFont takes a font object name string,
-    -- not a (path, size, outline) triple.
+    if bar.duration then
+        local durFontSize = db.targetedListDurationFontSize
+        if not durFontSize or durFontSize == 0 then durFontSize = fontSize end
+        DF:SafeSetFont(bar.duration, fontName, durFontSize, outline)
+    end
 
     -- ----- Per-element show/hide toggles -----
     -- NOTE: spell name and target name visibility is handled in
@@ -4568,9 +4625,10 @@ local function TargetedList_ResetBar(pool, bar)
     bar.progress:SetStatusBarColor(1, 0.2, 0.2, 1)
     bar.spellName:SetText("")
     bar.targetName:SetText("")
-    if bar.duration and bar.duration.Clear then
-        bar.duration:Clear()
+    if bar.duration then
+        bar.duration:SetText("")
     end
+    bar._testDuration = nil
     bar.icon:SetTexture(nil)
     bar._lastTexturePath = nil
     if bar.highlightFrame then
@@ -4591,10 +4649,13 @@ local targetedListBarPoolAvailable = {}
 local function TargetedList_AcquireBar()
     local parent = TargetedList_EnsureContainer()
     local bar = table.remove(targetedListBarPoolAvailable)
-    if bar then
-        return bar
+    if not bar then
+        bar = TargetedList_BuildBar(parent)
     end
-    return TargetedList_BuildBar(parent)
+    -- Apply appearance immediately so bars never show with template fonts
+    local db = DF.db and DF.db.party
+    if db then TargetedList_ApplyBarAppearance(bar, db) end
+    return bar
 end
 
 local function TargetedList_ReleaseBar(bar)
@@ -4651,18 +4712,15 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     -- Target name: test records store a clean string; live records
     -- use UnitSpellTargetName (secret-tainted, fed to SetText sink).
     local party = DF.db and DF.db.party
+    local arrowPrefix = (party and party.targetedListShowArrowPrefix) and "> " or ""
+    local arrowSuffix = (party and party.targetedListShowArrowSuffix) and " <" or ""
     if isTest and activeRec.testTargetName then
-        local tname = activeRec.testTargetName
-        if party and party.targetedListShowArrowPrefix then
-            bar.targetName:SetText("> " .. tname)
-        else
-            bar.targetName:SetText(tname)
-        end
+        bar.targetName:SetText(arrowPrefix .. activeRec.testTargetName .. arrowSuffix)
     else
         local targetName = TL_UnitSpellTargetName(casterUnit)
         if targetName then
-            if party and party.targetedListShowArrowPrefix then
-                bar.targetName:SetFormattedText("> %s", targetName)
+            if arrowPrefix ~= "" or arrowSuffix ~= "" then
+                bar.targetName:SetFormattedText("%s%s%s", arrowPrefix, targetName, arrowSuffix)
             else
                 bar.targetName:SetText(targetName)
             end
@@ -4699,28 +4757,25 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
     if activeRec.testFrozenFill then
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(activeRec.testFrozenFill)
+        bar._testDuration = nil
     elseif activeRec.fadingStartedAt then
         -- Don't update progress. The fill stays where it was.
+        bar._testDuration = nil
     elseif isTest and activeRec.testCastDuration then
         local cutoff = activeRec.testInterruptAt or activeRec.testCastDuration
         local elapsed = TL_GetTime() - activeRec.startTime
         local pct = math.min(1, math.max(0, elapsed / cutoff))
         bar.progress:SetMinMaxValues(0, 1)
         bar.progress:SetValue(pct)
-        if bar.duration and bar.duration.SetCooldown then
-            bar.duration:SetCooldown(activeRec.startTime, cutoff)
-        end
+        -- Store test timing for OnUpdate duration text
+        bar._testDuration = { startTime = activeRec.startTime, totalDuration = cutoff }
     elseif activeRec.duration and bar.progress.SetTimerDuration then
-        local direction = activeRec.isChannel
+        local direction = (activeRec.isChannel)
             and Enum.StatusBarTimerDirection.RemainingTime
             or Enum.StatusBarTimerDirection.ElapsedTime
         bar.progress:SetTimerDuration(activeRec.duration,
             Enum.StatusBarInterpolation.Immediate, direction)
-        if bar.duration and activeRec.duration then
-            if bar.duration.SetCooldownFromDurationObject then
-                bar.duration:SetCooldownFromDurationObject(activeRec.duration)
-            end
-        end
+        bar._testDuration = nil
     end
 
     -- Interruptible color: test records have a clean bool so we can
@@ -4808,6 +4863,25 @@ local function TargetedList_ApplyBarContent(bar, activeRec)
             bar:SetAlphaFromBoolean(isTargetingPlayer, 0, 1)
         else
             bar:SetAlpha(1)
+        end
+    end
+
+    -- Self-target color overlay (non-fading path only).
+    if not activeRec.fadingStartedAt then
+        if party and party.targetedListSelfTargetColorEnabled
+           and bar.selfTargetFrame then
+            local sc = party.targetedListSelfTargetColor or {r = 1, g = 0.85, b = 0.1, a = 0.4}
+            bar.selfTargetTex:SetColorTexture(sc.r, sc.g, sc.b, sc.a or 0.4)
+            if isTest then
+                -- Test bars use a clean boolean field
+                bar.selfTargetFrame:SetShown(activeRec.testIsTargetingPlayer or false)
+            elseif bar.selfTargetFrame.SetShownFromBoolean then
+                -- Live bars: UnitIsUnit returns a secret-tainted boolean
+                local isTargetingPlayer = UnitIsUnit(casterUnit .. "target", "player")
+                bar.selfTargetFrame:SetShownFromBoolean(isTargetingPlayer, true, false)
+            end
+        elseif bar.selfTargetFrame then
+            bar.selfTargetFrame:Hide()
         end
     end
 end
@@ -5212,6 +5286,16 @@ end
 -- modifying activeTargetedListCasts.
 DF._TargetedListRender = TargetedList_Render
 
+-- Cast-to-channel transition: re-apply bar content so SetTimerDuration
+-- picks up the new channel duration. Called from ProcessCastStart which
+-- runs before casterToBar and ApplyBarContent are defined.
+DF._TargetedListTransitionToChannel = function(casterUnit, rec)
+    local bar = casterToBar[casterUnit]
+    if bar then
+        TargetedList_ApplyBarContent(bar, rec)
+    end
+end
+
 -- ------------------------------------------------------------
 -- Mover
 -- ------------------------------------------------------------
@@ -5236,7 +5320,7 @@ local function TargetedList_CreateMover()
     mover:RegisterForDrag("LeftButton")
     mover:Hide()
 
-    local label = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local label = mover:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     label:SetPoint("CENTER")
     label:SetText("Targeted List")
     label:SetTextColor(1, 1, 1, 1)
@@ -5436,6 +5520,8 @@ local function TargetedList_SpawnTestCast()
         testInterrupterClass = willInterrupt and targetClass or nil,
         -- Alternate importance: odd-numbered casts are "important"
         testIsImportant = (targetedListTestNextId % 2 == 0),
+        -- Alternate self-targeting: every 3rd cast targets the player
+        testIsTargetingPlayer = (targetedListTestNextId % 3 == 1),
     }
     -- NOTE: caller is responsible for calling TargetedList_Render()
     -- after all spawns/modifications are done. This avoids premature
@@ -5841,8 +5927,7 @@ function DF:InitTargetedSpells()
     end
 
     -- Initialize the Targeted List. Safe to call unconditionally — the
-    -- function is gated internally on DF.RELEASE_CHANNEL and on the
-    -- user's targetedListEnabled setting.
+    -- function is gated internally on the user's targetedListEnabled setting.
     if DF.InitTargetedList then
         DF:InitTargetedList()
     end

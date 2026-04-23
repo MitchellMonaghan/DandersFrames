@@ -1,23 +1,124 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-10T23:03:17Z"
+DF.BUILD_DATE = "2026-04-22T10:43:13Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
-## [4.3.0] - 2026-04-10
+## [4.3.3] - 2026-04-21
 
-### New Features
+### Improvements
 
-* **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only
-* (Targeted List) Draggable mover integrated with the existing Unlock Frames flow
-* (Targeted List) Position panel now switches context based on which mover you click: party, raid, Personal Targeted Spells, or Targeted List
-* (Targeted List) Four bar style presets (Default / Compact / Detailed / Minimal) plus independent per-text-element anchor and offset for fine-grained layout control
-* (Targeted List) Test mode support with demo bars driven from the Test Mode panel
-* (Targeted List) Fade-out animation on cast completion and a yellow interrupted-flash tint on interrupts, both with configurable durations
-* (Targeted List) Full appearance controls: icon, border, background alpha, textures, font, per-text-element show/hide, class-colored target names, arrow prefix, sort order, content-type filter, important-spells-only filter, hide-own-casts filter
+* (Private Aura Dispel Overlay) The overlay now renders at the same frame level as the regular Dispel Overlay (frame+6) instead of above the frame border, text, and icons
+* (Private Aura Dispel Overlay) Added an Alpha slider to dim the overlay (default 1.0, range 0.1–1.0)
+
+### Changes
+
+* (Private Aura Dispel Overlay) Removed the "Show Dispel Icons" toggle — Blizzard couples the TOPRIGHT icons to the gradient overlay (both run through the same `SetDispelDebuff` path), so the option was never actually toggleable. The icons now always show when the overlay is active.
 
 ### Bug Fixes
 
+* **Friendly Boss NPC Frames** — visible boss frames now compact to the set's anchor instead of leaving empty slots when some boss units are hostile or absent (e.g. if boss1 is hostile and boss2 is friendly, boss2 now appears in the first slot)
+* **Friendly Boss NPC Frames** — Aura Designer indicators now apply correctly when a boss slot is reassigned to a new friendly NPC mid-encounter (previously buffs briefly showed in the standard buff row instead)
+* **Friendly Boss NPC Frames** — out-of-range fading now works on boss frames (boss units don't fire the roster range event, so range is now tracked via the polling loop)
+* **Friendly Boss NPC Frames** — health, power, name, absorb, heal prediction, and aura updates now apply reliably. Boss frames now register their own unit events directly (`UNIT_HEALTH`, `UNIT_POWER_UPDATE`, `UNIT_AURA`, `UNIT_NAME_UPDATE`, `UNIT_FACTION`, `UNIT_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_PREDICTION`, etc.) rather than depending on the roster event dispatcher, which was designed for stable party/raid units and kept missing the ephemeral boss unit tokens. This follows the same pattern ElvUI uses for its boss frames.
+
+### Internal
+
+* Opt-in debug instrumentation for raid group layout params investigation. Enable with `/run DandersFrames.debugLeakTest = true` to log every `PositionRaidFrameToGroupSlot` call and every rebuild of `SecureSort.raidGroupLayoutParams`, to verify whether test-mode state can leak into the live positioning path.
+
+## [4.3.2] - 2026-04-21
+
+### New Features
+
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, Aura Designer indicators, and out-of-range fading work the same as player-mode pinned sets. Visible frames compact to the set's anchor so there are no empty slots when only some boss units are friendly.
+* **Update notification** — if another DandersFrames user in your group or guild is running a newer stable version, you'll see a one-time chat message on login. Can be disabled in General > Settings > Notifications.
+
+### Improvements
+
+* **Pinned Frames** — movers are now color-coded per mode (orange for raid, purple-blue for party) so it's obvious which mode's position you're editing
+* **Pinned Frames** — opening a pinned-frames page for the inactive mode (e.g. Raid settings while you're solo or in a party) now shows a preview container for that mode's frames so you can reposition them without joining a group
+* (Aura Filters) Added an Aura Blacklist pointer section with a link to the dedicated Aura Blacklist tab, making it easier to find spell-specific exclusions from the filters page
+
+### Bug Fixes
+
+* Fix DPS jumping order mid-dungeon when "Separate Melee & Ranged DPS" is enabled
+* (Click-Casting) Fix "In Combat Only" and "Out of Combat Only" conditions being ignored for Target Unit and Open Menu bindings
+* (Aura Designer) Fix beacon indicators being invisible if saved at an icon size smaller than the slider minimum
+* (Aura Designer) Fix indicators inside Layout Groups not being draggable
+* (Aura Designer) Spec-specific spells (e.g. Earthshield) now appear correctly after switching specs without needing a reload
+* (Auto Profiles) Fix brief flicker to party settings when exiting the auto-profile editor before the raid override re-applies
+* (Status Text) Fix "Offline" / "AFK" text lingering on a frame after the player comes back online
+* (Status Text) Add "DND" status text display (previously only AFK was shown)
+* (Frames) Fix the Resurrected buff icon staying on a player's frame after they've come back to life
+* (Frames) Fix the summon-pending icon staying on your frame after leaving the group
+* (Auras) Raid frame aura icon borders are now pixel-perfect (were slightly blurry when raid frame scale differed from UIParent)
+* (Boss Debuffs) Fix boss debuff icons overlapping instead of spacing correctly when tooltips are hidden and growth direction is left/up
+* (Defensives) Fix defensive cooldown icons swapping slot positions / flickering when multiple cooldowns are active
+* (Defensives) Fix the second defensive cooldown icon not fading when the player is out of range or out of phase
+* (Pinned Frames) Dragging the mover while viewing the inactive mode's settings no longer silently saves the new position to the active mode's profile
+* (Pinned Frames) The Enable, Lock Position, and Show Label checkboxes no longer mutate the active mode's container when toggled from the inactive mode's settings
+* (Pinned Frames) Fix the second pinned-frames tab being unselectable when the two sets had different Frame Types — the tab now sticks across the page rebuild
+* (Pinned Frames) Boss-mode preview container now uses a single-frame placeholder (matching live behaviour when no boss is visible) instead of a four-frame-wide box
+* (Aura Designer) Sound alerts now pick up live edits without toggling the alert off and on
+* (Test Mode) Correct Monkbrew test unit from Mistweaver (healer) to Brewmaster (tank)
+* (Frames) Fix "No secure position handler!" red error spamming chat on login/reload when raid frames are disabled
+
+### 12.0.5 Compatibility
+
+* **Private Aura Dispel Overlay** — on 12.0.5+, a new Blizzard-rendered dispel overlay for private auras replaces the old frame border overlay. Controlled from Boss Debuffs settings with options for dispel filter, gradient direction, and dispel type icons.
+* Fix private aura anchors for 12.0.5 API changes
+
+### API
+
+* **OnFramesSorted callback** — External addons can subscribe to `DandersFrames.RegisterCallback(self, "OnFramesSorted", ...)` to be notified whenever party, raid, or arena frames are reshuffled. Fires once per sortType per tick (coalesced) in both combat and non-combat — covers settings changes, roster updates, role swaps, spec detection, and Blizzard's internal ASSIGNEDROLE re-sorts. Callback receives `(event, sortType)` where sortType is `"party"`, `"raid"`, or `"arena"`. Safe to call `DandersFrames_GetFrameForUnit(unit)` from inside the handler.
+
+## [4.3.1] - 2026-04-15
+
+### New Features
+
+* **Disable Party or Raid frames** — new toggles in General > Settings let you fully disable either frame system. Disabled frames never load, so they use no resources. Requires a reload; the popup can also toggle Blizzard's frames on or off for you in the same reload.
+* **Custom font for the settings panel** — pick a font and outline in General > Settings > Appearance. Applies instantly, no reload.
+* **Addon language override** — run the addon in a different language than your WoW client (per-character). Defaults to auto-detect.
+
+### Improvements
+
+* Reorganised General > Settings into Frame Modes, Blizzard Frames, Appearance, and Language sections
+* Blizzard frame toggles renamed from "Hide" to "Disable" (they fully disable, not just hide) and now appear in both Party and Raid views
+* "Hide Blizzard Player Frame" moved to Display > Visibility
+* Fixed Cyrillic, Korean, and Chinese characters showing as squares in various places
+
+### Bug Fixes
+
+* (Aura Designer) Holy Paladin: Holy Bulwark now triggers the same indicator as Sacred Weapon. A warning icon on the spell explains why the two can't be tracked separately.
+
+## [4.3.0] - 2026-04-10
+
+### Improvements
+
+* (Auras) Force-disable Blizzard aura data source ahead of its removal in 12.0.5 — all users now use Direct API mode immediately
+* (Auras) Prevent Blizzard aura source from persisting via profile imports — removed from export categories, forced to Direct on import and every login
+* (Aura Filters) Add info banner clarifying that Aura Filters only affect Buff Bar and Debuff Bar, with clickable links to related pages
+* (Aura Filters) Remove outdated Defensives and Dispel Detection info section
+* (Aura Filters) Dispellable filter now uses a toggle switch (Dispellable By Me / All Dispellable) instead of two separate checkboxes
+* (Aura Filters) Warning banner when "All Debuffs" is disabled, recommending healers keep it enabled
+* (Aura Blacklist) Add notice explaining the blacklist is a curated Blizzard list
+* (Aura Blacklist) Add warning icon next to Symbiotic Relationship noting caster-only blacklist limitation
+* (Aura Blacklist) Increased warning and notice banner icon sizes for better visibility
+* (Boss Debuffs) Add info banner noting Boss Debuffs cannot trigger Dispel Overlays
+
+### New Features
+
+* **Toggle Switch GUI element** — new reusable UI control for mutually exclusive A/B settings, with themed visuals and label highlighting
+* **"New" tab badges** — gold "New" text appears on tabs and their parent category for new features, auto-hides once the tab is opened
+* **Targeted List** — a new stacked cast-bar display that shows enemy casts targeting party members. Replaces the group-frame Targeted Spells icons that were broken by Blizzard's recent UnitIsUnit hotfix. Party-mode only, with draggable mover, test mode, four style presets, and full appearance controls including font, colors, icon, border, textures, arrow prefix/suffix, self-target color overlay, hide out-of-combat filter, cast-to-channel transitions, interrupted flash, and per-text-element positioning
+
+### Bug Fixes
+
+* (Tooltips) Add tooltip refresh ticker so third-party tooltip addons (e.g. RaiderIO) can respond to modifier key state changes while hovering unit frames
+* (Tooltips) Add clean unit token resolver for tooltip SetUnit calls to work around Midnight 12.0 taint propagation from secure frame attributes
+* (Absorb Bars) Fix absorb bars showing as floating bars when Attached or Attached+Overflow display mode is selected
+* (Aura Designer) Fix indicators sometimes showing wrong settings (wrong font size, icon size, bar colors) — Configure now runs mid-combat so indicators always get correct static settings immediately
+* (Aura Designer) Fix duration text using default Blizzard font/size when the cooldown FontString hasn't been created yet at configure time
 * (Personal Targeted Spells) Removed the white center-line overlays from the mover frame
 * (Targeted Spells) Added `UNIT_SPELLCAST_FAILED_QUIET` to the registered event list — some cancelled casts previously left dangling personal-display icons
 

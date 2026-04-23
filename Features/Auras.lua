@@ -40,6 +40,7 @@ local function IsRosterUnit(unit)
     if unit == "player" then return true end
     if strfind(unit, "^party%d$") then return true end
     if strfind(unit, "^raid%d+$") then return true end
+    if strfind(unit, "^boss%d$") then return true end
     return false
 end
 
@@ -639,6 +640,22 @@ local function TriggerAuraUpdateForUnit(unit)
             end
         end
     end
+
+    -- Also update pinned boss frames
+    if DF.PinnedFrames and DF.PinnedFrames.bossFrames then
+        for setIndex = 1, 2 do
+            local frames = DF.PinnedFrames.bossFrames[setIndex]
+            if frames then
+                for i = 1, 8 do
+                    local f = frames[i]
+                    if f and f:IsVisible() and f.unit == unit then
+                        if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(f) end
+                        if DF.UpdateDefensiveBar then DF:UpdateDefensiveBar(f) end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- Forward declarations: these helpers are defined later in the file (used by
@@ -673,7 +690,10 @@ local AuraPassesAnyFilter
 -- ============================================================
 
 local function IsBlizzardAuraSourceAvailable()
-    return type(_G.CompactUnitFrame_UpdateAuras) == "function"
+    -- Force-disabled: Blizzard aura data source is being removed in 12.0.5
+    -- and is already causing issues. Returning false unconditionally so all
+    -- users migrate to Direct API now rather than waiting for the patch.
+    return false
 end
 
 -- Applies the forced migration to both party and raid profiles. Called both
@@ -746,7 +766,7 @@ function DF:CheckBlizzardAuraSourceAvailable()
                         "directDebuffShowAll", "directDebuffFilterRaid",
                         "directDebuffFilterRaidInCombat", "directDebuffFilterCrowdControl",
                         "directDebuffFilterImportant",
-                        "directDebuffFilterRaidPlayerDispellable", "directDebuffFilterAllDispellable",
+                        "directDebuffDispellableMode",
                         "directDebuffSortOrder",
                     }
 
@@ -1223,10 +1243,10 @@ local function BuildDirectDebuffFilters(db)
     if db.directDebuffFilterImportant then
         filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.Important or "IMPORTANT")
     end
-    if db.directDebuffFilterRaidPlayerDispellable then
+    if db.directDebuffDispellableMode == "PLAYER" then
         filters[#filters + 1] = "HARMFUL|" .. (AuraFilters.RaidPlayerDispellable or "RAID_PLAYER_DISPELLABLE")
     end
-    -- Note: directDebuffFilterAllDispellable has no Blizzard filter constant —
+    -- Note: directDebuffDispellableMode == "ALL" has no Blizzard filter constant —
     -- it's post-classified in ScanUnitDirect via auraData.dispelName ~= nil.
     -- No sub-filters selected = show all (backward compat)
     if #filters == 0 then return nil end
@@ -1483,7 +1503,7 @@ local function ClassifyAura(cache, unit, auraData, kind, buffFilters, debuffFilt
         end
         -- User-configurable debuff filter (nil means show all)
         local passesFilters = not debuffFilters or AuraPassesAnyFilter(unit, id, debuffFilters)
-        local passesAllDispellable = db and db.directDebuffFilterAllDispellable and isAllDispellable
+        local passesAllDispellable = db and db.directDebuffDispellableMode == "ALL" and isAllDispellable
         if passesFilters or passesAllDispellable then
             cache.debuffs[id] = true
         end
@@ -1510,6 +1530,21 @@ local function ScanUnitFull(unit)
     if not GetAuraSlots or not GetAuraDataBySlot then return end
 
     local cache = EnsureAuraCacheEntry(unit)
+
+    -- Don't wipe aura cache for out-of-range units — the API returns nothing
+    -- for OOR units, so rescanning would destroy valid cached data.
+    -- When they come back in range, UNIT_AURA fires again with real data.
+    local frame = DF.unitFrameMap and DF.unitFrameMap[unit]
+    if frame then
+        local inRange = frame.dfInRange
+        local isSecret = issecretvalue and issecretvalue(inRange)
+        if not isSecret and inRange == false then
+            -- Only skip if we already have data cached (don't skip first scan)
+            if cache.hasFullScan then
+                return
+            end
+        end
+    end
 
     -- Wipe the new Fix A fields
     wipe(cache.buffsByID)
@@ -1664,6 +1699,7 @@ end
 -- Expose on DF so the dev slash command and tests can call them directly
 DF.ScanUnitFull   = function(self, unit) ScanUnitFull(unit) end
 DF.ApplyAuraDelta = function(self, unit, updateInfo) return ApplyAuraDelta(unit, updateInfo) end
+DF.TriggerAuraUpdateForUnit = function(self, unit) TriggerAuraUpdateForUnit(unit) end
 
 -- ============================================================
 -- DEFENSIVE CACHE POPULATOR (mode-independent)

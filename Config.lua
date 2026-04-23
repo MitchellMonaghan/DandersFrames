@@ -732,6 +732,15 @@ function DF:GetTexture(name)
 end
 
 -- ============================================================
+-- GLOBAL (account-wide) DEFAULTS
+-- Not per-profile. Lives at DandersFramesDB_v2.global.
+-- ============================================================
+
+DF.GlobalDefaults = {
+    notifyOutdated = true,
+}
+
+-- ============================================================
 -- DEFAULT SETTINGS (exported from profile v2.9.8)
 -- ============================================================
 
@@ -855,6 +864,12 @@ DF.PartyDefaults = {
     bossDebuffsOverlayMaxSlots = 3,
     bossDebuffsOverlayScale = 1.05,
 
+    -- Container overlay (12.0.5+ native dispel overlay for private auras)
+    bossDebuffsContainerOverlayEnabled = false,
+    bossDebuffsContainerOverlayDispelMode = 2,
+    bossDebuffsContainerOverlayGradientDir = 0,
+    bossDebuffsContainerOverlayAlpha = 1.0,
+
     -- Buff settings
     buffAlpha = 1,
     buffAnchor = "BOTTOMRIGHT",
@@ -864,7 +879,7 @@ DF.PartyDefaults = {
     buffClickThrough = true,
     buffClickThroughInCombatOnly = false,
     buffClickThroughKeybinds = true,
-    buffCountdownFont = "Fonts\\FRIZQT__.TTF",
+    buffCountdownFont = "Friz Quadrata TT",
     buffCountdownOutline = "OUTLINE",
     buffCountdownScale = 1,
     buffCountdownX = 0,
@@ -917,8 +932,7 @@ DF.PartyDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
-    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffDispellableMode = "PLAYER",  -- "PLAYER" (RAID_PLAYER_DISPELLABLE) or "ALL" (dispelName ~= nil)
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
@@ -999,7 +1013,7 @@ DF.PartyDefaults = {
     debuffClickThrough = true,
     debuffClickThroughInCombatOnly = false,
     debuffClickThroughKeybinds = true,
-    debuffCountdownFont = "Fonts\\FRIZQT__.TTF",
+    debuffCountdownFont = "Friz Quadrata TT",
     debuffCountdownOutline = "OUTLINE",
     debuffCountdownScale = 1,
     debuffCountdownX = 0,
@@ -1758,49 +1772,53 @@ DF.PartyDefaults = {
     targetedSpellX = 0,
     targetedSpellY = -28,
 
-    -- Targeted List (alpha/beta only — gated by DF.RELEASE_CHANNEL ~= "release")
+    -- Targeted List (party-mode only)
     -- Stacked cast-bar display showing enemy casts targeting party members.
     -- User-facing name ("Targeted List") is intentionally decoupled from the
     -- internal `targetedList*` db prefix so the feature can be renamed later
     -- by editing locale strings only. Party-mode only by design.
     -- Position uses an absolute mover (targetedListX/Y), not an anchor point.
-    targetedListBackgroundAlpha = 0.6,
-    targetedListBorderColor = {r = 0, g = 0, b = 0, a = 1},
+    targetedListBackgroundAlpha = 0.5,
+    targetedListBorderColor = {r = 0.18, g = 0.18, b = 0.18, a = 1},
     targetedListEnabled = false,
     targetedListFadeOutDuration = 0.25,
-    targetedListFont = "Friz Quadrata TT",
-    targetedListFontOutline = "OUTLINE",
-    targetedListFontSize = 12,
-    targetedListSpellNameFontSize = 12,
-    targetedListTargetNameFontSize = 12,
+    targetedListFont = "DF Roboto SemiBold",
+    targetedListFontOutline = "SHADOW",
+    targetedListFontSize = 11,
+    targetedListSpellNameFontSize = 0,
+    targetedListTargetNameFontSize = 0,
     targetedListGrowth = "DOWN",
     targetedListHeight = 22,
     targetedListHideOwnCasts = false,
+    targetedListHideOutOfCombat = true,
     targetedListHighlightImportant = true,
     targetedListHighlightColor = {r = 1, g = 0.8, b = 0},
     targetedListIconPosition = "LEFT",
-    targetedListImportantOnly = true,
+    targetedListImportantOnly = false,
     targetedListInArena = true,
     targetedListInBattlegrounds = true,
     targetedListInDungeons = true,
     targetedListInOpenWorld = true,
     targetedListInRaids = false,
-    targetedListInterruptedFlashDuration = 1.0,
-    targetedListInterruptibleColor = {r = 1, g = 0.2, b = 0.2, a = 1},
+    targetedListInterruptedFlashDuration = 2.0,
+    targetedListInterruptibleColor = {r = 1, g = 0.494, b = 0.137, a = 1},
     targetedListMaxBars = 6,
     targetedListShowArrowPrefix = true,
+    targetedListShowArrowSuffix = false,
     targetedListShowBorder = true,
-    targetedListShowUntargeted = false,
+    targetedListShowUntargeted = true,
     targetedListShowDuration = true,
     targetedListShowIcon = true,
     targetedListShowSpellName = true,
     targetedListShowTargetName = true,
-    targetedListSortOrder = "NEWEST",
-    targetedListSpacing = 2,
+    targetedListSortOrder = "OLDEST",
+    targetedListSpacing = 6,
     targetedListStylePreset = "DEFAULT",
     targetedListTargetNameClassColor = true,
-    targetedListTexture = "Interface\\TargetingFrame\\UI-StatusBar",
-    targetedListUninterruptibleColor = {r = 0.5, g = 0.5, b = 0.5, a = 1},
+    targetedListTexture = "Interface\\Buttons\\WHITE8x8",
+    targetedListUninterruptibleColor = {r = 0.8, g = 0.302, b = 0.302, a = 1},
+    targetedListSelfTargetColorEnabled = true,
+    targetedListSelfTargetColor = {r = 0.02, g = 0.776, b = 0.4, a = 0.2},
     targetedListWidth = 240,
     targetedListX = 0,
     targetedListY = -10,
@@ -1820,7 +1838,8 @@ DF.PartyDefaults = {
     targetedListTargetNameY = 0,
     targetedListDurationAnchor = "RIGHT",
     targetedListDurationAlign = "RIGHT",
-    targetedListDurationX = -4,
+    targetedListDurationFontSize = 17,
+    targetedListDurationX = -6,
     targetedListDurationY = 0,
     targetedListInterruptTextAnchor = "CENTER",
     targetedListInterruptTextAlign = "CENTER",
@@ -1831,8 +1850,7 @@ DF.PartyDefaults = {
 
     -- Test Mode
     -- testShowTargetedList drives the Targeted List demo bars in party
-    -- test mode (alpha/beta only — the feature is gated by
-    -- DF.RELEASE_CHANNEL). There is no raid-mode equivalent because the
+    -- test mode. There is no raid-mode equivalent because the
     -- Targeted List itself is party-only.
     testShowTargetedList = false,
     testAnimateTargetedList = true,
@@ -1919,6 +1937,7 @@ DF.PartyDefaults = {
         sets = {
             [1] = {
                 enabled = false,
+                frameType = "player",
                 name = "Pinned 1",
                 players = {},
                 growDirection = "HORIZONTAL",
@@ -1939,6 +1958,7 @@ DF.PartyDefaults = {
             },
             [2] = {
                 enabled = false,
+                frameType = "player",
                 name = "Pinned 2",
                 players = {},
                 growDirection = "HORIZONTAL",
@@ -2017,13 +2037,13 @@ DF.PartyDefaults = {
             iconScale = 1.0,
             showDuration = true,
             showStacks = true,
-            durationFont = "Fonts\\FRIZQT__.TTF",
+            durationFont = "Friz Quadrata TT",
             durationScale = 1.0,
             durationOutline = "OUTLINE",
             durationAnchor = "CENTER",
             durationX = 0,
             durationY = 0,
-            stackFont = "Fonts\\FRIZQT__.TTF",
+            stackFont = "Friz Quadrata TT",
             stackScale = 1.0,
             stackOutline = "OUTLINE",
             stackAnchor = "BOTTOMRIGHT",
@@ -2166,6 +2186,12 @@ DF.RaidDefaults = {
     bossDebuffsOverlayMaxSlots = 3,
     bossDebuffsOverlayScale = 1.05,
 
+    -- Container overlay (12.0.5+ native dispel overlay for private auras)
+    bossDebuffsContainerOverlayEnabled = false,
+    bossDebuffsContainerOverlayDispelMode = 2,
+    bossDebuffsContainerOverlayGradientDir = 0,
+    bossDebuffsContainerOverlayAlpha = 1.0,
+
     -- Buff settings
     buffAlpha = 1,
     buffAnchor = "BOTTOMRIGHT",
@@ -2175,7 +2201,7 @@ DF.RaidDefaults = {
     buffClickThrough = true,
     buffClickThroughInCombatOnly = false,
     buffClickThroughKeybinds = true,
-    buffCountdownFont = "Fonts\\FRIZQT__.TTF",
+    buffCountdownFont = "Friz Quadrata TT",
     buffCountdownOutline = "OUTLINE",
     buffCountdownScale = 1,
     buffCountdownX = 0,
@@ -2228,8 +2254,7 @@ DF.RaidDefaults = {
     directDebuffFilterRaidInCombat = true,    -- RAID_IN_COMBAT filter
     directDebuffFilterCrowdControl = true,    -- CROWD_CONTROL filter
     directDebuffFilterImportant = true,       -- IMPORTANT filter (12.0.1)
-    directDebuffFilterRaidPlayerDispellable = true,  -- RAID_PLAYER_DISPELLABLE filter
-    directDebuffFilterAllDispellable = false, -- post-classified: auraData.dispelName ~= nil
+    directDebuffDispellableMode = "PLAYER",  -- "PLAYER" (RAID_PLAYER_DISPELLABLE) or "ALL" (dispelName ~= nil)
     directDebuffSortOrder = "TIME",           -- "DEFAULT" / "TIME" / "NAME"
 
     buffGrowth = "LEFT_UP",
@@ -2310,7 +2335,7 @@ DF.RaidDefaults = {
     debuffClickThrough = true,
     debuffClickThroughInCombatOnly = false,
     debuffClickThroughKeybinds = true,
-    debuffCountdownFont = "Fonts\\FRIZQT__.TTF",
+    debuffCountdownFont = "Friz Quadrata TT",
     debuffCountdownOutline = "OUTLINE",
     debuffCountdownScale = 1,
     debuffCountdownX = 0,
@@ -3153,6 +3178,7 @@ DF.RaidDefaults = {
         sets = {
             [1] = {
                 enabled = false,
+                frameType = "player",
                 name = "Pinned 1",
                 players = {},
                 growDirection = "HORIZONTAL",
@@ -3173,6 +3199,7 @@ DF.RaidDefaults = {
             },
             [2] = {
                 enabled = false,
+                frameType = "player",
                 name = "Pinned 2",
                 players = {},
                 growDirection = "HORIZONTAL",
@@ -3251,13 +3278,13 @@ DF.RaidDefaults = {
             iconScale = 1.0,
             showDuration = true,
             showStacks = true,
-            durationFont = "Fonts\\FRIZQT__.TTF",
+            durationFont = "Friz Quadrata TT",
             durationScale = 1.0,
             durationOutline = "OUTLINE",
             durationAnchor = "CENTER",
             durationX = 0,
             durationY = 0,
-            stackFont = "Fonts\\FRIZQT__.TTF",
+            stackFont = "Friz Quadrata TT",
             stackScale = 1.0,
             stackOutline = "OUTLINE",
             stackAnchor = "BOTTOMRIGHT",
@@ -3307,3 +3334,14 @@ DF.RaidAutoProfilesDefaults = {
         profile = nil  -- Single profile: {name = "Mythic Setup", overrides = {}} or nil if not configured
     },
 }
+
+function DF:GetGlobalDB()
+    DandersFramesDB_v2 = DandersFramesDB_v2 or {}
+    DandersFramesDB_v2.global = DandersFramesDB_v2.global or {}
+    for k, v in pairs(DF.GlobalDefaults) do
+        if DandersFramesDB_v2.global[k] == nil then
+            DandersFramesDB_v2.global[k] = v
+        end
+    end
+    return DandersFramesDB_v2.global
+end

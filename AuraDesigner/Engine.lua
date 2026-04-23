@@ -786,15 +786,13 @@ function Engine:UpdateFrame(frame)
             elseif ind.typeKey == "bar" then
                 indicatorFrame = frame.dfAD_bars and frame.dfAD_bars[key]
             end
-            -- Configure if version is stale — but only outside combat since
-            -- SetPropagateMouseMotion/Clicks are protected functions.
-            -- Pre-warm (below) ensures frames are created and configured before combat.
-            -- If a brand-new aura appears mid-combat, it runs without Configure
-            -- and gets configured on PLAYER_REGEN_ENABLED via adConfigVersion mismatch.
-            if not InCombatLockdown() then
-                if not indicatorFrame or indicatorFrame.dfAD_configVersion ~= (DF.adConfigVersion or 0) then
-                    Indicators:Configure(frame, ind.typeKey, config, adDB.defaults, key, ind.priority)
-                end
+            -- Configure if version is stale.  Protected calls
+            -- (SetPropagateMouseMotion/Clicks) are individually guarded inside
+            -- each Configure function, so we can safely run Configure mid-combat
+            -- to ensure indicators always have correct static settings (size,
+            -- color, font, etc.) even when first seen during combat.
+            if not indicatorFrame or indicatorFrame.dfAD_configVersion ~= (DF.adConfigVersion or 0) then
+                Indicators:Configure(frame, ind.typeKey, config, adDB.defaults, key, ind.priority)
             end
         end
 

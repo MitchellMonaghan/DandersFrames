@@ -22,6 +22,93 @@ DF.SectionRegistry = DF.SectionRegistry or {}
 -- Track selected mode
 GUI.SelectedMode = "party"
 
+-- Registry of tabs that should show a "New" badge until opened.
+-- Add tab IDs here for new features; the badge auto-hides once viewed.
+GUI.NewTabs = {
+    ["indicators_targetedlist"] = true,
+    ["general_pinnedframes"] = true,
+}
+
+-- Registry of section headers (inside a tab) that should show a "New" badge
+-- until the user visits the tab and then navigates away. Keyed by
+-- "<tabName>.<sectionId>" so entries are unambiguous across tabs.
+-- The badge is created by GUI:AddSectionNewBadge and cleared by SelectTab
+-- when the user leaves the owning tab (persisted via seenSections).
+GUI.NewSections = {
+    ["general_pinnedframes.frameType"] = true,
+}
+
+-- Live-tracked badges pending a "seen" mark, keyed by tabName → { key = badge }.
+-- Populated by AddSectionNewBadge, drained by SelectTab on tab leave.
+GUI.pendingSectionBadges = {}
+
+-- Add a gold "New" badge to the right of a section header's text. Returns the
+-- badge FontString, or nil if the section isn't registered in NewSections or
+-- has already been marked seen. The badge clears (and is persisted as seen)
+-- the next time the user navigates away from `tabName`.
+function GUI:AddSectionNewBadge(header, tabName, sectionId)
+    if not header or not header.text or not tabName or not sectionId then return end
+    local key = tabName .. "." .. sectionId
+    if not GUI.NewSections[key] then return end
+
+    local seen = DandersFramesDB_v2 and DandersFramesDB_v2.seenSections
+                 and DandersFramesDB_v2.seenSections[key]
+    if seen then return end
+
+    local badge = header:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    badge:SetPoint("LEFT", header.text, "RIGHT", 6, 0)
+    badge:SetText(L["New"])
+    badge:SetTextColor(1, 0.82, 0)
+
+    GUI.pendingSectionBadges[tabName] = GUI.pendingSectionBadges[tabName] or {}
+    GUI.pendingSectionBadges[tabName][key] = badge
+    return badge
+end
+
+-- Pages that remain fully accessible regardless of whether party or raid
+-- mode is disabled via General settings. All other mode-specific tabs
+-- are greyed out and non-interactive when viewing a disabled mode.
+-- Auto Layouts is intentionally NOT whitelisted: it edits per-profile
+-- settings that would have no effect if all frames are disabled.
+GUI.AlwaysAccessiblePages = {
+    ["general_settings"]             = true,  -- the toggles themselves
+    ["profiles_manage"]              = true,
+    ["profiles_importexport"]        = true,
+    ["debug_console"]                = true,
+    ["indicators_targetedlist"]      = true,
+    ["indicators_personal_targeted"] = true,
+}
+
+-- Returns true if the given tab should be disabled for the currently
+-- selected mode (i.e. the tab is mode-specific and that mode is off).
+function GUI:IsTabDisabledForCurrentMode(tabName)
+    if not tabName then return false end
+    if GUI.AlwaysAccessiblePages[tabName] then return false end
+    if GUI.SelectedMode == "party" and DF.db and DF.db.partyEnabled == false then return true end
+    if GUI.SelectedMode == "raid"  and DF.db and DF.db.raidEnabled  == false then return true end
+    return false
+end
+
+-- Walk all registered tabs and update their .disabled flag + visuals
+-- based on the current mode and enable flags. Call after mode switches.
+function GUI:UpdateTabAvailability()
+    if not GUI.Tabs then return end
+    for name, btn in pairs(GUI.Tabs) do
+        local disabled = GUI:IsTabDisabledForCurrentMode(name)
+        btn.disabled = disabled
+        if btn.Text then
+            if disabled then
+                btn.Text:SetTextColor(0.45, 0.45, 0.45)
+            else
+                btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+            end
+        end
+        if disabled and not btn.isActive then
+            btn:SetBackdropColor(0, 0, 0, 0)
+        end
+    end
+end
+
 -- Track currently open dropdown menu (only one can be open at a time)
 local currentOpenDropdown = nil
 
@@ -116,7 +203,7 @@ function GUI:CreateHeader(parent, text)
     container:SetSize(200, 25)
     container:Show()
     
-    local h = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local h = container:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     h:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 2)
     h:SetText(text)
     local c = GetThemeColor()
@@ -175,7 +262,7 @@ function GUI:CreateCollapsibleSection(parent, text, defaultExpanded, width)
     section.arrow:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Section title
-    section.title = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    section.title = section:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     section.title:SetPoint("LEFT", 26, 0)
     section.title:SetText(text)
     local c = GetThemeColor()
@@ -436,7 +523,7 @@ function GUI:CreateSettingsGroup(parent, width, opts)
                     -- Build summary fontstring lazily on first use
                     if not self.collapseSummary then
                         self.collapseSummary = self:CreateFontString(nil, "OVERLAY")
-                        self.collapseSummary:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+                        DF:SafeSetFont(self.collapseSummary, nil, 9, "")
                         self.collapseSummary:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b, 0.5)
                         self.collapseSummary:SetJustifyH("LEFT")
                         self.collapseSummary:SetWordWrap(true)
@@ -514,7 +601,7 @@ function GUI:CreateLabel(parent, text, width, color)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(width or 380, 40)
     
-    local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, -5)
     lbl:SetWidth(width or 380)
     lbl:SetJustifyH("LEFT")
@@ -541,7 +628,7 @@ function GUI:CreateWarningBox(parent, text, width, height)
     frame:SetBackdropColor(0.4, 0.1, 0.1, 0.7)  -- Dark red background
     frame:SetBackdropBorderColor(0.8, 0.2, 0.2, 1)  -- Red border
     
-    local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 8, -8)
     lbl:SetPoint("BOTTOMRIGHT", -8, 8)
     lbl:SetJustifyH("LEFT")
@@ -560,7 +647,7 @@ function GUI:CreateButton(parent, text, width, height, func)
     btn:SetSize(width or 120, height or 22)
     CreateElementBackdrop(btn)
     
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("CENTER")
     btn.Text:SetText(text)
     btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -602,7 +689,7 @@ function GUI:CreateIconButton(parent, iconName, text, width, height, func, iconS
     icon:SetVertexColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     btn.Icon = icon
     
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
     btn.Text:SetText(text)
     btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -637,7 +724,7 @@ function GUI:CreateSeeAlso(parent, links)
     container:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
     container:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
     
-    local label = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local label = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     label:SetPoint("TOPLEFT", 8, -10)
     label:SetText(L["See Also:"])
     label:SetTextColor(0.7, 0.7, 0.7)
@@ -649,7 +736,7 @@ function GUI:CreateSeeAlso(parent, links)
         local link = CreateFrame("Button", nil, container)
         link:SetHeight(16)
         
-        local linkText = link:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local linkText = link:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         linkText:SetPoint("TOPLEFT", 0, -1)
         linkText:SetText(linkData.label)
         local c = GetThemeColor()
@@ -674,7 +761,7 @@ function GUI:CreateSeeAlso(parent, links)
         
         -- Create separator (hidden by default, shown as needed)
         if i < #links then
-            local sep = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local sep = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             sep:SetText("•")
             sep:SetTextColor(0.5, 0.5, 0.5)
             table.insert(separators, sep)
@@ -890,7 +977,7 @@ local function AddOverrideIndicators(container, lbl, dbKey, onReset, verticalOff
     container.overrideStar = starBtn
     
     -- Global value text (shown when in edit mode) - positioned inline after label
-    local globalText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local globalText = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     globalText:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
     globalText:SetTextColor(0.4, 0.4, 0.4)
     globalText:Hide()
@@ -1126,7 +1213,7 @@ local function AddOrderListOverrideIndicators(container, dbKey, onReset)
     container.overrideStar = starBtn
     
     -- "Modified" text to the left of star
-    local modifiedText = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local modifiedText = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     modifiedText:SetPoint("RIGHT", starIcon, "LEFT", -2, 0)
     modifiedText:SetText(L["Modified"])
     modifiedText:SetTextColor(1, 0.8, 0.2, 0.8)
@@ -1202,7 +1289,7 @@ function GUI:CreateCheckbox(parent, label, dbTable, dbKey, callback, customGet, 
     cb:SetCheckedTexture(cb.Check)
     
     -- Label
-    local txt = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local txt = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     txt:SetPoint("LEFT", cb, "RIGHT", 8, 0)
     txt:SetText(label)
     txt:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -1328,6 +1415,191 @@ function GUI:CreateCheckbox(parent, label, dbTable, dbKey, callback, customGet, 
 end
 
 -- ============================================================
+-- TOGGLE SWITCH
+-- A two-state toggle for mutually exclusive options. Two labels
+-- flank a pill-shaped track with a sliding thumb. The active
+-- label is bright, the inactive label is dimmed.
+--
+-- API: GUI:CreateToggleSwitch(parent, labelA, labelB, dbTable,
+--        dbKey, valueA, valueB, callback)
+--   labelA / labelB : display text for each state
+--   valueA / valueB : the db values those states map to
+-- ============================================================
+function GUI:CreateToggleSwitch(parent, labelA, labelB, dbTable, dbKey, valueA, valueB, callback)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(260, 24)
+
+    -- Left label
+    local txtA = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    txtA:SetPoint("LEFT", 0, 0)
+    txtA:SetText(labelA)
+
+    -- Track (pill shape, fixed width)
+    local trackWidth, trackHeight = 36, 18
+    local track = CreateFrame("Frame", nil, container, "BackdropTemplate")
+    track:SetSize(trackWidth, trackHeight)
+    track:SetPoint("LEFT", txtA, "RIGHT", 8, 0)
+
+    -- Right label (anchored to track)
+    local txtB = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+    txtB:SetPoint("LEFT", track, "RIGHT", 8, 0)
+    txtB:SetText(labelB)
+    track:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    track:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
+    track:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
+
+    -- Thumb
+    local thumbSize = trackHeight - 4
+    local thumb = track:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(thumbSize, thumbSize)
+    thumb:SetTexture("Interface\\Buttons\\WHITE8x8")
+
+    -- Fill highlight spanning the full track interior
+    local fill = track:CreateTexture(nil, "ARTWORK")
+    fill:SetTexture("Interface\\Buttons\\WHITE8x8")
+    fill:SetPoint("TOPLEFT", 2, -2)
+    fill:SetPoint("BOTTOMRIGHT", -2, 2)
+
+    -- Override indicator support
+    local effectiveOverrideKey = dbKey
+    if effectiveOverrideKey and type(effectiveOverrideKey) == "string" then
+        local function onReset()
+            if DF.AutoProfilesUI then
+                DF.AutoProfilesUI:ResetProfileSetting(effectiveOverrideKey)
+                local globalVal = DF.AutoProfilesUI:GetGlobalValue(effectiveOverrideKey)
+                if dbTable and dbKey then
+                    dbTable[dbKey] = globalVal
+                end
+                if container.UpdateOverrideIndicators then
+                    container:UpdateOverrideIndicators(globalVal)
+                end
+                DF:UpdateAll()
+                if callback then callback() end
+            end
+        end
+        AddOverrideIndicators(container, txtB, effectiveOverrideKey, onReset, nil, nil, dbTable)
+    end
+
+    -- Visual refresh
+    local function UpdateVisuals()
+        local val
+        if dbTable and dbKey then val = dbTable[dbKey] end
+        local isB = (val == valueB)
+
+        local tc = GetThemeColor()
+        thumb:ClearAllPoints()
+        if isB then
+            thumb:SetPoint("RIGHT", track, "RIGHT", -2, 0)
+        else
+            thumb:SetPoint("LEFT", track, "LEFT", 2, 0)
+        end
+
+        thumb:SetVertexColor(tc.r, tc.g, tc.b, 1)
+        fill:SetVertexColor(tc.r, tc.g, tc.b, 0.25)
+
+        -- Label colors
+        if isB then
+            txtA:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+            txtB:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+        else
+            txtA:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
+            txtB:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+        end
+
+        if container.UpdateOverrideIndicators then
+            container:UpdateOverrideIndicators(val)
+        end
+    end
+
+    -- Click handler (shared by track and both labels)
+    local function Toggle()
+        local current = dbTable and dbKey and dbTable[dbKey]
+        local newVal = (current == valueB) and valueA or valueB
+
+        -- Runtime override protection
+        if GUI.SelectedMode == "raid" and DF.AutoProfilesUI
+           and DF.AutoProfilesUI:HandleRuntimeWrite(effectiveOverrideKey, newVal) then
+            if container.UpdateOverrideIndicators then container:UpdateOverrideIndicators(newVal) end
+            return
+        end
+
+        if dbTable and dbKey then dbTable[dbKey] = newVal end
+
+        -- Profile editing
+        if DF.AutoProfilesUI and DF.AutoProfilesUI:IsEditing() and effectiveOverrideKey then
+            DF.AutoProfilesUI:SetProfileSetting(effectiveOverrideKey, newVal)
+        end
+
+        UpdateVisuals()
+
+        if callback then callback() end
+        if parent.RefreshStates then parent:RefreshStates() end
+        DF:UpdateAll()
+    end
+
+    track:EnableMouse(true)
+    track:SetScript("OnMouseUp", function() Toggle() end)
+    txtA:SetParent(container)
+    txtB:SetParent(container)
+    -- Make labels clickable via the container
+    container:EnableMouse(true)
+    container:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then Toggle() end
+    end)
+
+    -- Theme support
+    track.UpdateTheme = function()
+        UpdateVisuals()
+    end
+    if not parent.ThemeListeners then parent.ThemeListeners = {} end
+    table.insert(parent.ThemeListeners, track)
+
+    container:SetScript("OnShow", UpdateVisuals)
+
+    -- Tooltip support
+    container:SetScript("OnEnter", function(self)
+        if self.tooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:SetText(labelA .. " / " .. labelB, 1, 1, 1)
+            GameTooltip:AddLine(self.tooltip, 1, 0.82, 0, true)
+            GameTooltip:Show()
+        end
+        -- Hover highlight on track
+        track:SetBackdropBorderColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 1)
+    end)
+    container:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        track:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 1)
+    end)
+
+    -- Enable/disable
+    container.SetEnabled = function(self, enabled)
+        track:EnableMouse(enabled)
+        self:EnableMouse(enabled)
+        if enabled then
+            UpdateVisuals()
+        else
+            txtA:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+            txtB:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
+            thumb:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.5)
+            fill:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.1)
+        end
+    end
+
+    -- Search registration
+    if DF.Search and dbKey and type(dbKey) == "string" then
+        container.searchEntry = DF.Search:RegisterCheckbox(labelA .. " / " .. labelB, dbKey, nil, false)
+    end
+
+    UpdateVisuals()
+    return container
+end
+
+-- ============================================================
 -- DEBUG CATEGORY ROW
 -- A wide row with checkbox + bold category name + description.
 -- The whole row is clickable, hover shows a background highlight,
@@ -1371,7 +1643,7 @@ function GUI:CreateDebugCategoryRow(parent, categoryKey, description, width)
     table.insert(parent.ThemeListeners, cb)
 
     -- Category name (bold, full opacity)
-    local nameTxt = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local nameTxt = row:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
     nameTxt:SetPoint("LEFT", cb, "RIGHT", 8, 0)
     nameTxt:SetWidth(86)
     nameTxt:SetJustifyH("LEFT")
@@ -1380,7 +1652,7 @@ function GUI:CreateDebugCategoryRow(parent, categoryKey, description, width)
 
     -- Description (dim, fills remaining space, wraps if too long)
     if description and description ~= "" then
-        local descTxt = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local descTxt = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         descTxt:SetPoint("LEFT", nameTxt, "RIGHT", 12, 0)
         descTxt:SetPoint("RIGHT", row, "RIGHT", -8, 0)
         descTxt:SetJustifyH("LEFT")
@@ -1438,7 +1710,7 @@ function GUI:CreateInput(parent, label, width)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(width or 180, 44)
     
-    local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -1455,7 +1727,7 @@ function GUI:CreateInput(parent, label, width)
     })
     editbox:SetBackdropColor(0, 0, 0, 0.5)
     editbox:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    editbox:SetFontObject(GameFontHighlightSmall)
+    editbox:SetFontObject(DFFontHighlightSmall)
     editbox:SetTextInsets(5, 5, 0, 0)
     editbox:SetAutoFocus(false)
     editbox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
@@ -1470,7 +1742,7 @@ function GUI:CreateEditBox(parent, label, dbTable, dbKey, callback, width)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(width or 180, 44)
     
-    local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -1509,7 +1781,7 @@ function GUI:CreateEditBox(parent, label, dbTable, dbKey, callback, width)
     })
     editbox:SetBackdropColor(0, 0, 0, 0.5)
     editbox:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    editbox:SetFontObject(GameFontHighlightSmall)
+    editbox:SetFontObject(DFFontHighlightSmall)
     editbox:SetTextInsets(5, 5, 0, 0)
     editbox:SetAutoFocus(false)
     
@@ -1566,7 +1838,7 @@ function GUI:CreateSlider(parent, label, minVal, maxVal, step, dbTable, dbKey, c
     container:SetSize(260, 50)
     
     -- Label
-    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -1634,7 +1906,7 @@ function GUI:CreateSlider(parent, label, minVal, maxVal, step, dbTable, dbKey, c
     input:SetPoint("LEFT", track, "RIGHT", 8, 0)
     input:SetSize(50, 20)
     CreateElementBackdrop(input)
-    input:SetFontObject(GameFontHighlightSmall)
+    input:SetFontObject(DFFontHighlightSmall)
     input:SetJustifyH("CENTER")
     input:SetAutoFocus(false)
     input:SetTextInsets(2, 2, 0, 0)
@@ -1840,7 +2112,7 @@ function GUI:CreateColorPicker(parent, label, dbTable, dbKey, hasAlpha, callback
     CreateElementBackdrop(btn)
     
     -- Label
-    local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local txt = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     txt:SetPoint("LEFT", 8, 0)
     txt:SetText(label)
     txt:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2022,7 +2294,7 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
     container:SetSize(260, 50)
     
     -- Label
-    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2054,7 +2326,7 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
     btn:SetHeight(24)
     CreateElementBackdrop(btn)
     
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", 8, 0)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
@@ -2132,7 +2404,7 @@ function GUI:CreateDropdown(parent, label, options, dbTable, dbKey, callback)
         menuBtn:SetPoint("TOPRIGHT", -2, -2 - (i - 1) * 22)
         menuBtn:SetHeight(22)
         
-        menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         menuBtn.Text:SetPoint("LEFT", 8, 0)
         menuBtn.Text:SetText(opt.value)
         menuBtn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2304,7 +2576,7 @@ function GUI:CreateGrowthControl(parent, db, dbKey, callback)
         frame:SetPoint("TOPRIGHT", 0, yOffset)
         frame:SetHeight(50)
 
-        local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local lbl = frame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         lbl:SetPoint("TOPLEFT", 0, 0)
         lbl:SetText(label)
         lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2315,7 +2587,7 @@ function GUI:CreateGrowthControl(parent, db, dbKey, callback)
         btn:SetHeight(24)
         CreateElementBackdrop(btn)
 
-        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         btn.Text:SetPoint("LEFT", 8, 0)
         btn.Text:SetPoint("RIGHT", -20, 0)
         btn.Text:SetJustifyH("LEFT")
@@ -2372,7 +2644,7 @@ function GUI:CreateGrowthControl(parent, db, dbKey, callback)
                 menuBtn:SetPoint("TOPRIGHT", -2, -2 - (i - 1) * 22)
                 menuBtn:SetHeight(22)
 
-                menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
                 menuBtn.Text:SetPoint("LEFT", 8, 0)
                 menuBtn.Text:SetText(opt.value)
                 menuBtn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2489,7 +2761,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     container:SetSize(260, 50)
 
     -- Label
-    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2525,7 +2797,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     btn.Preview:SetPoint("LEFT", 4, 0)
     btn.Preview:SetSize(80, 16)
     
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", 90, 0)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
@@ -2576,7 +2848,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     searchBox:SetPoint("TOPRIGHT", -4, -4)
     searchBox:SetHeight(22)
     searchBox:SetAutoFocus(false)
-    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetFontObject(DFFontHighlightSmall)
     searchBox:SetTextInsets(24, 8, 0, 0)
     CreateElementBackdrop(searchBox)
     searchBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
@@ -2589,7 +2861,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
     searchIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Placeholder text
-    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     placeholder:SetPoint("LEFT", 24, 0)
     placeholder:SetText(L["Search textures..."])
     placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
@@ -2680,7 +2952,7 @@ function GUI:CreateTextureDropdown(parent, label, dbTable, dbKey, callback, cust
                 menuBtn.Preview:SetVertexColor(0.3, 0.7, 0.3)  -- Green tint for preview
             end
             
-            menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             menuBtn.Text:SetPoint("LEFT", 90, 0)
             menuBtn.Text:SetText(opt.value)
             
@@ -2796,7 +3068,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     container:SetSize(260, 50)
 
     -- Label
-    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -2827,7 +3099,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     btn:SetHeight(24)
     CreateElementBackdrop(btn)
     
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", 8, 0)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
@@ -2853,7 +3125,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
                     btn.Text:SetFont(fontPath, 12, "")
                 end)
                 if not success then
-                    btn.Text:SetFontObject(GameFontHighlightSmall)
+                    btn.Text:SetFontObject(DFFontHighlightSmall)
                 end
             end
         end
@@ -2875,7 +3147,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     searchBox:SetPoint("TOPRIGHT", -4, -4)
     searchBox:SetHeight(22)
     searchBox:SetAutoFocus(false)
-    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetFontObject(DFFontHighlightSmall)
     searchBox:SetTextInsets(24, 8, 0, 0)
     CreateElementBackdrop(searchBox)
     searchBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
@@ -2888,7 +3160,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
     searchIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     
     -- Placeholder text
-    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     placeholder:SetPoint("LEFT", 24, 0)
     placeholder:SetText(L["Search fonts..."])
     placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
@@ -2973,7 +3245,7 @@ function GUI:CreateFontDropdown(parent, label, dbTable, dbKey, callback)
             menuBtn.Text:SetJustifyH("LEFT")
             
             -- Set default font first, then try to use the actual font for preview
-            menuBtn.Text:SetFontObject(GameFontHighlightSmall)
+            menuBtn.Text:SetFontObject(DFFontHighlightSmall)
             
             -- Try to preview in the actual font
             local LSM = DF.GetLSM and DF.GetLSM()
@@ -3102,7 +3374,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     container:SetSize(260, 50)
 
     -- Label
-    local lbl = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local lbl = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
     lbl:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -3114,7 +3386,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     btn:SetHeight(24)
     CreateElementBackdrop(btn)
 
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", 8, 0)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
@@ -3150,7 +3422,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     searchBox:SetPoint("TOPRIGHT", -4, -4)
     searchBox:SetHeight(22)
     searchBox:SetAutoFocus(false)
-    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetFontObject(DFFontHighlightSmall)
     searchBox:SetTextInsets(24, 8, 0, 0)
     CreateElementBackdrop(searchBox)
     searchBox:SetBackdropColor(0.1, 0.1, 0.1, 1)
@@ -3163,7 +3435,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
     searchIcon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
 
     -- Placeholder text
-    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     searchPlaceholder:SetPoint("LEFT", 24, 0)
     searchPlaceholder:SetText(L["Search sounds..."])
     searchPlaceholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
@@ -3234,7 +3506,7 @@ function GUI:CreateSoundDropdown(parent, label, dbTable, dbKey, callback)
             menuBtn:SetSize(234, ITEM_HEIGHT)
             menuBtn:SetPoint("TOPLEFT", 0, -(i - 1) * ITEM_HEIGHT)
 
-            menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            menuBtn.Text = menuBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             menuBtn.Text:SetPoint("LEFT", 8, 0)
             menuBtn.Text:SetPoint("RIGHT", -8, 0)
             menuBtn.Text:SetJustifyH("LEFT")
@@ -3478,7 +3750,7 @@ function GUI:CreateRoleOrderList(parent, dbTable, dbKey, callback, separateMelee
         item.grip = grip
         
         -- Priority number
-        local numText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        local numText = item:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
         numText:SetPoint("LEFT", grip, "RIGHT", 6, 0)
         numText:SetWidth(18)
         numText:SetJustifyH("LEFT")
@@ -3493,7 +3765,7 @@ function GUI:CreateRoleOrderList(parent, dbTable, dbKey, callback, separateMelee
         item.icon = icon
         
         -- Role name with color
-        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local text = item:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         text:SetText(info.name)
         text:SetTextColor(info.color[1], info.color[2], info.color[3])
@@ -3802,7 +4074,7 @@ function GUI:CreateClassOrderList(parent, dbTable, dbKey, callback)
         item.grip = grip
         
         -- Priority number
-        local numText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local numText = item:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         numText:SetPoint("LEFT", grip, "RIGHT", 4, 0)
         numText:SetWidth(20)
         numText:SetJustifyH("LEFT")
@@ -3816,7 +4088,7 @@ function GUI:CreateClassOrderList(parent, dbTable, dbKey, callback)
         item.colorBar = colorBar
         
         -- Class name with color
-        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local text = item:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         text:SetPoint("LEFT", colorBar, "RIGHT", 6, 0)
         text:SetText(info.name)
         text:SetTextColor(info.color[1], info.color[2], info.color[3])
@@ -4106,7 +4378,7 @@ function GUI:CreateGroupOrderList(parent, dbTable, dbKey, callback, playerGroupF
         item.grip = grip
         
         -- Display position number
-        local numText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        local numText = item:CreateFontString(nil, "OVERLAY", "DFFontHighlight")
         numText:SetPoint("LEFT", grip, "RIGHT", 6, 0)
         numText:SetWidth(18)
         numText:SetJustifyH("LEFT")
@@ -4120,7 +4392,7 @@ function GUI:CreateGroupOrderList(parent, dbTable, dbKey, callback, playerGroupF
         item.swatch = swatch
         
         -- Group name
-        local text = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local text = item:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         text:SetPoint("LEFT", swatch, "RIGHT", 6, 0)
         text:SetText("Group " .. groupNum)
         text:SetTextColor(color[1], color[2], color[3])
@@ -4314,12 +4586,12 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     local ICON_CLOSE = "Interface\\AddOns\\DandersFrames\\Media\\Icons\\close"
     
     -- ========== LEFT COLUMN: Group Roster ==========
-    local leftHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local leftHeader = container:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     leftHeader:SetPoint("TOPLEFT", 0, 0)
     leftHeader:SetText(L["Group Roster"])
     leftHeader:SetTextColor(0.7, 0.7, 0.7)
     
-    local leftCount = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local leftCount = container:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     leftCount:SetPoint("LEFT", leftHeader, "RIGHT", 8, 0)
     leftCount:SetTextColor(0.5, 0.5, 0.5)
     
@@ -4344,12 +4616,12 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     StyleScrollBar(leftScroll)
 
     -- ========== RIGHT COLUMN: Highlighted Units ==========
-    local rightHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local rightHeader = container:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     rightHeader:SetPoint("TOPLEFT", leftBg, "TOPRIGHT", COL_GAP, 18)
     rightHeader:SetText(L["Highlighted Units"])
     rightHeader:SetTextColor(0.7, 0.7, 0.7)
     
-    local rightCount = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local rightCount = container:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     rightCount:SetPoint("LEFT", rightHeader, "RIGHT", 8, 0)
     rightCount:SetTextColor(0.5, 0.5, 0.5)
     
@@ -4529,7 +4801,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         item.roleIcon = roleIcon
         
         -- Name (class colored)
-        local nameText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local nameText = item:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         nameText:SetPoint("LEFT", roleIcon, "RIGHT", 6, 0)
         nameText:SetPoint("RIGHT", -70, 0)
         nameText:SetJustifyH("LEFT")
@@ -4543,7 +4815,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         item.nameText = nameText
         
         -- Group number
-        local groupText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local groupText = item:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         groupText:SetPoint("RIGHT", -34, 0)
         groupText:SetText("G" .. playerData.group)
         groupText:SetTextColor(0.4, 0.4, 0.4)
@@ -4642,7 +4914,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         
         -- Position number
         local themeColor = GetThemeColor()
-        local numText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local numText = item:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         numText:SetPoint("LEFT", grip, "RIGHT", 6, 0)
         numText:SetWidth(20)
         numText:SetJustifyH("LEFT")
@@ -4658,7 +4930,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         
         -- Name
         local displayName = fullName:match("([^%-]+)") or fullName  -- Get name before realm
-        local nameText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local nameText = item:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         nameText:SetPoint("LEFT", roleIcon, "RIGHT", 6, 0)
         nameText:SetPoint("RIGHT", -34, 0)
         nameText:SetJustifyH("LEFT")
@@ -4839,7 +5111,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         btn:SetBackdropColor(color[1] * 0.15, color[2] * 0.15, color[3] * 0.15, 0.9)
         btn:SetBackdropBorderColor(color[1] * 0.5, color[2] * 0.5, color[3] * 0.5, 0.8)
         
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
         btn.text:SetPoint("CENTER")
         btn.text:SetText(text)
         btn.text:SetTextColor(color[1], color[2], color[3])
@@ -4888,7 +5160,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     clearBtn:SetBackdropColor(0.5, 0.15, 0.15, 0.5)
     clearBtn:SetBackdropBorderColor(0.6, 0.25, 0.25, 0.8)
     
-    clearBtn.text = clearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    clearBtn.text = clearBtn:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     clearBtn.text:SetPoint("CENTER")
     clearBtn.text:SetText(L["Clear All"])
     clearBtn.text:SetTextColor(0.8, 0.35, 0.35)
@@ -4921,7 +5193,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     removeOfflineBtn:SetBackdropColor(0.4, 0.3, 0.15, 0.5)
     removeOfflineBtn:SetBackdropBorderColor(0.5, 0.4, 0.2, 0.8)
     
-    removeOfflineBtn.text = removeOfflineBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    removeOfflineBtn.text = removeOfflineBtn:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     removeOfflineBtn.text:SetPoint("CENTER")
     removeOfflineBtn.text:SetText(L["Remove Offline"])
     removeOfflineBtn.text:SetTextColor(0.7, 0.55, 0.3)
@@ -4961,12 +5233,12 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     
     -- ========== MANUAL PLAYER ENTRY ==========
     local themeColor = GetThemeColor()
-    local manualHeader = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local manualHeader = container:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     manualHeader:SetPoint("TOPLEFT", buttonRow, "BOTTOMLEFT", 0, -12)
     manualHeader:SetText(L["Add Offline Player"])
     manualHeader:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
     
-    local manualHelp = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local manualHelp = container:CreateFontString(nil, "OVERLAY", "DFFontNormalSmall")
     manualHelp:SetPoint("TOPLEFT", manualHeader, "BOTTOMLEFT", 0, -2)
     manualHelp:SetText(L["Pre-configure players before they join the group"])
     manualHelp:SetTextColor(0.45, 0.45, 0.45)
@@ -4981,7 +5253,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     })
     manualInput:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
     manualInput:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    manualInput:SetFontObject(GameFontHighlight)
+    manualInput:SetFontObject(DFFontHighlight)
     manualInput:SetTextInsets(8, 8, 0, 0)
     manualInput:SetAutoFocus(false)
     manualInput:SetMaxLetters(50)
@@ -5015,7 +5287,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
     addManualBtn:SetBackdropColor(themeColor.r * 0.2, themeColor.g * 0.2, themeColor.b * 0.2, 0.9)
     addManualBtn:SetBackdropBorderColor(themeColor.r * 0.5, themeColor.g * 0.5, themeColor.b * 0.5, 0.8)
     
-    addManualBtn.text = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    addManualBtn.text = addManualBtn:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     addManualBtn.text:SetPoint("CENTER")
     addManualBtn.text:SetText(L["Add"])
     addManualBtn.text:SetTextColor(themeColor.r, themeColor.g, themeColor.b)
@@ -5082,7 +5354,7 @@ function GUI:CreateHighlightRosterWidget(parent, getPlayersFunc, setPlayersFunc,
         -- Show hint if empty
         if #players == 0 then
             if not container.emptyHint then
-                container.emptyHint = rightContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                container.emptyHint = rightContent:CreateFontString(nil, "OVERLAY", "DFFontNormal")
                 container.emptyHint:SetPoint("CENTER", rightBg, "CENTER", 0, 0)
                 container.emptyHint:SetText(L["Add players from the roster\nor use quick add buttons"])
                 container.emptyHint:SetTextColor(0.35, 0.35, 0.35)
@@ -5114,12 +5386,12 @@ function GUI:CreateGradientBar(parent, width, height, db, prefix)
     f:SetSize(width or 360, height or 24)
     CreateElementBackdrop(f)
     
-    local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
+    local lbl = f:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmallOutline")
     lbl:SetPoint("LEFT", f, "LEFT", 8, 0)
     lbl:SetText("0%")
     lbl:SetTextColor(1, 1, 1, 1)
     
-    local lbl2 = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
+    local lbl2 = f:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmallOutline")
     lbl2:SetPoint("RIGHT", f, "RIGHT", -8, 0)
     lbl2:SetText("100%")
     lbl2:SetTextColor(1, 1, 1, 1)
@@ -5236,7 +5508,7 @@ function GUI:CreateSelectableList(parent, width, height, onSelect)
         row.accent:SetWidth(3)
         row.accent:Hide()
 
-        row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.label = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         row.label:SetPoint("LEFT", 8, 0)
         row.label:SetPoint("RIGHT", -4, 0)
         row.label:SetJustifyH("LEFT")
@@ -5342,7 +5614,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
 
     -- Label
     if label then
-        container.label = container:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        container.label = container:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         container.label:SetPoint("TOPLEFT", 0, 0)
         container.label:SetText(label)
         container.label:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5354,14 +5626,14 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
     btn:SetPoint("TOPLEFT", 0, -20)
     CreateElementBackdrop(btn)
 
-    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Text:SetPoint("LEFT", 6, 0)
     btn.Text:SetPoint("RIGHT", -20, 0)
     btn.Text:SetJustifyH("LEFT")
     btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
     btn.Text:SetText(L["Select..."])
 
-    btn.Arrow = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.Arrow = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btn.Arrow:SetPoint("RIGHT", -6, 0)
     btn.Arrow:SetText("v")
     btn.Arrow:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5387,11 +5659,11 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
     searchBox:SetSize(MENU_WIDTH - 12, SEARCH_HEIGHT)
     searchBox:SetPoint("TOP", 0, -6)
     searchBox:SetAutoFocus(false)
-    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetFontObject(DFFontHighlightSmall)
     searchBox:SetTextInsets(6, 6, 0, 0)
     CreateElementBackdrop(searchBox)
 
-    searchBox.placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    searchBox.placeholder = searchBox:CreateFontString(nil, "OVERLAY", "DFFontDisableSmall")
     searchBox.placeholder:SetPoint("LEFT", 6, 0)
     searchBox.placeholder:SetText(L["Search..."])
     searchBox.placeholder:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.6)
@@ -5453,7 +5725,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
                     header = CreateFrame("Frame", nil, menuChild)
                     header:SetHeight(18)
                     menuButtons[rowIndex] = header
-                    header.label = header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                    header.label = header:CreateFontString(nil, "OVERLAY", "DFFontDisableSmall")
                     header.label:SetPoint("LEFT", 4, 0)
                     header.label:SetJustifyH("LEFT")
                     header.isHeader = true
@@ -5476,7 +5748,7 @@ function GUI:CreateSearchableDropdown(parent, label, width, onSelect)
                     row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
                     row:SetBackdropColor(0, 0, 0, 0)
                     menuButtons[rowIndex] = row
-                    row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    row.label = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
                     row.label:SetPoint("LEFT", 8, 0)
                     row.label:SetPoint("RIGHT", -4, 0)
                     row.label:SetJustifyH("LEFT")
@@ -5663,7 +5935,7 @@ function GUI:CreateKeyValueEditor(parent, width, keyOptionsFunc, onChanged)
             row.valueEdit:SetSize(VAL_WIDTH, 24)
             row.valueEdit:SetPoint("TOPLEFT")
             row.valueEdit:SetAutoFocus(false)
-            row.valueEdit:SetFontObject(GameFontHighlightSmall)
+            row.valueEdit:SetFontObject(DFFontHighlightSmall)
             row.valueEdit:SetTextInsets(6, 6, 0, 0)
             CreateElementBackdrop(row.valueEdit)
             row.valueEdit:SetScript("OnEnterPressed", function(self)
@@ -5696,7 +5968,7 @@ function GUI:CreateKeyValueEditor(parent, width, keyOptionsFunc, onChanged)
             end)
             row.valueCheck:Hide()
 
-            row.valueBoolLabel = row.valueFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.valueBoolLabel = row.valueFrame:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             row.valueBoolLabel:SetPoint("LEFT", row.valueCheck, "RIGHT", 4, 0)
             row.valueBoolLabel:SetText(L["Enabled"])
             row.valueBoolLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5813,14 +6085,14 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
         dd:SetSize(w, 22)
         CreateElementBackdrop(dd)
 
-        dd.Text = dd:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        dd.Text = dd:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         dd.Text:SetPoint("LEFT", 4, 0)
         dd.Text:SetPoint("RIGHT", -14, 0)
         dd.Text:SetJustifyH("LEFT")
         dd.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
         dd.Text:SetText(L["(none)"])
 
-        dd.Arrow = dd:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        dd.Arrow = dd:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         dd.Arrow:SetPoint("RIGHT", -4, 0)
         dd.Arrow:SetText("v")
         dd.Arrow:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5856,7 +6128,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
                     b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
                     b:SetBackdropColor(0, 0, 0, 0)
                     menuBtns[i] = b
-                    b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    b.label = b:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
                     b.label:SetPoint("LEFT", 6, 0)
                     b.label:SetJustifyH("LEFT")
                     b:SetScript("OnEnter", function(self) self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 1) end)
@@ -5911,7 +6183,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
             rows[index] = row
 
             -- "IF" label
-            row.ifLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.ifLabel = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             row.ifLabel:SetPoint("LEFT", 0, 0)
             row.ifLabel:SetText("IF")
             row.ifLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5924,7 +6196,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
             row.stepDD:SetPoint("LEFT", row.ifLabel, "RIGHT", 4, 0)
 
             -- Operator label ("=")
-            row.opLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.opLabel = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             row.opLabel:SetPoint("LEFT", row.stepDD, "RIGHT", 4, 0)
             row.opLabel:SetText("=")
             row.opLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5934,7 +6206,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
             row.valueEdit:SetSize(70, 22)
             row.valueEdit:SetPoint("LEFT", row.opLabel, "RIGHT", 4, 0)
             row.valueEdit:SetAutoFocus(false)
-            row.valueEdit:SetFontObject(GameFontHighlightSmall)
+            row.valueEdit:SetFontObject(DFFontHighlightSmall)
             row.valueEdit:SetTextInsets(4, 4, 0, 0)
             CreateElementBackdrop(row.valueEdit)
             row.valueEdit:SetScript("OnEnterPressed", function(self)
@@ -5945,7 +6217,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
             row.valueEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
             -- Arrow label
-            row.arrowLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.arrowLabel = row:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             row.arrowLabel:SetPoint("LEFT", row.valueEdit, "RIGHT", 4, 0)
             row.arrowLabel:SetText("->")
             row.arrowLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -5972,7 +6244,7 @@ function GUI:CreateBranchEditor(parent, width, onChanged)
     local fallbackRow = CreateFrame("Frame", nil, container)
     fallbackRow:SetHeight(ROW_HEIGHT)
 
-    local elseLabel = fallbackRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local elseLabel = fallbackRow:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     elseLabel:SetPoint("LEFT", 0, 0)
     elseLabel:SetText("ELSE ->")
     elseLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -6174,7 +6446,7 @@ function DF:CreateGUI()
     titleBar:SetFrameStrata("FULLSCREEN_DIALOG")
     titleBar:SetFrameLevel(200)
     
-    local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = titleBar:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     title:SetPoint("LEFT", 12, 0)
     local versionStr = DF.VERSION or "Unknown"
     local channelTags = { alpha = " |cffff8800alpha|r", beta = " |cffff8800beta|r" }
@@ -6260,7 +6532,7 @@ function DF:CreateGUI()
     changelogHeader:SetPoint("TOPRIGHT", -8, -8)
     changelogHeader:SetHeight(24)
 
-    local changelogTitle = changelogHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local changelogTitle = changelogHeader:CreateFontString(nil, "OVERLAY", "DFFontNormal")
     changelogTitle:SetPoint("LEFT", 4, 0)
     changelogTitle:SetText("Changelog — " .. versionStr)
     changelogTitle:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -6269,7 +6541,7 @@ function DF:CreateGUI()
     backBtn:SetSize(60, 22)
     backBtn:SetPoint("RIGHT", 0, 0)
     CreateElementBackdrop(backBtn)
-    local backText = backBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local backText = backBtn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     backText:SetPoint("CENTER")
     backText:SetText(L["Back"])
     backText:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -6323,7 +6595,7 @@ function DF:CreateGUI()
     local changelogContent = CreateFrame("EditBox", nil, changelogScroll)
     changelogContent:SetMultiLine(true)
     changelogContent:SetAutoFocus(false)
-    changelogContent:SetFontObject(GameFontHighlightSmall)
+    changelogContent:SetFontObject(DFFontHighlightSmall)
     changelogContent:SetWidth(changelogScroll:GetWidth() or 500)
     changelogContent:SetText(FormatChangelog(DF.CHANGELOG_TEXT))
     changelogContent:SetCursorPosition(0)
@@ -6383,7 +6655,7 @@ function DF:CreateGUI()
     btnParty:SetPoint("TOPLEFT", 12, -32)
     btnParty:SetSize(70, 24)
     CreateElementBackdrop(btnParty)
-    btnParty.Text = btnParty:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btnParty.Text = btnParty:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btnParty.Text:SetPoint("CENTER")
     btnParty.Text:SetText(L["PARTY"])
     GUI.PartyButton = btnParty  -- Store for external access
@@ -6392,7 +6664,7 @@ function DF:CreateGUI()
     btnRaid:SetPoint("LEFT", btnParty, "RIGHT", 4, 0)
     btnRaid:SetSize(70, 24)
     CreateElementBackdrop(btnRaid)
-    btnRaid.Text = btnRaid:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btnRaid.Text = btnRaid:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btnRaid.Text:SetPoint("CENTER")
     btnRaid.Text:SetText(L["RAID"])
     GUI.RaidButton = btnRaid  -- Store for external access
@@ -6402,7 +6674,7 @@ function DF:CreateGUI()
     btnClicks:SetPoint("LEFT", btnRaid, "RIGHT", 4, 0)
     btnClicks:SetSize(70, 24)
     CreateElementBackdrop(btnClicks)
-    btnClicks.Text = btnClicks:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btnClicks.Text = btnClicks:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btnClicks.Text:SetPoint("CENTER")
     btnClicks.Text:SetText(L["BINDS"])
     GUI.ClicksButton = btnClicks
@@ -6419,7 +6691,7 @@ function DF:CreateGUI()
     btnTest.Icon:SetSize(14, 14)
     btnTest.Icon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\visibility")
     btnTest.Icon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    btnTest.Text = btnTest:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btnTest.Text = btnTest:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btnTest.Text:SetPoint("LEFT", btnTest.Icon, "RIGHT", 4, 0)
     btnTest.Text:SetText(L["Test"])
     btnTest.Text:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -6437,7 +6709,7 @@ function DF:CreateGUI()
     btnLock.Icon:SetSize(14, 14)
     btnLock.Icon:SetTexture("Interface\\AddOns\\DandersFrames\\Media\\Icons\\lock")
     btnLock.Icon:SetVertexColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
-    btnLock.Text = btnLock:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btnLock.Text = btnLock:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     btnLock.Text:SetPoint("LEFT", btnLock.Icon, "RIGHT", 4, 0)
     btnLock.Text:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
     GUI.LockButton = btnLock
@@ -6548,7 +6820,7 @@ function DF:CreateGUI()
     scaleContainer:SetSize(155, 24)
     scaleContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -32)
     
-    local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local scaleLabel = scaleContainer:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     scaleLabel:SetPoint("LEFT", 0, 0)
     scaleLabel:SetText(L["UI Scale:"])
     scaleLabel:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -6569,7 +6841,7 @@ function DF:CreateGUI()
     thumb:SetColorTexture(0.5, 0.5, 0.5, 1)
     scaleSlider:SetThumbTexture(thumb)
     
-    local scaleValue = scaleContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local scaleValue = scaleContainer:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     scaleValue:SetPoint("LEFT", scaleSlider, "RIGHT", 4, 0)
     scaleValue:SetText(string.format("%.0f%%", savedScale * 100))
     scaleValue:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
@@ -6776,12 +7048,13 @@ function DF:CreateGUI()
         end
         
         GUI.SelectedMode = "party"
-        if DF.Search then 
+        if DF.Search then
             DF.Search:InvalidateRegistry()
             DF.Search:RefreshIfActive()
         end
         UpdateThemeColors()
         GUI:ShowNormalContent()
+        GUI:UpdateTabAvailability()
         GUI:RefreshCurrentPage()
     end)
     btnRaid:SetScript("OnClick", function()
@@ -6806,12 +7079,13 @@ function DF:CreateGUI()
         end
         
         GUI.SelectedMode = "raid"
-        if DF.Search then 
+        if DF.Search then
             DF.Search:InvalidateRegistry()
             DF.Search:RefreshIfActive()
         end
         UpdateThemeColors()
         GUI:ShowNormalContent()
+        GUI:UpdateTabAvailability()
         GUI:RefreshCurrentPage()
     end)
     
@@ -6947,7 +7221,7 @@ function DF:CreateGUI()
             popup:SetFrameLevel(250)
             popup:EnableMouse(true)
             
-            local popupTitle = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local popupTitle = popup:CreateFontString(nil, "OVERLAY", "DFFontNormal")
             popupTitle:SetPoint("TOP", 0, -10)
             popupTitle:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
             popup.title = popupTitle
@@ -6963,13 +7237,13 @@ function DF:CreateGUI()
             })
             editBox:SetBackdropColor(C_ELEMENT.r, C_ELEMENT.g, C_ELEMENT.b, 1)
             editBox:SetBackdropBorderColor(C_BORDER.r, C_BORDER.g, C_BORDER.b, 0.5)
-            editBox:SetFontObject(GameFontHighlightSmall)
+            editBox:SetFontObject(DFFontHighlightSmall)
             editBox:SetAutoFocus(true)
             editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
             editBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
             popup.editBox = editBox
             
-            local hint = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local hint = popup:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
             hint:SetPoint("BOTTOM", 0, 8)
             hint:SetText(L["Press Ctrl+C to copy, then Escape to close"])
             hint:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
@@ -6990,7 +7264,7 @@ function DF:CreateGUI()
         local btn = CreateFrame("Button", nil, parent)
         btn:SetHeight(22)
         
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local label = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         label:SetPoint("CENTER")
         label:SetText(text)
         label:SetTextColor(color.r, color.g, color.b)
@@ -7017,7 +7291,7 @@ function DF:CreateGUI()
     discordBtn:SetPoint("LEFT", footer, "LEFT", 2, 0)
     
     -- Separator
-    local sep = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local sep = footer:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     sep:SetPoint("LEFT", discordBtn, "RIGHT", 8, 0)
     sep:SetText("|")
     sep:SetTextColor(C_BORDER.r, C_BORDER.g, C_BORDER.b)
@@ -7029,7 +7303,7 @@ function DF:CreateGUI()
     donateBtn:SetPoint("LEFT", sep, "RIGHT", 8, 0)
 
     -- Separator 2
-    local sep2 = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local sep2 = footer:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     sep2:SetPoint("LEFT", donateBtn, "RIGHT", 8, 0)
     sep2:SetText("|")
     sep2:SetTextColor(C_BORDER.r, C_BORDER.g, C_BORDER.b)
@@ -7041,7 +7315,7 @@ function DF:CreateGUI()
     patreonBtn:SetPoint("LEFT", sep2, "RIGHT", 8, 0)
 
     -- Version on the right
-    local versionText = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local versionText = footer:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
     versionText:SetPoint("RIGHT", footer, "RIGHT", -2, 0)
     versionText:SetText(versionStr .. channelTag)
     versionText:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b, 0.5)
@@ -7060,9 +7334,12 @@ function DF:CreateGUI()
         if clickCastPanel then clickCastPanel:Hide() end
         if tabFrame then tabFrame:Show() end
         if content then content:Show() end
-        
+
         -- Restore normal minimum width
         frame:SetResizeBounds(normalMinWidth, minHeight, maxWidth, maxHeight)
+
+        -- Update tab availability for current mode (greys out tabs for disabled modes)
+        GUI:UpdateTabAvailability()
     end
     
     -- Function to show Click Casting content
@@ -7103,7 +7380,22 @@ function DF:CreateGUI()
         if DF.Search then
             DF.Search:HideResults()
         end
-        
+
+        -- Clear any "New" section-header badges on the tab we're leaving.
+        -- The user has had their chance to see the badges; mark them seen
+        -- persistently so they don't reappear on the next visit.
+        local leavingTab = GUI.CurrentPageName
+        if leavingTab and leavingTab ~= name and GUI.pendingSectionBadges[leavingTab] then
+            for key, badge in pairs(GUI.pendingSectionBadges[leavingTab]) do
+                if badge and badge.Hide then badge:Hide() end
+                if DandersFramesDB_v2 then
+                    DandersFramesDB_v2.seenSections = DandersFramesDB_v2.seenSections or {}
+                    DandersFramesDB_v2.seenSections[key] = true
+                end
+            end
+            GUI.pendingSectionBadges[leavingTab] = nil
+        end
+
         for k, page in pairs(GUI.Pages) do page:Hide() end
         for k, btn in pairs(GUI.Tabs) do
             if btn.accent then btn.accent:Hide() end
@@ -7161,6 +7453,27 @@ function DF:CreateGUI()
             end
             GUI.Tabs[name].Text:SetTextColor(nc.r, nc.g, nc.b)
             GUI.Tabs[name].isActive = true
+            -- Mark "New" badge as seen
+            if GUI.Tabs[name].newBadge and GUI.Tabs[name].newBadge:IsShown() then
+                GUI.Tabs[name].newBadge:Hide()
+                if DandersFramesDB_v2 then
+                    DandersFramesDB_v2.seenTabs = DandersFramesDB_v2.seenTabs or {}
+                    DandersFramesDB_v2.seenTabs[name] = true
+                end
+                -- Hide parent category badge if no remaining children have new badges
+                local catName = GUI.Tabs[name].categoryName
+                local cat = catName and GUI.Categories[catName]
+                if cat and cat.newBadge and cat.newBadge:IsShown() then
+                    local anyNew = false
+                    for _, child in ipairs(cat.children) do
+                        if child.newBadge and child.newBadge:IsShown() then
+                            anyNew = true
+                            break
+                        end
+                    end
+                    if not anyNew then cat.newBadge:Hide() end
+                end
+            end
         end
         GUI.CurrentPageName = name
         UpdateThemeColors()
@@ -7202,16 +7515,24 @@ function DF:CreateGUI()
         cat.expanded = savedStates and savedStates[name] or false
         
         -- Expand/collapse indicator (simple minus/plus)
-        cat.arrow = cat:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cat.arrow = cat:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         cat.arrow:SetPoint("LEFT", 6, 0)
         cat.arrow:SetText(cat.expanded and "-" or "+")
         cat.arrow:SetTextColor(C_TEXT_DIM.r, C_TEXT_DIM.g, C_TEXT_DIM.b)
         
-        cat.Text = cat:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cat.Text = cat:CreateFontString(nil, "OVERLAY", "DFFontNormal")
         cat.Text:SetPoint("LEFT", 20, 0)
         cat.Text:SetText(label)
         cat.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-        
+
+        -- "New" badge for categories — shown when any child tab has a new badge
+        local catNewBadge = cat:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+        catNewBadge:SetPoint("RIGHT", cat, "RIGHT", -8, 0)
+        catNewBadge:SetText(L["New"])
+        catNewBadge:SetTextColor(1, 0.82, 0)
+        catNewBadge:Hide()
+        cat.newBadge = catNewBadge
+
         cat:SetScript("OnEnter", function(self)
             self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 0.3)
         end)
@@ -7264,11 +7585,28 @@ function DF:CreateGUI()
         btn.accent:SetWidth(3)
         btn.accent:Hide()
         
-        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
         btn.Text:SetPoint("LEFT", 24, 0)
         btn.Text:SetText(label)
         btn.Text:SetTextColor(C_TEXT.r, C_TEXT.g, C_TEXT.b)
-        
+
+        -- "New" badge — shown for tabs in GUI.NewTabs until the user opens them
+        local newBadge = btn:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+        newBadge:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+        newBadge:SetText(L["New"])
+        newBadge:SetTextColor(1, 0.82, 0)
+        newBadge:Hide()
+        btn.newBadge = newBadge
+        if GUI.NewTabs[name]
+           and not (DandersFramesDB_v2 and DandersFramesDB_v2.seenTabs
+                    and DandersFramesDB_v2.seenTabs[name]) then
+            newBadge:Show()
+            -- Also show "New" on the parent category
+            if cat and cat.newBadge then
+                cat.newBadge:Show()
+            end
+        end
+
         btn:SetScript("OnEnter", function(self)
             if not self.isActive then
                 self:SetBackdropColor(C_HOVER.r, C_HOVER.g, C_HOVER.b, 0.5)
@@ -7355,7 +7693,7 @@ function DF:CreateGUI()
             local db = DF.db[GUI.SelectedMode]
             -- Guard against nil db (e.g., when "clicks" mode is selected)
             if not db then return end
-            
+
             if self.children then
                 for _, child in ipairs(self.children) do child:Hide() end
             end
@@ -7364,13 +7702,42 @@ function DF:CreateGUI()
             -- Propagate RefreshStates to child so widgets can call it
             self.child.RefreshStates = function() self:RefreshStates() end
             local parent = self.child
-            
+
             local function Add(widget, height, col)
                 table.insert(self.children, widget)
                 widget:SetParent(parent)
                 widget.layoutHeight = height or 55
                 widget.layoutCol = col or 1
                 return widget
+            end
+
+            -- Disabled-mode handling: when the current mode is off in General
+            -- settings, replace the page content with a single banner instead
+            -- of rendering any controls. Whitelisted pages (General, Profiles,
+            -- Debug, Targeted List, Personal Targeted) always render normally.
+            if GUI:IsTabDisabledForCurrentMode(self.tabName) then
+                local banner = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+                banner:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                banner:SetBackdropColor(0.4, 0.2, 0.05, 0.5)
+                banner:SetBackdropBorderColor(1, 0.82, 0, 0.7)
+                local msg = banner:CreateFontString(nil, "OVERLAY", "DFFontHighlightSmall")
+                msg:SetPoint("LEFT", 14, 0)
+                msg:SetPoint("RIGHT", -14, 0)
+                msg:SetJustifyH("LEFT")
+                msg:SetWordWrap(true)
+                msg:SetText(GUI.SelectedMode == "raid"
+                    and (L["Raid frames are currently disabled. Changes here will apply after re-enabling Raid in the General tab and reloading."])
+                    or  (L["Party frames are currently disabled. Changes here will apply after re-enabling Party in the General tab and reloading."]))
+                table.insert(self.children, banner)
+                banner:SetParent(parent)
+                banner.layoutHeight = 60
+                banner.layoutCol = "both"
+                self:RefreshStates()
+                return  -- skip builderFunc entirely
             end
             
             local function AddSpace(h, col)
@@ -7603,6 +7970,9 @@ function DF:CreateGUI()
     GUI:UpdateTabLayout()
 
     UpdateThemeColors()
+
+    -- Apply tab availability for current mode (greys out disabled-mode tabs)
+    GUI:UpdateTabAvailability()
 
     -- Select first subtab
     if GUI.CategoryOrder[1] then

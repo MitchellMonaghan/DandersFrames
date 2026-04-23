@@ -414,6 +414,12 @@ DF.ExportCategories = {
         "bossDebuffsOverlayMaxSlots",
         "bossDebuffsOverlayScale",
 
+        -- Container Overlay (12.0.5+)
+        "bossDebuffsContainerOverlayEnabled",
+        "bossDebuffsContainerOverlayDispelMode",
+        "bossDebuffsContainerOverlayGradientDir",
+        "bossDebuffsContainerOverlayAlpha",
+
         -- Buff Filters
         "buffFilterCancelable",
         "buffFilterMode",
@@ -424,8 +430,8 @@ DF.ExportCategories = {
         "debuffFilterMode",
         "debuffShowAll",
 
-        -- Aura Source Mode
-        "auraSourceMode",
+        -- Aura Source Mode (auraSourceMode intentionally excluded —
+        -- forced to DIRECT, should not be overwritten by imports)
         "directBuffShowAll",
         "directBuffOnlyMine",
         "directBuffFilterRaid",
@@ -441,8 +447,7 @@ DF.ExportCategories = {
         "directDebuffFilterRaidInCombat",
         "directDebuffFilterCrowdControl",
         "directDebuffFilterImportant",
-        "directDebuffFilterRaidPlayerDispellable",
-        "directDebuffFilterAllDispellable",
+        "directDebuffDispellableMode",
         "directDebuffSortOrder",
 
         -- Dead Auras

@@ -140,7 +140,7 @@ function DF:ApplyFrameLayout(frame)
         absorbBar:SetStatusBarTexture(absorbTex)
         absorbBar:SetStatusBarColor(absorbColor.r, absorbColor.g, absorbColor.b, absorbColor.a)
         
-        if absorbMode ~= "OVERLAY" then
+        if absorbMode == "FLOATING" then
             -- Floating mode positioning
             absorbBar:ClearAllPoints()
             local anchor = db.absorbBarAnchor or "BOTTOM"
@@ -178,7 +178,7 @@ function DF:ApplyFrameLayout(frame)
         healAbsorbBar:SetStatusBarTexture(healAbsorbTex)
         healAbsorbBar:SetStatusBarColor(healAbsorbColor.r, healAbsorbColor.g, healAbsorbColor.b, healAbsorbColor.a)
         
-        if healAbsorbMode ~= "OVERLAY" then
+        if healAbsorbMode == "FLOATING" then
             -- Floating mode positioning
             healAbsorbBar:ClearAllPoints()
             local anchor = db.healAbsorbBarAnchor or "BOTTOM"
@@ -1076,6 +1076,8 @@ function DF:UpdateHealthFast(frame)
     -- Clear resurrection icon if unit was pending a res and is now alive
     if DF.HasPendingResurrection and DF:HasPendingResurrection(unit) then
         DF:UpdateResurrectionIcon(frame)
+        -- Refresh auras so transient "Resurrected" buff icon clears
+        if DF.UpdateAuras_Enhanced then DF:UpdateAuras_Enhanced(frame) end
     end
 
     -- Clear status text for alive units
@@ -1310,6 +1312,7 @@ function DF:UpdateHealth(frame)
     
     -- Hide status text, show health text
     if frame.statusText then
+        frame.statusText:SetText("")
         frame.statusText:Hide()
     end
     frame.healthText:Show()
