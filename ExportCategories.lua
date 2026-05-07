@@ -395,10 +395,10 @@ DF.ExportCategories = {
         "bossDebuffsAnchor",
         "bossDebuffsBorderScale",
         "bossDebuffsFrameLevel",
+        "bossDebuffsStrata",
         "bossDebuffsGrowth",
         "bossDebuffsHideTooltip",
-        "bossDebuffsIconHeight",
-        "bossDebuffsIconWidth",
+        "bossDebuffsIconSize",
         "bossDebuffsMax",
         "bossDebuffsOffsetX",
         "bossDebuffsOffsetY",
@@ -406,19 +406,14 @@ DF.ExportCategories = {
         "bossDebuffsShowNumbers",
         "bossDebuffsSpacing",
 
-        -- Boss Debuffs Overlay
-        "bossDebuffsOverlayClipBorder",
-        "bossDebuffsOverlayEnabled",
-        "bossDebuffsOverlayFrameLevel",
-        "bossDebuffsOverlayIconRatio",
-        "bossDebuffsOverlayMaxSlots",
-        "bossDebuffsOverlayScale",
-
-        -- Container Overlay (12.0.5+)
-        "bossDebuffsContainerOverlayEnabled",
-        "bossDebuffsContainerOverlayDispelMode",
+        -- Container Overlay (12.0.5+) — enable state + dispel-type driven by
+        -- the unified dispelOverlaySource / dispelOverlayDispelType keys in
+        -- the Dispel category.
         "bossDebuffsContainerOverlayGradientDir",
         "bossDebuffsContainerOverlayAlpha",
+        "bossDebuffsContainerOverlayFrameLevel",
+        "bossDebuffsContainerOverlayStrata",
+        "bossDebuffsContainerOverlaySizeAdjust",
 
         -- Buff Filters
         "buffFilterCancelable",
@@ -803,7 +798,8 @@ DF.ExportCategories = {
         "personalTargetedSpellInBattlegrounds",
         
         -- Dispel Indicator
-        "dispelOverlayEnabled",
+        "dispelOverlaySource",
+        "dispelOverlayDispelType",
         "dispelOverlayMode",
         "dispelShowBorder",
         "dispelShowGradient",

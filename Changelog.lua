@@ -1,36 +1,117 @@
 local addonName, DF = ...
-DF.BUILD_DATE = "2026-04-22T10:43:13Z"
+DF.BUILD_DATE = "2026-05-04T18:15:49Z"
 DF.RELEASE_CHANNEL = "alpha"
 DF.CHANGELOG_TEXT = [===[
 # DandersFrames Changelog
 
-## [4.3.3] - 2026-04-21
-
-### Improvements
-
-* (Private Aura Dispel Overlay) The overlay now renders at the same frame level as the regular Dispel Overlay (frame+6) instead of above the frame border, text, and icons
-* (Private Aura Dispel Overlay) Added an Alpha slider to dim the overlay (default 1.0, range 0.1–1.0)
-
-### Changes
-
-* (Private Aura Dispel Overlay) Removed the "Show Dispel Icons" toggle — Blizzard couples the TOPRIGHT icons to the gradient overlay (both run through the same `SetDispelDebuff` path), so the option was never actually toggleable. The icons now always show when the overlay is active.
+## [4.3.7] - 2026-05-02
 
 ### Bug Fixes
 
-* **Friendly Boss NPC Frames** — visible boss frames now compact to the set's anchor instead of leaving empty slots when some boss units are hostile or absent (e.g. if boss1 is hostile and boss2 is friendly, boss2 now appears in the first slot)
-* **Friendly Boss NPC Frames** — Aura Designer indicators now apply correctly when a boss slot is reassigned to a new friendly NPC mid-encounter (previously buffs briefly showed in the standard buff row instead)
-* **Friendly Boss NPC Frames** — out-of-range fading now works on boss frames (boss units don't fire the roster range event, so range is now tracked via the polling loop)
-* **Friendly Boss NPC Frames** — health, power, name, absorb, heal prediction, and aura updates now apply reliably. Boss frames now register their own unit events directly (`UNIT_HEALTH`, `UNIT_POWER_UPDATE`, `UNIT_AURA`, `UNIT_NAME_UPDATE`, `UNIT_FACTION`, `UNIT_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_ABSORB_AMOUNT_CHANGED`, `UNIT_HEAL_PREDICTION`, etc.) rather than depending on the roster event dispatcher, which was designed for stable party/raid units and kept missing the ephemeral boss unit tokens. This follows the same pattern ElvUI uses for its boss frames.
+* (Raid Frames) Fix raid frames jumping upward when group composition changes with Groups Grow From set to Center. Previously the visible frames could shoot off the top of the screen each time a player joined a new group, requiring a Groups Grow From toggle to recover.
+* (Test Mode) Fix raid test mode showing the wrong layout when Players Grow From is set to End. Test mode now mirrors what live raid frames look like.
+* (Raid Frames) Fix raid groups flipping position on every GUI click when Players Grow From and Groups Grow From are both set to End. The combined setting now produces a stable layout that matches between settings panel and live frames.
+* (Auto Profiles) Fix raid test mode frames landing in the wrong place when entering or exiting an auto-layout override. Test mode now repositions correctly without needing to lock and unlock the frames.
+* (Status Icons) Fix duplicate summon and resurrection icons appearing on party and raid frames. Only one set of icons now renders.
+* (Raid Frames) Fix Group Display Order, My Group First, and group visibility checkboxes not updating live raid frames. Player frames now reposition immediately instead of needing a /reload.
 
-### Internal
+## [4.3.6] - 2026-04-30
 
-* Opt-in debug instrumentation for raid group layout params investigation. Enable with `/run DandersFrames.debugLeakTest = true` to log every `PositionRaidFrameToGroupSlot` call and every rebuild of `SecureSort.raidGroupLayoutParams`, to verify whether test-mode state can leak into the live positioning path.
+### Improvements
+
+* (Click Casting) Improved mouseover detection on hovered unit frames after a Blizzard API fix.
+* (Click Casting) The conflict popup for Clique and Clicked now also appears when switching to a click-cast profile that turns click casting on.
+* (Boss Debuffs) Updated the info banner to clarify that boss debuffs trigger dispel overlays in Hybrid or Blizzard mode.
+* (Boss Debuffs) Added an Inset slider for the Blizzard dispel overlay so the gradient can extend past or shrink inside the frame edges.
+* (Boss Debuffs) Replaced separate Icon Width and Icon Height sliders with a single Icon Size slider. Existing settings carry over to the larger of your two old values.
+* (Boss Debuffs) Added an Open Edit Mode button to the Blizzard Overlay settings so you can preview the Blizzard dispel overlay live.
+
+### Bug Fixes
+
+* (Pet Frames) Fix Lua error spam during boss pulls when a pet is in the group.
+* (Status Icons) Fix Lua error spam when the Status Icon font outline is set to "None".
+* (Update Notification) Fix "You aren't in a party." and "You aren't in a raid." chat spam in LFG dungeons, LFR, scenarios, and battlegrounds.
+* (Boss Debuffs) Fix icons sometimes staying invisible after a transient registration hiccup until you fully reload.
+* (Boss Debuffs) Fix icons not rendering at certain size combinations.
+* (Boss Debuffs) Skip private aura registration on pet frames — pets can't receive boss debuffs.
+* (Click Casting) Fix target click-cast bindings on DandersFrames hitting the /target name range limit.
+* (Boss Debuffs) Surface Blizzard private aura API errors instead of silently swallowing them.
+* (Boss Debuffs) Fix icons sometimes rendering behind the unit frame after a re-register, even with frame level raised.
+* (Aura Designer) Reduce GUI lag when opening Aura Designer with many configured effects.
+* (Dispel Overlay) Fix dispel type icons not fading when a unit goes out of range with element-specific alpha enabled.
+
+## [4.3.5] - 2026-04-26
+
+### Improvements
+
+* (Dispel Overlay) Added a Frame Strata dropdown and Frame Level slider to the Blizzard overlay settings. Raise them if the overlay gets hidden behind frame text on short/wide frames.
+* (Boss Debuffs) Added a Frame Strata dropdown next to Frame Level. Default is now HIGH so private aura icons always render above frame text and borders, including for users with small icon sizes. Lower it via the dropdown if you preferred the old behaviour.
+
+### Bug Fixes
+
+* (Tooltips) Fix aura tooltips being overwritten by the unit tooltip when hovering buffs and debuffs
+
+## [4.3.4] - 2026-04-24
+
+### Changes
+
+* (Dispel Overlay) DandersFrames-only mode users have been switched to Hybrid mode for this update — Hybrid covers boss debuffs that DandersFrames mode missed. You can switch back under Settings > Dispel Overlay > Overlay Source if you prefer.
+
+### Bug Fixes
+
+* (Buff Bar) Fix buff icons sometimes getting stuck on the bar until reload after a unit went out of range and back
+* (Aura Designer) Fix tracked auras occasionally not being deduped from the buff bar after a unit returns from out of range
+* (Private Aura Dispel Overlay) Overlay now stays on the correct player when roster or sort changes move players between slots, including mid-combat
+* (Range) Fix Lua error spam from range checks during timewalking dungeons
+* (Update Notification) Fix remaining "You aren't in a party." chat spam in delves and follower dungeons
+* (Boss Debuffs) Fix boss debuff icons occasionally rendering behind the unit frame on some group members
+* (Tooltips) Fix buff/debuff tooltip flickering with the unit tooltip when hovering an aura icon after entering the frame body
+
+## [4.3.3] - 2026-04-21
+
+### New Features
+
+* **Pinned Frames in Test Mode** — Test Mode now fills your enabled pinned sets with fake units so you can design the layout without being in a group. Boss sets show friendly-NPC test units (Fiery Treant, Charred Bramble, etc.); player-mode sets show party/raid test units. A new **Test Count** slider in the Pinned Frames settings chooses how many frames appear (1–8 boss, 1–10 player). Test frames are non-secure mock frames that look identical to live frames — your real pinned setup isn't touched. Raid test mode only shows raid-profile sets, party test mode only shows party-profile sets, and the other mode's frames are never affected.
+* **Dispel Overlay redesign** — Private Aura Dispel Overlay settings have moved to the Dispel Overlay tab under a new **Overlay Source** dropdown with four modes:
+    * **Hybrid** — DandersFrames for normal dispels, Blizzard for boss debuffs (recommended)
+    * **DandersFrames** — full customisation, does not cover boss debuffs
+    * **Blizzard** — covers both normal debuffs and boss debuffs, limited customisation
+    * **Off** — disabled
+    
+    In Hybrid mode the two overlays no longer double up; DandersFrames handles normal dispels while Blizzard picks up boss debuffs only. "Show Overlay For" (Dispellable By Me / All Dispellable) is now a single unified setting shared by both overlays.
+
+### Improvements
+
+* (Friendly Boss NPC Frames) Frames no longer collapse upward when a boss dies — surviving frames hold their position, and new bosses fill the next free slot. Slot assignments reset when combat ends
+* (Private Aura Dispel Overlay) Overlay no longer covers the frame border, text, and icons
+* (Private Aura Dispel Overlay) Added an Alpha slider to dim the overlay
+* (Dispel Overlay) Section headers now show tags indicating which dispel types each section covers under the current Overlay Source mode
+* (Dispel Overlay) Reduced CPU overhead in Blizzard and Off modes during combat
+
+### Changes
+
+* (Private Aura Dispel Overlay) Removed the "Show Dispel Icons" toggle — the top-right icons cannot be hidden separately from the overlay, so the option had no effect
+
+### Bug Fixes
+
+* (Aura Designer) Fix constant tooltip Lua error spam during raid encounters with secret auras
+* (Range) Fix error spam when range fading is active
+* (Update Notification) Fix "You aren't in a party." chat spam in NPC follower dungeons and delves
+* (Friendly Boss NPC Frames) Aura Designer indicators now apply correctly when a boss slot swaps to a new NPC mid-encounter
+* (Friendly Boss NPC Frames) Out-of-range fading now works on boss frames
+* (Friendly Boss NPC Frames) Fix health, power, name, absorb, heal prediction, and aura updates not applying reliably
+* (Friendly Boss NPC Frames) Fix Aura Designer indicators from a previous boss lingering on a slot after it's assigned to a new NPC
+* (Friendly Boss NPC Frames) Reduce race conditions where a boss frame intermittently fails to appear on spawn
+* (Friendly Boss NPC Frames) Fix health and Aura Designer indicators not updating when a boss slot silently swaps to a different NPC mid-encounter
+* (Pinned Frames) Fix stale background, border, and label from the real pinned container showing behind test frames when Test Mode matches the current group mode
+* (Pinned Frames) The set label now appears above test frames in all cases, including cross-mode previews (e.g. raid test mode while in a party)
+* (Targeted List) Cast bar now snaps to full yellow on interrupt instead of continuing to fill
 
 ## [4.3.2] - 2026-04-21
 
 ### New Features
 
-* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, Aura Designer indicators, and out-of-range fading work the same as player-mode pinned sets. Visible frames compact to the set's anchor so there are no empty slots when only some boss units are friendly.
+* **Friendly Boss NPC Frames** — Pinned frame sets now have a Frame Type setting. Switch a set to "Friendly Boss NPCs" to display healable friendly boss units (boss1–boss8) instead of group members. Useful for encounters where friendly adds need healing. All layout, positioning, click-casting, buffs, debuffs, Aura Designer indicators, and out-of-range fading work the same as player-mode pinned sets. Visible frames compact to the set's anchor so there are no empty slots when only some boss units are friendly — even as bosses appear and die during combat.
 * **Update notification** — if another DandersFrames user in your group or guild is running a newer stable version, you'll see a one-time chat message on login. Can be disabled in General > Settings > Notifications.
 
 ### Improvements

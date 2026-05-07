@@ -57,9 +57,60 @@ DF.TestData = {
 -- Get test unit data for a frame index
 -- For party: index 0 = player, 1-4 = party members
 -- For raid: index 1-40 = raid members
-function DF:GetTestUnitData(index, isRaid)
+function DF:GetTestUnitData(index, isRaid, isBoss)
     local db = isRaid and DF:GetRaidDB() or DF:GetDB()
-    
+
+    -- Friendly Boss NPC test data (for pinned frame boss mode).
+    -- Boss NPCs don't have classes or roles — we return a minimal fake unit
+    -- so the frame renders a health bar with a readable name.
+    if isBoss then
+        local bossNames = {
+            "Fiery Treant", "Charred Bramble", "Smoldering Sapling", "Ember Root",
+            "Blazing Thorn", "Ashen Oak", "Cinder Vine", "Glowing Grove",
+        }
+        local i = index
+        local basePercent = (0.9 - (i - 1) * 0.08)  -- slight descending stagger
+        if basePercent < 0.25 then basePercent = 0.25 end
+
+        local result = {
+            index = index,
+            name = bossNames[i] or ("Friendly Boss " .. i),
+            class = nil,
+            role = nil,
+            specID = 0,
+            healthPercent = basePercent,
+            maxHealth = 500000,
+            currentHealth = math.floor(basePercent * 500000),
+            powerPercent = 0,
+            absorbPercent = 0,
+            healAbsorbPercent = 0,
+            healPredictionPercent = 0,
+            status = nil,
+            outOfRange = false,
+            isLeader = false,
+            raidTarget = nil,
+            dispelType = nil,
+            centerStatus = nil,
+            hasMyBuff = false,
+            isMainTank = false,
+            isMainAssist = false,
+            isAFK = false,
+            isPhased = false,
+            inVehicle = false,
+        }
+
+        -- Animate health if enabled on either DB
+        if db.testAnimateHealth and DF.TestData.animationPhase then
+            local phase = DF.TestData.animationPhase
+            local offset = (i * 0.13) % 1
+            local wave = math.sin((phase + offset) * math.pi * 2)
+            result.healthPercent = math.max(0.1, math.min(1, basePercent + wave * 0.15))
+            result.currentHealth = math.floor(result.healthPercent * result.maxHealth)
+        end
+
+        return result
+    end
+
     -- For raid frames, generate deterministic test data
     if isRaid then
         local testNames = {
@@ -306,15 +357,33 @@ function DF:StartTestAnimation()
                 end
             end
         end
+
+        -- Update pinned test frames (mock non-secure frames — same for
+        -- both player-mode and boss-mode pinned sets). Lightweight.
+        if DF.PinnedFrames and DF.PinnedFrames.IsTestModeActive
+            and DF.PinnedFrames:IsTestModeActive() then
+            for setIndex = 1, 2 do
+                local pool = DF.PinnedFrames.testFrames[setIndex]
+                if pool then
+                    for i = 1, #pool do
+                        local f = pool[i]
+                        if f and f:IsShown() and f.dfTestIndex then
+                            DF:UpdateTestFrameHealthOnly(f, f.dfTestIndex)
+                        end
+                    end
+                end
+            end
+        end
     end)
 end
 
 -- Lightweight animation update - updates health and repositions bars
 function DF:UpdateTestFrameHealthOnly(frame, index)
     if not frame or not frame.healthBar then return end
-    
+
     local isRaid = frame.isRaidFrame
-    local testData = DF:GetTestUnitData(index, isRaid)
+    local isBoss = frame.isPinnedBossFrame
+    local testData = DF:GetTestUnitData(index, isRaid, isBoss)
     if not testData then return end
     
     local db = DF:GetFrameDB(frame)
@@ -481,9 +550,10 @@ end
 -- Update a frame with test data (works for both party and raid)
 function DF:UpdateTestFrame(frame, index, applyLayout)
     if not frame or not frame.healthBar then return end
-    
+
     local isRaid = frame.isRaidFrame
-    local testData = DF:GetTestUnitData(index, isRaid)
+    local isBoss = frame.isPinnedBossFrame
+    local testData = DF:GetTestUnitData(index, isRaid, isBoss)
     if not testData then return end
     
     local db = DF:GetFrameDB(frame)
@@ -1332,9 +1402,9 @@ local function ShowTestIconAsText(icon, text, showText, db, prefix)
                 local fontSize = db.statusIconFontSize or 12
                 local outline = db.statusIconFontOutline or "OUTLINE"
                 
-                -- Handle SHADOW outline
+                -- Handle SHADOW and NONE outlines (WoW SetFont rejects "NONE")
                 local actualOutline = outline
-                if outline == "SHADOW" then
+                if outline == "SHADOW" or outline == "NONE" then
                     actualOutline = ""
                 end
                 
@@ -1383,17 +1453,17 @@ local function ApplyTestIconTimerFont(icon, db, prefix)
     local outline = db.statusIconFontOutline or "OUTLINE"
     
     local actualOutline = outline
-    if outline == "SHADOW" then
+    if outline == "SHADOW" or outline == "NONE" then
         actualOutline = ""
     end
-    
+
     local fontPath = font
     if DF.GetFont then
         fontPath = DF:GetFont(font) or font
     end
-    
+
     icon.timerText:SetFont(fontPath, fontSize, actualOutline)
-    
+
     if outline == "SHADOW" then
         local shadowX = db.fontShadowOffsetX or 1
         local shadowY = db.fontShadowOffsetY or -1
@@ -2265,114 +2335,6 @@ function DF:UpdateTestBossDebuffs(frame)
             frame.testBossDebuffIcons[i]:Hide()
         end
     end
-
-    -- Show overlay border preview in test mode
-    DF:UpdateTestOverlayBorder(frame)
-end
-
--- Create or update the overlay border preview for test mode.
--- Uses the same iconW / bScale math as the real overlay so slider
--- changes are reflected immediately.  We approximate the Blizzard
--- circular glow ring as a sized rectangle with a backdrop edge —
--- it won't look identical but the dimensions respond to the same
--- settings, which is what matters for tuning.
-function DF:UpdateTestOverlayBorder(frame)
-    if not frame then return end
-
-    local db = DF:GetFrameDB(frame)
-
-    -- Only show if overlay is enabled and we have the container
-    if not db.bossDebuffsOverlayEnabled or not frame.overlayContainer then
-        DF:HideTestOverlayBorder(frame)
-        return
-    end
-
-    local container = frame.overlayContainer
-    local maxSlots = db.bossDebuffsOverlayMaxSlots or 3
-    local overlayScale = db.bossDebuffsOverlayScale or 1.05
-    local iconRatio = db.bossDebuffsOverlayIconRatio or 2.6
-    local clipBorder = db.bossDebuffsOverlayClipBorder ~= false
-
-    -- Replicate the same math from SetupOverlayAnchors
-    local fw = frame:GetWidth()
-    local fh = frame:GetHeight()
-    if not fw or not fh or fw <= 0 or fh <= 0 then return end
-
-    local iconW = fw * iconRatio / 10
-    local bScale = 10 * overlayScale
-
-    -- The Blizzard border ring extends outward from the icon center.
-    -- Approximate the rendered border width/height from iconW * bScale.
-    -- Multipliers calibrated against live overlay screenshots.
-    -- Multipliers calibrated to match Blizzard's private aura border ring
-    local borderW = iconW * bScale * 0.10
-    local borderH = fh * bScale * 0.06
-
-    -- Edge thickness scales with the border size
-    local edgeSize = math.max(2, math.min(borderW, borderH) * 0.08)
-
-    if not frame.testOverlayBorders then
-        frame.testOverlayBorders = {}
-    end
-
-    for i = 1, maxSlots do
-        local sub = frame.overlaySubContainers and frame.overlaySubContainers[i]
-        if not sub then break end
-
-        local border = frame.testOverlayBorders[i]
-        if not border then
-            border = CreateFrame("Frame", nil, sub, "BackdropTemplate")
-            border:EnableMouse(false)
-            if border.SetMouseClickEnabled then border:SetMouseClickEnabled(false) end
-            frame.testOverlayBorders[i] = border
-        end
-
-        border:SetParent(sub)
-        border:ClearAllPoints()
-        border:SetPoint("CENTER", container, "CENTER", 0, 0)
-        border:SetSize(borderW, borderH)
-        border:SetFrameLevel(sub:GetFrameLevel() + 1)
-
-        local borderColors = {
-            {1.0, 0.0, 0.6, 0.9},  -- magenta-pink
-            {0.0, 0.8, 1.0, 0.9},  -- cyan
-            {1.0, 0.6, 0.0, 0.9},  -- orange
-        }
-        local c = borderColors[i] or borderColors[1]
-
-        border:SetBackdrop({
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = edgeSize,
-        })
-        border:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
-        border:Show()
-    end
-
-    -- Hide extra borders if maxSlots shrank
-    for i = maxSlots + 1, #frame.testOverlayBorders do
-        frame.testOverlayBorders[i]:Hide()
-    end
-
-    -- Show a warning label on the first border (once per frame)
-    local firstBorder = frame.testOverlayBorders[1]
-    if firstBorder then
-        if not firstBorder.warningText then
-            firstBorder.warningText = firstBorder:CreateFontString(nil, "OVERLAY")
-            firstBorder.warningText:SetFont(STANDARD_TEXT_FONT, 9, "OUTLINE")
-            firstBorder.warningText:SetTextColor(1, 0.2, 0.2, 1)
-            firstBorder.warningText:SetPoint("TOP", firstBorder, "BOTTOM", 0, -2)
-            firstBorder.warningText:SetText("Rough estimate only")
-        end
-        firstBorder.warningText:Show()
-    end
-end
-
--- Hide overlay border previews
-function DF:HideTestOverlayBorder(frame)
-    if not frame or not frame.testOverlayBorders then return end
-    for _, border in ipairs(frame.testOverlayBorders) do
-        border:Hide()
-    end
 end
 
 -- Hide test boss debuffs when exiting test mode
@@ -2388,9 +2350,6 @@ function DF:HideTestBossDebuffs(frame)
             end
         end
     end
-
-    -- Hide overlay border preview
-    DF:HideTestOverlayBorder(frame)
 end
 
 -- Update all test boss debuffs (for live preview during slider dragging)
@@ -3700,6 +3659,11 @@ function DF:ShowTestFrames(silent)
         DF:UpdatePermanentMoverVisibility()
         DF:UpdatePermanentMoverAnchor("party")
     end)
+
+    -- Populate enabled boss-mode pinned sets with fake data
+    if DF.PinnedFrames and DF.PinnedFrames.EnterTestMode then
+        DF.PinnedFrames:EnterTestMode()
+    end
 end
 
 -- Refresh all test frames (call this when settings change in test mode)
@@ -4032,6 +3996,12 @@ function DF:HideTestFrames(silent)
         DF:UpdatePermanentMoverVisibility()
         DF:UpdatePermanentMoverAnchor("party")
     end)
+
+    -- Exit boss-mode pinned test only if raid test isn't still running
+    if DF.PinnedFrames and DF.PinnedFrames.ExitTestMode
+        and not DF.raidTestMode then
+        DF.PinnedFrames:ExitTestMode()
+    end
 end
 
 -- Toggle test mode (mode-aware based on GUI.SelectedMode)
@@ -4174,6 +4144,11 @@ function DF:ShowRaidTestFrames()
         DF:UpdatePermanentMoverVisibility()
         DF:UpdatePermanentMoverAnchor("raid")
     end)
+
+    -- Populate enabled boss-mode pinned sets with fake data
+    if DF.PinnedFrames and DF.PinnedFrames.EnterTestMode then
+        DF.PinnedFrames:EnterTestMode()
+    end
 end
 
 -- Hide raid test frames
@@ -4275,6 +4250,12 @@ function DF:HideRaidTestFrames()
         DF:UpdatePermanentMoverVisibility()
         DF:UpdatePermanentMoverAnchor("party")
     end)
+
+    -- Exit boss-mode pinned test only if party test isn't still running
+    if DF.PinnedFrames and DF.PinnedFrames.ExitTestMode
+        and not DF.testMode then
+        DF.PinnedFrames:ExitTestMode()
+    end
 end
 
 -- Update raid test frames with test data
@@ -4417,11 +4398,14 @@ function DF:LightweightPositionRaidTestFrames(testFrameCount)
     -- Update group layout params from current settings
     SecureSort:UpdateRaidGroupLayoutParams()
     local lp = SecureSort.raidGroupLayoutParams
+    -- Signal to PositionRaidFrameToGroupSlot that this is a test-mode call so it
+    -- mirrors the live secure snippet's BOTTOMLEFT anchor when playerAnchor=END.
+    -- Safe: UpdateRaidGroupLayoutParams replaces the whole table on its next call,
+    -- so the flag does not survive into the live-frame positioning path. (#875)
+    lp.testMode = true
 
-    -- [LEAK-TEST] Simulates the proposed patch's mutation. Only writes when the tester
-    -- opts in with: /run DandersFrames.debugLeakTestSimulate = true
-    -- Purpose: verify whether the flag survives the next UpdateRaidGroupLayoutParams call
-    -- and leaks into the live-frame positioning path.
+    -- [LEAK-TEST] Simulates the proposed patch's mutation. Now redundant since
+    -- the patch is in place above, but kept opt-in for diagnostic continuity.
     if DF.debugLeakTestSimulate then
         lp.testMode = true
         if DF.debugLeakTest then

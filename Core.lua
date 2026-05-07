@@ -3260,7 +3260,6 @@ DF._MainEventDispatcher = function(self, event, arg1)
                 },
                 wizardConfigs = {},
                 seenAuraSetupWizard = true,  -- New users don't need the wizard
-                seenOverlaySetupWizard = true,  -- New users don't need the overlay wizard
             }
         end
         
@@ -3934,6 +3933,144 @@ DF._MainEventDispatcher = function(self, event, arg1)
                     if profile[mode] and not profile[mode]._hideBlizzRaidV407 then
                         profile[mode].hideBlizzardRaidFrames = true
                         profile[mode]._hideBlizzRaidV407 = true
+                    end
+                end
+            end
+        end
+
+        -- v4.3.4: Dispel Overlay Source migration
+        -- Collapses the two legacy toggles (dispelOverlayEnabled +
+        -- bossDebuffsContainerOverlayEnabled) into a single dispelOverlaySource
+        -- selector with values "off" / "dandersframes" / "blizzard" / "both".
+        -- Also unifies the dispel-type dropdown — _blizzDispelIndicator (party-only,
+        -- 1=All, 2=ByMe) and bossDebuffsContainerOverlayDispelMode (per-mode,
+        -- 1=ByMe, 2=All) are replaced by dispelOverlayDispelType (per-mode,
+        -- Blizzard convention: 1=ByMe, 2=All).
+        local function ComputeDispelSource(modeDb)
+            -- Fresh installs have no legacy keys (removed from defaults in
+            -- v4.3.4). If both are nil there's no legacy state to migrate —
+            -- return nil so the default ("both") is preserved.
+            if modeDb.dispelOverlayEnabled == nil and modeDb.bossDebuffsContainerOverlayEnabled == nil then
+                return nil
+            end
+            local dfOn = modeDb.dispelOverlayEnabled and true or false
+            local blizOn = modeDb.bossDebuffsContainerOverlayEnabled and true or false
+            if dfOn and blizOn then return "both"
+            elseif dfOn then return "dandersframes"
+            elseif blizOn then return "blizzard"
+            else return "off" end
+        end
+        local function MigrateDispelSource(modeDb, partyDb)
+            if modeDb._dispelSourceMigratedV434 then return end
+            local src = ComputeDispelSource(modeDb)
+            if src then modeDb.dispelOverlaySource = src end
+            -- Translate legacy _blizzDispelIndicator (1=All, 2=ByMe) to the new
+            -- Blizzard convention (1=ByMe, 2=All). Reads from party DB since the
+            -- legacy key was party-only. If unset, leave the default untouched.
+            local legacyInd = partyDb and partyDb._blizzDispelIndicator
+            if legacyInd ~= nil then
+                modeDb.dispelOverlayDispelType = (legacyInd == 2) and 1 or 2
+            end
+            modeDb._dispelSourceMigratedV434 = true
+        end
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb then
+                MigrateDispelSource(modeDb, DF.db.party)
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                local partyDb = profile.party
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] then
+                        MigrateDispelSource(profile[mode], partyDb)
+                    end
+                end
+            end
+        end
+
+        -- v4.3.4: One-time forced upgrade of "dandersframes" mode users to
+        -- "both" (Hybrid). Hybrid covers boss debuffs via Blizzard's
+        -- container overlay, which DandersFrames-only mode misses entirely.
+        -- Runs once per profile/mode; users can switch back afterwards.
+        local function MigrateDandersToHybrid(modeDb)
+            if modeDb._dandersToHybridV434 then return end
+            if modeDb.dispelOverlaySource == "dandersframes" then
+                modeDb.dispelOverlaySource = "both"
+            end
+            modeDb._dandersToHybridV434 = true
+        end
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb then
+                MigrateDandersToHybrid(modeDb)
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] then
+                        MigrateDandersToHybrid(profile[mode])
+                    end
+                end
+            end
+        end
+
+        -- Collapse separate bossDebuffsIconWidth + bossDebuffsIconHeight into
+        -- a single bossDebuffsIconSize. The icon was already always rendered
+        -- as a square at max(width, height) since the iconInfo refactor, so
+        -- migrating to max() is the value-preserving choice. Old W/H keys
+        -- are dropped from the saved profile to keep it tidy.
+        local function MigrateIconSize(modeDb)
+            if modeDb._paIconSizeMigrated then return end
+            if modeDb.bossDebuffsIconWidth or modeDb.bossDebuffsIconHeight then
+                local w = modeDb.bossDebuffsIconWidth or 20
+                local h = modeDb.bossDebuffsIconHeight or 20
+                modeDb.bossDebuffsIconSize = math.max(w, h)
+                modeDb.bossDebuffsIconWidth = nil
+                modeDb.bossDebuffsIconHeight = nil
+            end
+            modeDb._paIconSizeMigrated = true
+        end
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb then
+                MigrateIconSize(modeDb)
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] then
+                        MigrateIconSize(profile[mode])
+                    end
+                end
+            end
+        end
+
+        -- v4.3.4: Force private aura icon strata to HIGH across all profiles.
+        -- The 12.0.5 Blizzard refactor calls SetFrameLevel(0) on its private
+        -- aura pool frame; bumping our iconFrame strata pushes that level-0
+        -- child render frame above DF's MEDIUM-strata content regardless of
+        -- frame level. Container overlay strata stays at MEDIUM (it has its
+        -- own working frame-level path). Runs once per profile/mode.
+        local function MigratePAStrataToHigh(modeDb)
+            if modeDb._paStrataHighV434 then return end
+            modeDb.bossDebuffsStrata = "HIGH"
+            modeDb._paStrataHighV434 = true
+        end
+        for _, mode in ipairs({"party", "raid"}) do
+            local modeDb = DF.db[mode]
+            if modeDb then
+                MigratePAStrataToHigh(modeDb)
+            end
+        end
+        if DandersFramesDB_v2 and DandersFramesDB_v2.profiles then
+            for _, profile in pairs(DandersFramesDB_v2.profiles) do
+                for _, mode in ipairs({"party", "raid"}) do
+                    if profile[mode] then
+                        MigratePAStrataToHigh(profile[mode])
                     end
                 end
             end
@@ -4640,24 +4777,6 @@ DF._MainEventDispatcher = function(self, event, arg1)
             -- this block stops catching, we don't suddenly pop the wizard on a
             -- user who's been running for months without it.
             DandersFramesDB_v2.seenAuraSetupWizard = true
-        end
-
-        -- Show Private Aura Overlay Setup wizard for existing users on first login after update
-        if DandersFramesDB_v2 and not DandersFramesDB_v2.seenOverlaySetupWizard then
-            DandersFramesDB_v2.seenOverlaySetupWizard = true
-            -- Delay to avoid colliding with other startup wizards
-            C_Timer.After(5, function()
-                if DF.WizardBuilder and not InCombatLockdown() and not DF:IsPopupShown() then
-                    local builtins = DF.WizardBuilder:GetBuiltinWizards()
-                    for _, entry in ipairs(builtins) do
-                        if entry.name == "Private Aura Overlay Setup" and entry.build then
-                            local config = entry.build()
-                            if config then DF:ShowPopupWizard(config) end
-                            break
-                        end
-                    end
-                end
-            end)
         end
 
     elseif event == "GROUP_ROSTER_UPDATE" then
